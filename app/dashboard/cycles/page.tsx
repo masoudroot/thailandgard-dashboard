@@ -9,6 +9,7 @@ import PageHeader from '@/components/PageHeader';
 import LoadMore, { useVisibleCount } from '@/components/LoadMore';
 import StatusBadge from '@/components/dataviz/StatusBadge';
 import TrendChart, { type TrendPoint } from '@/components/dataviz/TrendChart';
+import { SkeletonTable } from '@/components/Skeleton';
 
 /** تبدیل ارقام لاتین به فارسی */
 function faNum(v: string | number): string {
@@ -149,7 +150,7 @@ export default function CyclesPage() {
             <button
               onClick={createCycle}
               disabled={creating}
-              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground shadow-control transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground shadow-control hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {creating ? 'در حال ساخت…' : 'چرخه جدید'}
             </button>
@@ -165,16 +166,14 @@ export default function CyclesPage() {
         {error && (
           <p
             role="alert"
-            className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive"
+            className="tg-shake mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive"
           >
             خطا در ساخت چرخه: {error}
           </p>
         )}
 
         {loading ? (
-          <div className="rounded-2xl border border-border bg-card p-10 text-center text-sm text-muted-foreground shadow-surface">
-            در حال بارگذاری چرخه‌ها…
-          </div>
+          <SkeletonTable rows={4} columns={7} />
         ) : cycles.length === 0 ? (
           <EmptyState
             icon={Inbox}
@@ -185,7 +184,7 @@ export default function CyclesPage() {
               <button
                 onClick={createCycle}
                 disabled={creating}
-                className="inline-flex min-h-[48px] items-center justify-center rounded-xl bg-brand px-6 py-2.5 text-sm font-bold text-brand-foreground shadow-control transition-colors hover:opacity-90 disabled:opacity-50"
+                className="tg-btn inline-flex min-h-[48px] items-center justify-center rounded-xl bg-brand px-6 py-2.5 text-sm font-bold text-brand-foreground shadow-control hover:opacity-90 disabled:opacity-50"
               >
                 {creating ? 'در حال ساخت…' : 'ساخت اولین چرخه'}
               </button>
@@ -206,7 +205,7 @@ export default function CyclesPage() {
               {shownCycles.map((c) => (
                 <article
                   key={c.id}
-                  className="rounded-2xl border border-border bg-card p-4 shadow-surface"
+                  className="tg-card rounded-2xl border border-border bg-card p-4 shadow-surface"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span
@@ -268,7 +267,7 @@ export default function CyclesPage() {
                   {shownCycles.map((c) => (
                     <tr
                       key={c.id}
-                      className="border-b border-border last:border-0 transition-colors hover:bg-muted/40"
+                      className="tg-row border-b border-border last:border-0 hover:bg-muted/40"
                     >
                       <td className="px-4 py-3 font-mono text-xs text-card-foreground" dir="ltr">
                         {c.run_id}

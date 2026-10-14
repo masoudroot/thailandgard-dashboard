@@ -1,5 +1,6 @@
 import Nav from "@/components/Nav";
 import MobileNav from "@/components/MobileNav";
+import PageTransition from "@/components/PageTransition";
 
 /**
  * لی‌اوت داشبورد: سایدبار راست (نخستین فرزند در فلکس، یعنی سمت شروع در راست‌چین)
@@ -31,7 +32,7 @@ export default function DashboardLayout({
         </header>
 
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 lg:px-6 lg:py-8">
-          {children}
+          <PageTransition>{children}</PageTransition>
           {/* فاصله‌گذار برای ناوبری پایینی موبایل (قرارداد با تیم ناوبری) */}
           <div
             aria-hidden="true"

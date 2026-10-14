@@ -5,6 +5,7 @@ import { Brain, Search, SearchX, X } from 'lucide-react';
 import { TEAMS, type TeamName } from '@/lib/types';
 import EmptyState from '@/components/EmptyState';
 import PageHeader from '@/components/PageHeader';
+import { SkeletonPanel } from '@/components/Skeleton';
 
 /** نام‌های فارسی خوانا برای ۱۵ تیم */
 const TEAM_LABELS: Record<TeamName, string> = {
@@ -191,12 +192,9 @@ export default function MemoryPage() {
         )}
 
         {loading ? (
-          <div className="space-y-3">
+          <div className="tg-stagger space-y-3">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="animate-pulse rounded-2xl border border-border bg-card p-4">
-                <div className="mb-2 h-4 w-40 rounded bg-muted" />
-                <div className="h-20 rounded bg-muted" />
-              </div>
+              <SkeletonPanel key={i} />
             ))}
           </div>
         ) : filtered.length === 0 ? (

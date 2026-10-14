@@ -15,6 +15,7 @@ import type { Cycle, TeamName, TeamRun } from '@/lib/types';
 import EmptyState from '@/components/EmptyState';
 import StatusBadge from '@/components/dataviz/StatusBadge';
 import ProgressBar from '@/components/dataviz/ProgressBar';
+import { SkeletonPanel } from '@/components/Skeleton';
 
 /** تبدیل ارقام لاتین به فارسی */
 function faNum(v: string | number): string {
@@ -134,16 +135,14 @@ export default function CycleDetailPage() {
       <div className="mx-auto max-w-6xl px-4 py-6 md:py-8">
         <Link
           href="/dashboard/cycles"
-          className="mb-6 inline-flex min-h-[44px] items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-brand"
+          className="tg-link mb-6 inline-flex min-h-[44px] items-center gap-2 text-sm text-muted-foreground hover:text-brand"
         >
           <ArrowRight size={16} strokeWidth={2} aria-hidden="true" />
           بازگشت به لیست چرخه‌ها
         </Link>
 
         {loading ? (
-          <div className="rounded-2xl border border-border bg-card p-10 text-center text-sm text-muted-foreground shadow-surface">
-            در حال بارگذاری جزئیات چرخه…
-          </div>
+          <SkeletonPanel />
         ) : !cycle ? (
           <EmptyState
             icon={SearchX}

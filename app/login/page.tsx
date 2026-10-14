@@ -118,7 +118,7 @@ export default function LoginPage() {
             {error && (
               <p
                 role="alert"
-                className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm leading-7 text-destructive"
+                className="tg-shake rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm leading-7 text-destructive"
               >
                 {error}
               </p>
@@ -127,7 +127,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="touch-target h-12 w-full rounded-lg bg-brand px-4 text-base font-semibold text-brand-foreground transition-soft hover:brightness-95 active:brightness-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="tg-btn touch-target h-12 w-full rounded-lg bg-brand px-4 text-base font-semibold text-brand-foreground hover:brightness-95 active:brightness-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'در حال بررسی…' : 'ورود'}
             </button>

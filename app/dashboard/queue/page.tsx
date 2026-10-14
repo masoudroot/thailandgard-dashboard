@@ -17,6 +17,7 @@ import {
 import { TEAMS } from "@/lib/types";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
+import { SkeletonPanel } from "@/components/Skeleton";
 import LoadMore, { useVisibleCount } from "@/components/LoadMore";
 
 /* ------------------------------------------------------------------ */
@@ -578,13 +579,9 @@ export default function QueuePage() {
 
       {/* لیست کارها */}
       {loading ? (
-        <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
+        <div className="tg-stagger grid gap-3 sm:gap-4 md:grid-cols-2">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="animate-pulse rounded-xl border border-border bg-card p-5">
-              <div className="mb-3 h-4 w-1/3 rounded bg-secondary" />
-              <div className="mb-2 h-5 w-3/4 rounded bg-secondary" />
-              <div className="h-4 w-full rounded bg-secondary" />
-            </div>
+            <SkeletonPanel key={i} />
           ))}
         </div>
       ) : visible.length === 0 ? (

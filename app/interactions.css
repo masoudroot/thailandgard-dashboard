@@ -1,0 +1,308 @@
+/* ─────────────────────────────────────────────────────────────
+   سیستم میکرواینترکشن داشبورد تایلندگرد
+   قوانین: فقط transform و opacity (سبک برای موبایل)، مدت ۱۵۰ تا ۳۲۰ میلی‌ثانیه،
+   منحنی easeOutQuint برای حس نرم و حرفه‌ای.
+   هاورهای «بالا آمدن» فقط روی دستگاه‌های دارای هاور واقعی فعال‌اند تا روی
+   لمسی حالت چسبنده نسازند. احترام به prefers-reduced-motion با قانون سراسری
+   globals.css برقرار است؛ این‌جا هم نگهبان محلی دارد.
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  --tg-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --tg-fast: 150ms;
+  --tg-base: 200ms;
+  --tg-enter: 280ms;
+}
+
+/* ── دکمه‌ها: تغییر نرم رنگ و مقیاس ── */
+.tg-btn {
+  transition:
+    background-color var(--tg-base) var(--tg-ease),
+    border-color var(--tg-base) var(--tg-ease),
+    color var(--tg-base) var(--tg-ease),
+    box-shadow var(--tg-base) var(--tg-ease),
+    filter var(--tg-base) var(--tg-ease),
+    transform var(--tg-fast) var(--tg-ease);
+  will-change: transform;
+}
+@media (hover: hover) and (pointer: fine) {
+  .tg-btn:hover {
+    transform: translateY(-1px);
+  }
+}
+.tg-btn:active {
+  transform: scale(0.97);
+}
+.tg-btn:disabled {
+  transform: none;
+}
+
+/* ── کارت‌ها: بالا آمدن ظریف و سایه عمیق‌تر ── */
+.tg-card {
+  transition:
+    transform var(--tg-base) var(--tg-ease),
+    box-shadow var(--tg-base) var(--tg-ease),
+    border-color var(--tg-base) var(--tg-ease),
+    background-color var(--tg-base) var(--tg-ease);
+  will-change: transform;
+}
+@media (hover: hover) and (pointer: fine) {
+  .tg-card:hover {
+    transform: translateY(-3px);
+    box-shadow:
+      0 14px 32px rgb(62 57 50 / 0.14),
+      0 2px 6px rgb(62 57 50 / 0.08);
+    border-color: rgb(var(--brand) / 0.25);
+  }
+}
+.tg-card:active {
+  transform: scale(0.99);
+}
+.dark .tg-card:hover {
+  box-shadow:
+    0 14px 32px rgb(0 0 0 / 0.45),
+    0 2px 6px rgb(0 0 0 / 0.25);
+}
+
+/* ── فیدبک فشردن برای هر المان تعاملی ── */
+.tg-press {
+  transition: transform var(--tg-fast) var(--tg-ease);
+}
+.tg-press:active {
+  transform: scale(0.97);
+}
+
+/* ── لینک‌ها: زیرخط متحرک و تغییر رنگ ── */
+.tg-link {
+  position: relative;
+  transition: color var(--tg-base) var(--tg-ease);
+}
+.tg-link::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -2px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.85;
+  transform: scaleX(0);
+  transform-origin: inline-end;
+  transition: transform var(--tg-base) var(--tg-ease);
+}
+.tg-link:hover::after,
+.tg-link:focus-visible::after {
+  transform: scaleX(1);
+  transform-origin: inline-start;
+}
+
+/* ── آیتم‌های لیست: لغزش ظریف و روشن شدن زمینه ── */
+.tg-row {
+  transition:
+    background-color var(--tg-base) var(--tg-ease),
+    border-color var(--tg-base) var(--tg-ease),
+    transform var(--tg-base) var(--tg-ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .tg-row:hover {
+    background-color: rgb(var(--accent) / 0.6);
+    transform: translateX(-2px);
+  }
+  [dir="ltr"] .tg-row:hover {
+    transform: translateX(2px);
+  }
+}
+
+/* ── دکمه آیکونی: چرخش و مقیاس ملایم آیکون ── */
+.tg-icon-btn {
+  transition:
+    background-color var(--tg-base) var(--tg-ease),
+    color var(--tg-base) var(--tg-ease),
+    transform var(--tg-fast) var(--tg-ease);
+}
+.tg-icon-btn:hover > svg {
+  transform: scale(1.12);
+}
+.tg-icon-btn > svg {
+  transition: transform var(--tg-base) var(--tg-ease);
+}
+.tg-icon-btn:active {
+  transform: scale(0.94);
+}
+
+/* ── اسکلت لودینگ: برق زدن ملایم ── */
+.tg-shimmer {
+  position: relative;
+  overflow: hidden;
+  background-color: rgb(var(--muted));
+  isolation: isolate;
+}
+.tg-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgb(255 255 255 / 0.55) 50%,
+    transparent 80%
+  );
+  animation: tg-shimmer-sweep 1.6s ease-in-out infinite;
+}
+.dark .tg-shimmer::after {
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgb(255 255 255 / 0.08) 50%,
+    transparent 80%
+  );
+}
+@keyframes tg-shimmer-sweep {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/* ── ورود صفحه: محو و لغزش کوتاه ── */
+.tg-page-enter {
+  animation: tg-page-enter var(--tg-enter) var(--tg-ease) both;
+}
+@keyframes tg-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── ورود تکی المان ── */
+.tg-reveal {
+  animation: tg-reveal-item 320ms var(--tg-ease) both;
+}
+@keyframes tg-reveal-item {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ── ورود پلکانی: فرزندهای مستقیم با تأخیر پشت سر هم ──
+   سقف ۱۶ آیتم با گام ۵۰ میلی‌ثانیه؛ بیشتر از آن هم‌زمان می‌آیند. */
+.tg-stagger > * {
+  animation: tg-reveal-item 320ms var(--tg-ease) both;
+}
+.tg-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.tg-stagger > *:nth-child(2) { animation-delay: 50ms; }
+.tg-stagger > *:nth-child(3) { animation-delay: 100ms; }
+.tg-stagger > *:nth-child(4) { animation-delay: 150ms; }
+.tg-stagger > *:nth-child(5) { animation-delay: 200ms; }
+.tg-stagger > *:nth-child(6) { animation-delay: 250ms; }
+.tg-stagger > *:nth-child(7) { animation-delay: 300ms; }
+.tg-stagger > *:nth-child(8) { animation-delay: 350ms; }
+.tg-stagger > *:nth-child(9) { animation-delay: 400ms; }
+.tg-stagger > *:nth-child(10) { animation-delay: 450ms; }
+.tg-stagger > *:nth-child(11) { animation-delay: 500ms; }
+.tg-stagger > *:nth-child(12) { animation-delay: 550ms; }
+.tg-stagger > *:nth-child(13) { animation-delay: 600ms; }
+.tg-stagger > *:nth-child(14) { animation-delay: 650ms; }
+.tg-stagger > *:nth-child(15) { animation-delay: 700ms; }
+.tg-stagger > *:nth-child(16) { animation-delay: 750ms; }
+
+/* ── موج ریپل روی دکمه ── */
+.tg-ripple {
+  position: relative;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+.tg-ripple-ink {
+  position: absolute;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0.22;
+  transform: scale(0);
+  animation: tg-ripple-spread 550ms var(--tg-ease) forwards;
+  pointer-events: none;
+}
+@keyframes tg-ripple-spread {
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* ── فیدبک موفقیت: جهش نرم ── */
+.tg-pop {
+  animation: tg-pop 380ms var(--tg-ease) both;
+}
+@keyframes tg-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.015) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ── فیدبک خطا: لرزش کوتاه ── */
+.tg-shake {
+  animation: tg-shake 400ms var(--tg-ease) both;
+}
+@keyframes tg-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(6px); }
+  40% { transform: translateX(-5px); }
+  60% { transform: translateX(4px); }
+  80% { transform: translateX(-2px); }
+}
+
+/* ── نقطه وضعیت: ضربان نرم برای حالت در حال اجرا ── */
+.tg-pulse-dot {
+  animation: tg-pulse-dot 2s ease-in-out infinite;
+}
+@keyframes tg-pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ── نگهبان کاهش حرکت برای همین فایل ── */
+@media (prefers-reduced-motion: reduce) {
+  .tg-shimmer::after,
+  .tg-page-enter,
+  .tg-reveal,
+  .tg-stagger > *,
+  .tg-ripple-ink,
+  .tg-pop,
+  .tg-shake,
+  .tg-pulse-dot {
+    animation: none !important;
+  }
+  .tg-btn,
+  .tg-card,
+  .tg-press,
+  .tg-link,
+  .tg-row,
+  .tg-icon-btn {
+    transition: none !important;
+  }
+  .tg-card:hover,
+  .tg-btn:hover {
+    transform: none !important;
+  }
+}

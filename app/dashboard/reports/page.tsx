@@ -5,6 +5,7 @@ import { FileText, FileX2 } from 'lucide-react';
 import type { Cycle, TeamName } from '@/lib/types';
 import EmptyState from '@/components/EmptyState';
 import PageHeader from '@/components/PageHeader';
+import { SkeletonPanel, SkeletonStat } from '@/components/Skeleton';
 
 /* ------------------------------------------------------------------ */
 /* کمک‌کننده‌های فارسی‌سازی                                          */
@@ -394,13 +395,13 @@ export default function ReportsPage() {
 
 function LoadingState() {
   return (
-    <div className="grid gap-6 lg:grid-cols-[300px_1fr]" aria-busy="true">
+    <div className="tg-stagger grid gap-6 lg:grid-cols-[300px_1fr]" aria-busy="true">
       <div className="flex flex-col gap-3">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="h-28 animate-pulse rounded-lg bg-muted" />
+          <SkeletonStat key={i} />
         ))}
       </div>
-      <div className="h-96 animate-pulse rounded-xl bg-muted" />
+      <SkeletonPanel className="min-h-96" />
       <span className="sr-only">در حال بارگذاری گزارش‌ها…</span>
     </div>
   );

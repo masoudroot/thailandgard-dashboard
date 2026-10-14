@@ -33,7 +33,7 @@ export default function TeamCard({
   error,
 }: TeamCardProps) {
   return (
-    <article className="flex h-full min-w-0 flex-col rounded-xl border border-border bg-card p-4 shadow-surface transition-transform duration-200 active:scale-[0.99] sm:p-5 hover:sm:-translate-y-0.5">
+    <article className="tg-card flex h-full min-w-0 flex-col rounded-xl border border-border bg-card p-4 shadow-surface sm:p-5">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-base font-bold text-card-foreground">{faName}</h3>

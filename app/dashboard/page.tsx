@@ -21,6 +21,12 @@ import {
   StatusBadge,
   type StatCardProps,
 } from "@/components/dataviz";
+import RippleButton from "@/components/RippleButton";
+import {
+  SkeletonPanel,
+  SkeletonRow,
+  SkeletonStat,
+} from "@/components/Skeleton";
 
 /* ─────────────────────────────────────────────
    ابزارهای نمایشی
@@ -298,7 +304,7 @@ export default function DashboardHomePage() {
         {/* ── هیرو ── */}
         <section
           aria-label="معرفی داشبورد"
-          className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-bl from-brand/15 via-card to-card p-6 shadow-[var(--shadow-surface)] md:p-10"
+          className="tg-reveal relative overflow-hidden rounded-3xl border border-border bg-gradient-to-bl from-brand/15 via-card to-card p-6 shadow-[var(--shadow-surface)] md:p-10"
         >
           <div
             aria-hidden="true"
@@ -323,13 +329,10 @@ export default function DashboardHomePage() {
             </p>
 
             {/* آمار کلی */}
-            <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 md:mt-8 md:gap-4 lg:grid-cols-4 lg:gap-6">
+            <div className="tg-stagger mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 md:mt-8 md:gap-4 lg:grid-cols-4 lg:gap-6">
               {loading
                 ? Array.from({ length: 4 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="h-28 animate-pulse rounded-2xl bg-muted"
-                    />
+                    <SkeletonStat key={i} />
                   ))
                 : stats.map((s) => (
                     <StatCard key={s.label} {...s} />
@@ -346,7 +349,7 @@ export default function DashboardHomePage() {
             className="rounded-3xl border border-border bg-card p-4 shadow-[var(--shadow-surface)] sm:p-6 lg:col-span-2"
           >
             {loading || !cycle ? (
-              <div className="h-64 animate-pulse rounded-2xl bg-muted" />
+              <SkeletonPanel />
             ) : (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -387,7 +390,7 @@ export default function DashboardHomePage() {
                 {/* دکمه شروع */}
                 <div className="mt-6 border-t border-border pt-6">
                   {queuedNotice ? (
-                    <p className="flex items-center gap-2 rounded-2xl bg-success/10 px-4 py-3 text-sm font-medium text-success">
+                    <p className="tg-pop flex items-center gap-2 rounded-2xl bg-success/10 px-4 py-3 text-sm font-medium text-success">
                       <CheckCircle2 size={18} strokeWidth={1.75} />
                       چرخهٔ جدید در صف شروع قرار گرفت؛ بعد از پایان موج جاری
                       آغاز می‌شود.
@@ -396,7 +399,7 @@ export default function DashboardHomePage() {
                     <button
                       type="button"
                       onClick={() => setDialogOpen(true)}
-                      className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-brand px-6 font-bold text-brand-foreground shadow-[var(--shadow-control)] transition hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:w-auto"
+                      className="tg-btn inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-brand px-6 font-bold text-brand-foreground shadow-[var(--shadow-control)] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:w-auto"
                     >
                       <Play size={20} strokeWidth={2} />
                       شروع چرخهٔ جدید
@@ -413,13 +416,10 @@ export default function DashboardHomePage() {
             className="rounded-3xl border border-border bg-card p-4 shadow-[var(--shadow-surface)] sm:p-6"
           >
             <h2 className="text-xl font-bold">هشدارهای اخیر</h2>
-            <div className="mt-4 space-y-4">
+            <div className="tg-stagger mt-4 space-y-4">
               {loading || !alerts ? (
                 Array.from({ length: 3 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="h-20 animate-pulse rounded-2xl bg-muted"
-                  />
+                  <SkeletonRow key={i} />
                 ))
               ) : alerts.length === 0 ? (
                 <p className="rounded-2xl bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
@@ -483,7 +483,9 @@ export default function DashboardHomePage() {
           </div>
 
           {loading || !cycle ? (
-            <div className="mt-6 h-40 animate-pulse rounded-2xl bg-muted" />
+            <div className="mt-6">
+              <SkeletonPanel />
+            </div>
           ) : (
             <>
               {/* خط زمانی */}
@@ -531,7 +533,7 @@ export default function DashboardHomePage() {
               </div>
 
               {/* جزئیات هر موج */}
-              <div className="mt-6 grid gap-3 sm:grid-cols-2 md:mt-8 md:gap-4 lg:grid-cols-3">
+              <div className="tg-stagger mt-6 grid gap-3 sm:grid-cols-2 md:mt-8 md:gap-4 lg:grid-cols-3">
                 {cycle.waves.map((w) => {
                   const state = waveState(w, cycle.currentWave);
                   return (
@@ -579,7 +581,7 @@ export default function DashboardHomePage() {
           onClick={() => !starting && setDialogOpen(false)}
         >
           <div
-            className="max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-border bg-card p-5 shadow-[var(--shadow-surface)] sm:max-w-md sm:rounded-3xl sm:p-6"
+            className="tg-pop max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-border bg-card p-5 shadow-[var(--shadow-surface)] sm:max-w-md sm:rounded-3xl sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="start-cycle-title" className="text-lg font-bold">
@@ -590,11 +592,10 @@ export default function DashboardHomePage() {
               وارد صف می‌شوند. چرخهٔ در حال اجرا متوقف نمی‌شود.
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
+              <RippleButton
                 disabled={starting}
                 onClick={handleConfirmStart}
-                className="inline-flex min-h-[48px] w-full flex-1 items-center justify-center gap-2 rounded-2xl bg-brand px-5 font-bold text-brand-foreground shadow-[var(--shadow-control)] transition hover:brightness-110 disabled:opacity-60"
+                className="tg-btn inline-flex min-h-[48px] w-full flex-1 items-center justify-center gap-2 rounded-2xl bg-brand px-5 font-bold text-brand-foreground shadow-[var(--shadow-control)] hover:brightness-110 disabled:opacity-60"
               >
                 {starting ? (
                   <>
@@ -607,12 +608,12 @@ export default function DashboardHomePage() {
                     شروع چرخه
                   </>
                 )}
-              </button>
+              </RippleButton>
               <button
                 type="button"
                 disabled={starting}
                 onClick={() => setDialogOpen(false)}
-                className="inline-flex min-h-[48px] w-full items-center justify-center rounded-2xl border border-border bg-card px-5 font-medium text-foreground transition hover:bg-muted disabled:opacity-60 sm:w-auto"
+                className="tg-btn inline-flex min-h-[48px] w-full items-center justify-center rounded-2xl border border-border bg-card px-5 font-medium text-foreground hover:bg-muted disabled:opacity-60 sm:w-auto"
               >
                 انصراف
               </button>

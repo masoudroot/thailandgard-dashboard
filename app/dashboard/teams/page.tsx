@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { TriangleAlert, Users } from 'lucide-react';
 import PageHeader from '../../../components/PageHeader';
 import TeamCard, { faNum } from '../../../components/TeamCard';
+import { SkeletonTeamCard } from '../../../components/Skeleton';
 import {
   TEAMS,
   WAVES,
@@ -153,9 +154,9 @@ export default function TeamsPage() {
         />
 
         {runs === null ? (
-          <div className="grid gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
+          <div className="tg-stagger grid gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-48 animate-pulse rounded-xl bg-muted" />
+              <SkeletonTeamCard key={i} />
             ))}
           </div>
         ) : (
@@ -182,7 +183,7 @@ export default function TeamsPage() {
                   </span>
                   <span className="h-px flex-1 bg-border" />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
+                <div className="tg-stagger grid gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
                   {teams.map((team) => {
                     const meta = TEAM_META[team];
                     const run = byTeam.get(team);
