@@ -30,6 +30,7 @@
   --radius: 10px;
   --shadow-control: 0 1px 2px rgb(62 57 50 / 0.08);
   --shadow-surface: 0 8px 24px rgb(62 57 50 / 0.1);
+  color-scheme: light;
 }
 
 .dark {
@@ -56,11 +57,15 @@
   --success-foreground: 24 24 27;
   --warning: 245 178 60;
   --warning-foreground: 24 24 27;
+  color-scheme: dark;
 }
 
 @layer base {
   html {
+    /* اندازهٔ پایهٔ ثابت ۱۶px: از زوم خودکار سافاری هنگام فوکوس ورودی جلوگیری می‌کند */
+    font-size: 16px;
     -webkit-text-size-adjust: 100%;
+    overscroll-behavior-y: none;
   }
 
   body {
@@ -69,17 +74,44 @@
     font-size: 1rem;
     line-height: 1.8;
     letter-spacing: 0;
+    overscroll-behavior-y: none;
   }
 
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
+  /* مقیاس تایپ fluid: در موبایل کوچک‌تر، در دسکتاپ بزرگ‌تر */
+  h1 {
+    font-size: clamp(1.4rem, 5vw, 2rem);
     line-height: 1.4;
     letter-spacing: 0;
     font-weight: 700;
+  }
+  h2 {
+    font-size: clamp(1.25rem, 4vw, 1.6rem);
+    line-height: 1.4;
+    letter-spacing: 0;
+    font-weight: 700;
+  }
+  h3 {
+    font-size: clamp(1.125rem, 3.4vw, 1.35rem);
+    line-height: 1.4;
+    letter-spacing: 0;
+    font-weight: 700;
+  }
+  h4 {
+    font-size: clamp(1rem, 3vw, 1.15rem);
+    line-height: 1.4;
+    letter-spacing: 0;
+    font-weight: 700;
+  }
+  h5,
+  h6 {
+    font-size: 1rem;
+    line-height: 1.4;
+    letter-spacing: 0;
+    font-weight: 700;
+  }
+
+  p {
+    line-height: 1.8;
   }
 
   ::selection {
@@ -97,24 +129,109 @@
   textarea,
   select {
     letter-spacing: 0;
+    /* حداقل ۱۶px در همهٔ مرورگرها: جلوی زوم ناخواستهٔ iOS را می‌گیرد */
+    font-size: 1rem;
+  }
+
+  /* اسکرول‌بار ظریف وب‌کیت */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--muted-foreground) / 0.4);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--muted-foreground) / 0.65);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  /* فایرفاکس */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--muted-foreground) / 0.4) transparent;
   }
 }
 
-/* جلوگیری از زوم ناخواستهٔ سافاری روی آیفون هنگام فوکوس ورودی */
-@supports (-webkit-touch-callout: none) {
-  input,
-  textarea,
-  select {
-    font-size: max(1rem, 1em);
+@layer components {
+  /* هدف لمسی: حداقل ۴۴px برای دکمه‌ها و لینک‌های تعاملی */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 }
 
-/* احترام به کاهش حرکت */
+@layer utilities {
+  /* انیمیشن‌های ظریف (همه با prefers-reduced-motion غیرفعال می‌شوند) */
+  .animate-fade-in {
+    animation: tg-fade-in 200ms ease-out both;
+  }
+  .animate-slide-up {
+    animation: tg-slide-up 200ms ease-out both;
+  }
+  .animate-slide-in {
+    animation: tg-slide-in 220ms ease-out both;
+  }
+  .transition-soft {
+    transition:
+      background-color 200ms ease,
+      border-color 200ms ease,
+      color 200ms ease,
+      box-shadow 200ms ease,
+      transform 200ms ease,
+      opacity 200ms ease;
+  }
+}
+
+/* کی‌فریم‌ها */
+@keyframes tg-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes tg-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes tg-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* احترام به کاهش حرکت: همهٔ انیمیشن‌ها و ترنزیشن‌ها خاموش */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }
