@@ -15,18 +15,18 @@ import {
   Waves,
   XCircle,
 } from "lucide-react";
-import {
-  ProgressBar,
-  StatCard,
-  StatusBadge,
-  type StatCardProps,
-} from "@/components/dataviz";
 import RippleButton from "@/components/RippleButton";
 import {
   SkeletonPanel,
   SkeletonRow,
   SkeletonStat,
 } from "@/components/Skeleton";
+import {
+  ProgressBar,
+  StatCard,
+  StatusBadge,
+  type StatCardProps,
+} from "@/components/dataviz";
 
 /* ─────────────────────────────────────────────
    ابزارهای نمایشی

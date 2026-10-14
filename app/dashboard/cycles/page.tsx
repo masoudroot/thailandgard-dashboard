@@ -84,6 +84,10 @@ export default function CyclesPage() {
   const [usingMock, setUsingMock] = useState(false);
   const [error, setError] = useState('');
 
+  const PAGE_SIZE = 8;
+  const { visible, hasMore, showMore } = useVisibleCount(cycles.length, PAGE_SIZE);
+  const shownCycles = cycles.slice(0, visible);
+
   /* نقاط نمودار روند: از قدیمی‌ترین به جدیدترین، راست‌به‌چپ */
   const trendPoints: TrendPoint[] = [...cycles]
     .sort(
@@ -92,10 +96,6 @@ export default function CyclesPage() {
         new Date(b.started_at ?? 0).getTime(),
     )
     .map((c, i) => ({ label: `چرخهٔ ${faNum(i + 1)}`, value: readLlmCalls(c) }));
-
-  const PAGE_SIZE = 8;
-  const { visible, hasMore, showMore } = useVisibleCount(cycles.length, PAGE_SIZE);
-  const shownCycles = cycles.slice(0, visible);
 
   const load = useCallback(async () => {
     try {
