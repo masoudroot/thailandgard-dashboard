@@ -1,7 +1,23 @@
 "use client";
 
+"use client";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Ban,
+  CheckCircle2,
+  Inbox,
+  ListChecks,
+  Play,
+  Plus,
+  RotateCw,
+  XCircle,
+  type LucideIcon,
+} from "lucide-react";
 import { TEAMS } from "@/lib/types";
+import EmptyState from "@/components/EmptyState";
+import PageHeader from "@/components/PageHeader";
+import LoadMore, { useVisibleCount } from "@/components/LoadMore";
 
 /* ------------------------------------------------------------------ */
 /*  مدل داده                                                          */
@@ -204,6 +220,35 @@ const PRIORITY_STYLE: Record<TaskPriority, string> = {
   low: "bg-secondary text-secondary-foreground",
 };
 
+/** حالت خالیِ هر تب: آیکون، تیتر و یک جمله راهنما */
+const TAB_EMPTY: Record<TaskStatus, { icon: LucideIcon; title: string; description: string }> = {
+  pending: {
+    icon: Inbox,
+    title: "صف انتظار خالی است",
+    description: "کار تازه‌ای برای تأیید نمانده است. هر وقت لازم شد، کار تازه‌ای دستی ثبت کنید.",
+  },
+  in_progress: {
+    icon: Play,
+    title: "کاری در حال انجام نیست",
+    description: "کارهای تأییدشده وارد صف اجرا می‌شوند و همین‌جا دیده می‌شوند.",
+  },
+  done: {
+    icon: CheckCircle2,
+    title: "هنوز کاری به سرانجام نرسیده است",
+    description: "کارهای انجام‌شدهٔ تیم‌ها در این تب فهرست می‌شوند.",
+  },
+  failed: {
+    icon: XCircle,
+    title: "خطای ثبت‌شده‌ای نیست",
+    description: "همه‌چیز سالم است؛ کارهای ناموفق با دلیلشان اینجا می‌آیند.",
+  },
+  rejected: {
+    icon: Ban,
+    title: "کاری رد نشده است",
+    description: "کارهایی که رد می‌شوند، با دلیل ردشدنشان در این تب می‌مانند.",
+  },
+};
+
 const STATUS_BADGE: Record<TaskStatus, string> = {
   pending: "bg-warning/15 text-warning",
   in_progress: "bg-brand/15 text-brand",
@@ -368,6 +413,10 @@ export default function QueuePage() {
     [tasks, tab]
   );
 
+  const PAGE_SIZE = 6;
+  const { visible: shownCount, hasMore, showMore } = useVisibleCount(visible.length, PAGE_SIZE, tab);
+  const shownTasks = visible.slice(0, shownCount);
+
   const handleAction = async (id: string, action: "approve" | "reject") => {
     setActing(id);
     await patchTask(id, action);
@@ -409,30 +458,31 @@ export default function QueuePage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
       {/* سربرگ */}
-      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold sm:text-2xl">مدیر صف ساخت</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            کارهای پیشنهادی تیم‌ها را بررسی، تأیید یا رد کنید؛ یا کار تازه‌ای دستی ثبت کنید.
-          </p>
-        </div>
-        <div className="flex w-full gap-2 sm:w-auto">
-          <button
-            type="button"
-            onClick={reload}
-            className="min-h-[44px] flex-1 rounded-lg border border-border bg-card px-4 py-2 text-sm shadow-control transition hover:bg-accent sm:flex-none"
-          >
-            تازه‌سازی
-          </button>
-          <button
-            type="button"
-            onClick={() => setFormOpen((v) => !v)}
-            className="min-h-[44px] flex-1 rounded-lg bg-brand px-4 py-2 text-sm text-brand-foreground shadow-control transition hover:opacity-90 sm:flex-none"
-          >
-            {formOpen ? "بستن فرم" : "ثبت کار تازه"}
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        icon={ListChecks}
+        title="مدیر صف ساخت"
+        subtitle="کارهای پیشنهادی تیم‌ها را بررسی، تأیید یا رد کنید؛ یا کار تازه‌ای دستی ثبت کنید."
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={reload}
+              className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm shadow-control transition hover:bg-accent sm:flex-none"
+            >
+              <RotateCw size={16} strokeWidth={2} aria-hidden="true" />
+              تازه‌سازی
+            </button>
+            <button
+              type="button"
+              onClick={() => setFormOpen((v) => !v)}
+              className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm text-brand-foreground shadow-control transition hover:opacity-90 sm:flex-none"
+            >
+              <Plus size={16} strokeWidth={2} aria-hidden="true" />
+              {formOpen ? "بستن فرم" : "ثبت کار تازه"}
+            </button>
+          </>
+        }
+      />
 
       {/* فرم ثبت دستی */}
       {formOpen && (
@@ -510,6 +560,7 @@ export default function QueuePage() {
               key={s.key}
               type="button"
               onClick={() => setTab(s.key)}
+              aria-pressed={active}
               className={`min-h-[40px] shrink-0 rounded-full border px-4 py-1.5 text-sm transition ${
                 active
                   ? "border-brand bg-brand text-brand-foreground shadow-control"
@@ -537,12 +588,33 @@ export default function QueuePage() {
           ))}
         </div>
       ) : visible.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center text-muted-foreground">
-          در این وضعیت کاری ثبت نشده است.
-        </div>
+        (() => {
+          const meta = TAB_EMPTY[tab];
+          return (
+            <EmptyState
+              icon={meta.icon}
+              title={meta.title}
+              description={meta.description}
+              tint="bg-muted text-muted-foreground"
+              action={
+                tab === "pending" ? (
+                  <button
+                    type="button"
+                    onClick={() => setFormOpen(true)}
+                    className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2 text-sm font-bold text-brand-foreground shadow-control transition hover:opacity-90"
+                  >
+                    <Plus size={16} strokeWidth={2} aria-hidden="true" />
+                    ثبت کار تازه
+                  </button>
+                ) : undefined
+              }
+            />
+          );
+        })()
       ) : (
+        <>
         <div className="grid gap-4 md:grid-cols-2">
-          {visible.map((task) => {
+          {shownTasks.map((task) => {
             const priorityLabel = PRIORITIES.find((p) => p.key === task.priority)?.label ?? task.priority;
             const statusLabel = STATUSES.find((s) => s.key === task.status)?.label ?? task.status;
             return (
@@ -603,6 +675,10 @@ export default function QueuePage() {
             );
           })}
         </div>
+        {hasMore && (
+          <LoadMore visible={shownCount} total={visible.length} onShowMore={showMore} />
+        )}
+        </>
       )}
 
       {/* اعلان */}

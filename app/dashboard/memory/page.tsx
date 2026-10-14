@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { Brain, Search, SearchX, X } from 'lucide-react';
 import { TEAMS, type TeamName } from '@/lib/types';
+import EmptyState from '@/components/EmptyState';
+import PageHeader from '@/components/PageHeader';
 
 /** نام‌های فارسی خوانا برای ۱۵ تیم */
 const TEAM_LABELS: Record<TeamName, string> = {
@@ -129,12 +132,11 @@ export default function MemoryPage() {
   return (
     <main dir="rtl" className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-3xl px-4 py-6 md:py-8">
-        <header className="mb-6">
-          <h1 className="text-xl font-bold sm:text-2xl">نمایشگر حافظه</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            حافظه بلندمدت تیم‌ها؛ کلیدها و مقدارهای ذخیره‌شده در جدول team_memory
-          </p>
-        </header>
+        <PageHeader
+          icon={Brain}
+          title="نمایشگر حافظه"
+          subtitle="حافظه بلندمدت تیم‌ها؛ کلیدها و مقدارهای ذخیره‌شده در جدول team_memory"
+        />
 
         <div className="mb-4 flex flex-col gap-3 sm:flex-row">
           <label className="flex flex-1 flex-col gap-1.5">
@@ -154,13 +156,31 @@ export default function MemoryPage() {
 
           <label className="flex flex-1 flex-col gap-1.5">
             <span className="text-sm font-medium text-muted-foreground">جست‌وجو در کلیدها</span>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="مثلاً last_cycle"
-              dir="ltr"
-              className="rounded-xl border border-input bg-card px-3 py-2.5 text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
-            />
+            <span className="relative block">
+              <Search
+                size={16}
+                strokeWidth={2}
+                aria-hidden="true"
+                className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="مثلاً last_cycle"
+                dir="ltr"
+                className={`w-full rounded-xl border border-input bg-card py-2.5 ps-9 text-start text-foreground outline-none placeholder:text-muted-foreground focus:border-ring ${query ? 'pe-10' : 'pe-3'}`}
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  aria-label="پاک کردن جست‌وجو"
+                  className="absolute end-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <X size={16} strokeWidth={2} aria-hidden="true" />
+                </button>
+              )}
+            </span>
           </label>
         </div>
 
@@ -180,12 +200,34 @@ export default function MemoryPage() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="rounded-2xl border border-border bg-card p-10 text-center text-muted-foreground">
-            {query ? 'کلیدی با این عبارت پیدا نشد.' : 'برای این تیم حافظه‌ای ثبت نشده است.'}
-          </div>
+          query ? (
+            <EmptyState
+              icon={SearchX}
+              title="کلیدی با این عبارت پیدا نشد"
+              description="عبارت دیگری را امتحان کنید، یا جست‌وجو را پاک کنید تا همهٔ کلیدهای حافظه دیده شوند."
+              action={
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border bg-card px-5 py-2 text-sm font-medium text-card-foreground shadow-control transition-colors hover:bg-accent"
+                >
+                  پاک کردن جست‌وجو
+                </button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={Brain}
+              title="برای این تیم حافظه‌ای ثبت نشده است"
+              description="بعد از اولین اجرای تیم در چرخه، حافظهٔ بلندمدتش همین‌جا نمایش داده می‌شود."
+              tint="bg-brand/10 text-brand"
+            />
+          )
         ) : (
           <>
-            <p className="mb-3 text-sm text-muted-foreground">{faDigits(filtered.length)} کلید در حافظه {TEAM_LABELS[team]}</p>
+            <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
+              {faDigits(filtered.length)} کلید در حافظه {TEAM_LABELS[team]}
+            </p>
             <ul className="space-y-3">
               {filtered.map((row) => {
                 const open = openKey === row.key;

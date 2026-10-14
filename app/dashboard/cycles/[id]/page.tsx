@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import {
+  ArrowRight,
+  CalendarDays,
+  Clock3,
+  Cpu,
+  SearchX,
+  Users,
+} from 'lucide-react';
 import type { Cycle, TeamName, TeamRun } from '@/lib/types';
+import EmptyState from '@/components/EmptyState';
 import StatusBadge from '@/components/dataviz/StatusBadge';
 import ProgressBar from '@/components/dataviz/ProgressBar';
 
@@ -127,7 +136,7 @@ export default function CycleDetailPage() {
           href="/dashboard/cycles"
           className="mb-6 inline-flex min-h-[44px] items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-brand"
         >
-          <span aria-hidden>←</span>
+          <ArrowRight size={16} strokeWidth={2} aria-hidden="true" />
           بازگشت به لیست چرخه‌ها
         </Link>
 
@@ -136,9 +145,19 @@ export default function CycleDetailPage() {
             در حال بارگذاری جزئیات چرخه…
           </div>
         ) : !cycle ? (
-          <div className="rounded-2xl border border-border bg-card p-10 text-center text-sm text-muted-foreground shadow-surface">
-            چرخه‌ای با این شناسه پیدا نشد.
-          </div>
+          <EmptyState
+            icon={SearchX}
+            title="چرخه‌ای با این شناسه پیدا نشد"
+            description="شاید شناسه اشتباه است یا چرخه حذف شده است؛ به لیست چرخه‌ها برگردید."
+            action={
+              <Link
+                href="/dashboard/cycles"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border bg-card px-5 py-2 text-sm font-medium text-card-foreground shadow-control transition-colors hover:bg-accent"
+              >
+                بازگشت به لیست چرخه‌ها
+              </Link>
+            }
+          />
         ) : (
           <>
             {usingMock && (
@@ -161,20 +180,32 @@ export default function CycleDetailPage() {
 
               <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 md:gap-4">
                 <div className="rounded-xl bg-muted/50 p-4">
-                  <dt className="text-xs text-muted-foreground">شروع</dt>
-                  <dd className="mt-1 text-sm font-medium">{faDate(cycle.started_at)}</dd>
+                  <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <CalendarDays size={14} strokeWidth={1.75} aria-hidden="true" />
+                    شروع
+                  </dt>
+                  <dd className="mt-1.5 text-sm font-medium">{faDate(cycle.started_at)}</dd>
                 </div>
                 <div className="rounded-xl bg-muted/50 p-4">
-                  <dt className="text-xs text-muted-foreground">پایان</dt>
-                  <dd className="mt-1 text-sm font-medium">{faDate(cycle.finished_at)}</dd>
+                  <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock3 size={14} strokeWidth={1.75} aria-hidden="true" />
+                    پایان
+                  </dt>
+                  <dd className="mt-1.5 text-sm font-medium">{faDate(cycle.finished_at)}</dd>
                 </div>
                 <div className="rounded-xl bg-muted/50 p-4">
-                  <dt className="text-xs text-muted-foreground">تعداد تیم‌ها</dt>
-                  <dd className="mt-1 text-sm font-medium">{faNum(teamRuns.length)}</dd>
+                  <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Users size={14} strokeWidth={1.75} aria-hidden="true" />
+                    تعداد تیم‌ها
+                  </dt>
+                  <dd className="mt-1.5 text-sm font-medium">{faNum(teamRuns.length)}</dd>
                 </div>
                 <div className="rounded-xl bg-muted/50 p-4">
-                  <dt className="text-xs text-muted-foreground">فراخوانی LLM</dt>
-                  <dd className="mt-1 text-sm font-medium">{faNum(totalLlmCalls)}</dd>
+                  <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Cpu size={14} strokeWidth={1.75} aria-hidden="true" />
+                    فراخوانی LLM
+                  </dt>
+                  <dd className="mt-1.5 text-sm font-medium">{faNum(totalLlmCalls)}</dd>
                 </div>
               </dl>
 

@@ -40,11 +40,13 @@ export default function DashboardLayout({
         </main>
 
         <footer className="border-t border-border">
-          <div className="mx-auto flex w-full max-w-7xl flex-col items-center gap-1 px-4 py-3 sm:flex-row sm:justify-between sm:px-6 sm:py-4 lg:px-6">
-            <p className="text-xs leading-5 text-muted-foreground">
-              داشبورد ایجنتیک تایلندگرد
-            </p>
-            <p className="hidden text-xs leading-5 text-muted-foreground sm:block">
+          <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-center gap-1 px-4 py-4 text-xs leading-5 text-muted-foreground sm:flex-row sm:justify-between sm:px-6 lg:px-6">
+            <p className="font-medium">داشبورد ایجنتیک تایلندگرد</p>
+            <p className="flex items-center gap-2">
+              <span
+                aria-hidden="true"
+                className="hidden h-1 w-1 rounded-full bg-border sm:block"
+              />
               نسخهٔ ۱
             </p>
           </div>

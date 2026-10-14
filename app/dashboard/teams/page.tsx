@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { TriangleAlert, Users } from 'lucide-react';
+import PageHeader from '../../../components/PageHeader';
 import TeamCard, { faNum } from '../../../components/TeamCard';
 import {
   TEAMS,
@@ -136,13 +138,19 @@ export default function TeamsPage() {
   return (
     <main className="min-h-screen bg-background">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 md:py-8">
-        <header className="mb-6 md:mb-8">
-          <h1 className="text-xl font-bold text-foreground sm:text-2xl">تیم‌های ایجنتیک</h1>
-          <p className="mt-2 text-sm leading-7 text-muted-foreground">
-            وضعیت آخرین اجرای {faNum(15)} تیم در {faNum(6)} موج
-            {usingMock && ' (داده نمایشی؛ API در دسترسی نیست)'}
-          </p>
-        </header>
+        <PageHeader
+          icon={Users}
+          title="تیم‌های ایجنتیک"
+          subtitle={`وضعیت آخرین اجرای ${faNum(15)} تیم در ${faNum(6)} موج`}
+          actions={
+            usingMock ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning">
+                <TriangleAlert size={14} strokeWidth={2} aria-hidden="true" />
+                داده نمایشی؛ API در دسترسی نیست
+              </span>
+            ) : undefined
+          }
+        />
 
         {runs === null ? (
           <div className="grid gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">

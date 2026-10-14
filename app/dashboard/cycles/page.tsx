@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Inbox, Repeat2 } from 'lucide-react';
 import type { Cycle } from '@/lib/types';
+import EmptyState from '@/components/EmptyState';
+import PageHeader from '@/components/PageHeader';
+import LoadMore, { useVisibleCount } from '@/components/LoadMore';
 import StatusBadge from '@/components/dataviz/StatusBadge';
 import TrendChart, { type TrendPoint } from '@/components/dataviz/TrendChart';
 
@@ -88,6 +92,10 @@ export default function CyclesPage() {
     )
     .map((c, i) => ({ label: `چرخهٔ ${faNum(i + 1)}`, value: readLlmCalls(c) }));
 
+  const PAGE_SIZE = 8;
+  const { visible, hasMore, showMore } = useVisibleCount(cycles.length, PAGE_SIZE);
+  const shownCycles = cycles.slice(0, visible);
+
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/cycles', { cache: 'no-store' });
@@ -133,21 +141,20 @@ export default function CyclesPage() {
   return (
     <main dir="rtl" className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-6xl px-4 py-8">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">مانیتور چرخه‌ها</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              چرخه‌های اجرایی تیم‌های هوش مصنوعی تایلندگرد
-            </p>
-          </div>
-          <button
-            onClick={createCycle}
-            disabled={creating}
-            className="rounded-lg bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground shadow-control transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {creating ? 'در حال ساخت…' : 'چرخه جدید'}
-          </button>
-        </header>
+        <PageHeader
+          icon={Repeat2}
+          title="مانیتور چرخه‌ها"
+          subtitle="چرخه‌های اجرایی تیم‌های هوش مصنوعی تایلندگرد"
+          actions={
+            <button
+              onClick={createCycle}
+              disabled={creating}
+              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground shadow-control transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {creating ? 'در حال ساخت…' : 'چرخه جدید'}
+            </button>
+          }
+        />
 
         {usingMock && (
           <p className="mb-4 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2.5 text-sm text-warning">
@@ -169,18 +176,21 @@ export default function CyclesPage() {
             در حال بارگذاری چرخه‌ها…
           </div>
         ) : cycles.length === 0 ? (
-          <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-surface">
-            <p className="text-sm text-muted-foreground">
-              هنوز چرخه‌ای ثبت نشده است.
-            </p>
-            <button
-              onClick={createCycle}
-              disabled={creating}
-              className="mt-4 rounded-lg bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground disabled:opacity-50"
-            >
-              {creating ? 'در حال ساخت…' : 'ساخت اولین چرخه'}
-            </button>
-          </div>
+          <EmptyState
+            icon={Inbox}
+            title="هنوز چرخه‌ای ثبت نشده است"
+            description="اولین چرخه را بسازید تا پانزده تیم هوش مصنوعی در شش موج وارد صف اجرا شوند."
+            tint="bg-brand/10 text-brand"
+            action={
+              <button
+                onClick={createCycle}
+                disabled={creating}
+                className="inline-flex min-h-[48px] items-center justify-center rounded-xl bg-brand px-6 py-2.5 text-sm font-bold text-brand-foreground shadow-control transition-colors hover:opacity-90 disabled:opacity-50"
+              >
+                {creating ? 'در حال ساخت…' : 'ساخت اولین چرخه'}
+              </button>
+            }
+          />
         ) : (
           <>
             {trendPoints.length >= 2 && (
@@ -193,7 +203,7 @@ export default function CyclesPage() {
             )}
             {/* کارت‌های عمودی در موبایل */}
             <div className="space-y-3 md:hidden">
-              {cycles.map((c) => (
+              {shownCycles.map((c) => (
                 <article
                   key={c.id}
                   className="rounded-2xl border border-border bg-card p-4 shadow-surface"
@@ -255,7 +265,7 @@ export default function CyclesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {cycles.map((c) => (
+                  {shownCycles.map((c) => (
                     <tr
                       key={c.id}
                       className="border-b border-border last:border-0 transition-colors hover:bg-muted/40"
@@ -284,6 +294,9 @@ export default function CyclesPage() {
               </table>
               </div>
             </div>
+            {hasMore && (
+              <LoadMore visible={visible} total={cycles.length} onShowMore={showMore} />
+            )}
           </>
         )}
       </div>

@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { FileText, FileX2 } from 'lucide-react';
 import type { Cycle, TeamName } from '@/lib/types';
+import EmptyState from '@/components/EmptyState';
+import PageHeader from '@/components/PageHeader';
 
 /* ------------------------------------------------------------------ */
 /* کمک‌کننده‌های فارسی‌سازی                                          */
@@ -238,23 +241,23 @@ export default function ReportsPage() {
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
       {/* سربرگ صفحه */}
-      <header className="mb-6 md:mb-8">
-        <h1 className="text-xl font-bold sm:text-2xl md:text-3xl">گزارش چرخه‌ها</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          گزارش پنج‌محوری چرخه‌های موفق تیم‌های هوش مصنوعی تایلندگرد. برای خواندن گزارش، یک چرخه را
-          از فهرست انتخاب کنید.
-        </p>
-        {isMock && !loading && (
-          <p className="mt-3 inline-block rounded-md bg-secondary px-3 py-1 text-xs text-secondary-foreground">
-            دادهٔ نمایشی: مسیر GET /api/cycles هنوز ساخته نشده، پس فهرست نمونه نمایش داده می‌شود.
-          </p>
-        )}
-      </header>
+      <PageHeader
+        icon={FileText}
+        title="گزارش چرخه‌ها"
+        subtitle="گزارش پنج‌محوری چرخه‌های موفق تیم‌های هوش مصنوعی تایلندگرد. برای خواندن گزارش، یک چرخه را از فهرست انتخاب کنید."
+        actions={
+          isMock && !loading ? (
+            <span className="inline-block rounded-md bg-secondary px-3 py-1 text-xs text-secondary-foreground">
+              دادهٔ نمایشی: مسیر GET /api/cycles هنوز ساخته نشده، پس فهرست نمونه نمایش داده می‌شود.
+            </span>
+          ) : undefined
+        }
+      />
 
       {loading ? (
         <LoadingState />
       ) : reports.length === 0 ? (
-        <EmptyState />
+        <ReportsEmptyState />
       ) : (
         <div className="grid gap-4 md:gap-6 lg:grid-cols-[300px_1fr]">
           {/* فهرست چرخه‌ها */}
@@ -403,13 +406,12 @@ function LoadingState() {
   );
 }
 
-function EmptyState() {
+function ReportsEmptyState() {
   return (
-    <div className="rounded-xl border border-border bg-card p-10 text-center">
-      <p className="text-lg font-bold">هنوز چرخهٔ موفقی ثبت نشده است</p>
-      <p className="mt-2 text-sm text-muted-foreground">
-        وقتی اولین چرخه با موفقیت تمام شود، گزارش پنج‌محوری آن همین‌جا نمایش داده می‌شود.
-      </p>
-    </div>
+    <EmptyState
+      icon={FileX2}
+      title="هنوز چرخهٔ موفقی ثبت نشده است"
+      description="وقتی اولین چرخه با موفقیت تمام شود، گزارش پنج‌محوری آن همین‌جا نمایش داده می‌شود."
+    />
   );
 }
