@@ -16,13 +16,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-type NavItem = {
+export type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
 };
 
-const ITEMS: NavItem[] = [
+/** هر ۷ آیتم ناوبری داشبورد؛ منبع مشترک سایدبار دسکتاپ و دراور موبایل. */
+export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "خانه", icon: LayoutDashboard },
   { href: "/dashboard/cycles", label: "چرخه‌ها", icon: Repeat2 },
   { href: "/dashboard/teams", label: "تیم‌ها", icon: Users },
@@ -32,18 +33,19 @@ const ITEMS: NavItem[] = [
   { href: "/dashboard/settings", label: "تنظیمات", icon: Settings },
 ];
 
-function isActive(pathname: string, href: string): boolean {
+/** آیتم فعال بر اساس مسیر جاری؛ صفحهٔ خانه فقط روی مسیر دقیق. */
+export function isNavActive(pathname: string, href: string): boolean {
   if (href === "/dashboard") return pathname === "/dashboard";
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function NavList({ onNavigate }: { onNavigate?: () => void }) {
+export function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
 
   return (
     <ul className="flex flex-col gap-1">
-      {ITEMS.map(({ href, label, icon: Icon }) => {
-        const active = isActive(pathname, href);
+      {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+        const active = isNavActive(pathname, href);
         return (
           <li key={href}>
             <Link
@@ -51,7 +53,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
               aria-current={active ? "page" : undefined}
               onClick={onNavigate}
               className={[
-                "flex items-center gap-3 rounded-lg px-4 py-2.5 text-[15px] leading-6 transition-colors duration-200",
+                "flex items-center gap-3 rounded-lg px-4 py-2.5 text-[15px] leading-6 transition-colors duration-200 motion-reduce:transition-none",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 active
                   ? "bg-brand/10 font-semibold text-brand"
@@ -64,12 +66,13 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
                 aria-hidden="true"
               />
               <span>{label}</span>
-              {active && (
-                <span
-                  aria-hidden="true"
-                  className="ms-auto h-2 w-2 rounded-full bg-brand"
-                />
-              )}
+              <span
+                aria-hidden="true"
+                className={[
+                  "ms-auto h-2 w-2 rounded-full bg-brand transition-all duration-200 motion-reduce:transition-none",
+                  active ? "scale-100 opacity-100" : "scale-0 opacity-0",
+                ].join(" ")}
+              />
             </Link>
           </li>
         );
@@ -95,7 +98,7 @@ export function LogoutButton({ onNavigate }: { onNavigate?: () => void }) {
     <button
       type="button"
       onClick={handleLogout}
-      className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-[15px] leading-6 text-destructive transition-colors duration-200 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-[15px] leading-6 text-destructive transition-colors duration-200 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
     >
       <LogOut className="h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
       <span>خروج</span>
@@ -105,8 +108,8 @@ export function LogoutButton({ onNavigate }: { onNavigate?: () => void }) {
 
 export function BrandMark() {
   return (
-    <div className="flex items-center gap-3 px-4">
-      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-control">
+    <div className="flex items-center gap-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-control">
         <Plane className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
       </span>
       <span className="flex flex-col leading-6">
@@ -117,43 +120,17 @@ export function BrandMark() {
   );
 }
 
-export function MobileMenu() {
-  const ref = React.useRef<HTMLDetailsElement>(null);
-
-  function close() {
-    ref.current?.removeAttribute("open");
-  }
-
-  return (
-    <details ref={ref} className="relative lg:hidden">
-      <summary
-        className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        aria-label="باز کردن منوی ناوبری"
-      >
-        منو
-      </summary>
-      <div className="absolute inset-x-0 top-full z-20 mt-2 min-w-56 rounded-xl border border-border bg-card p-3 shadow-surface">
-        <nav aria-label="ناوبری داشبورد">
-          <NavList onNavigate={close} />
-          <div className="mt-2 border-t border-border pt-2">
-            <LogoutButton onNavigate={close} />
-          </div>
-        </nav>
-      </div>
-    </details>
-  );
-}
-
+/** سایدبار دسکتاپ (lg به بالا)؛ موبایل از MobileNav استفاده می‌کند. */
 export default function Nav() {
   return (
     <nav aria-label="ناوبری داشبورد" className="flex h-full flex-col">
-      <div className="pt-6">
+      <div className="px-4 pt-6">
         <BrandMark />
       </div>
-      <div className="mt-8 flex-1 overflow-y-auto px-4">
+      <div className="mt-6 flex-1 overflow-y-auto px-3">
         <NavList />
       </div>
-      <div className="border-t border-border px-4 py-4">
+      <div className="border-t border-border px-3 py-3">
         <LogoutButton />
       </div>
     </nav>

@@ -1,4 +1,5 @@
-import Nav, { MobileMenu } from "@/components/Nav";
+import Nav from "@/components/Nav";
+import MobileNav from "@/components/MobileNav";
 
 /**
  * لی‌اوت داشبورد: سایدبار راست (نخستین فرزند در فلکس، یعنی سمت شروع در راست‌چین)
@@ -26,8 +27,6 @@ export default function DashboardLayout({
                 داشبورد ایجنتیک تایلندگرد
               </span>
             </h1>
-            {/* ناوبری جمع‌وجور برای موبایل و تبلت */}
-            <MobileMenu />
           </div>
         </header>
 
@@ -51,6 +50,9 @@ export default function DashboardLayout({
           </div>
         </footer>
       </div>
+
+      {/* ناوبری موبایل: ناوبری پایینی ثابت + دراور کناری (تیم ۲) */}
+      <MobileNav />
     </div>
   );
 }
