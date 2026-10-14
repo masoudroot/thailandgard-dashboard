@@ -213,8 +213,8 @@ export default function SettingsPage() {
           </p>
         </section>
 
-        {/* دکمه ذخیره: چسبان پایین در موبایل، تمام‌عرض */}
-        <div className="sticky bottom-4 z-10 -mx-4 bg-background/85 px-4 pb-1 pt-3 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+        {/* دکمه ذخیره: چسبان پایین در موبایل، تمام‌عرض؛ با فاصله از ناوبری پایینی */}
+        <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-4 bg-background/85 px-4 pb-1 pt-3 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <button
               type="submit"
