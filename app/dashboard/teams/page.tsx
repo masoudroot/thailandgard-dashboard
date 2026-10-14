@@ -135,9 +135,9 @@ export default function TeamsPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        <header className="mb-8">
-          <h1 className="text-2xl font-bold text-foreground">تیم‌های ایجنتیک</h1>
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 md:py-8">
+        <header className="mb-6 md:mb-8">
+          <h1 className="text-xl font-bold text-foreground sm:text-2xl">تیم‌های ایجنتیک</h1>
           <p className="mt-2 text-sm leading-7 text-muted-foreground">
             وضعیت آخرین اجرای {faNum(15)} تیم در {faNum(6)} موج
             {usingMock && ' (داده نمایشی؛ API در دسترسی نیست)'}
@@ -145,14 +145,14 @@ export default function TeamsPage() {
         </header>
 
         {runs === null ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-48 animate-pulse rounded-xl bg-muted" />
             ))}
           </div>
         ) : (
           <>
-            <section className="mb-8 flex flex-wrap items-center gap-2">
+            <section className="mb-6 flex flex-wrap items-center gap-2 md:mb-8 md:gap-3">
               {counts.map(({ status, count }) => (
                 <span
                   key={status}
@@ -174,7 +174,7 @@ export default function TeamsPage() {
                   </span>
                   <span className="h-px flex-1 bg-border" />
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
                   {teams.map((team) => {
                     const meta = TEAM_META[team];
                     const run = byTeam.get(team);

@@ -184,10 +184,10 @@ export default function CycleDetailPage() {
 
   return (
     <main dir="rtl" className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-6xl px-4 py-8">
+      <div className="mx-auto max-w-6xl px-4 py-6 md:py-8">
         <Link
           href="/dashboard/cycles"
-          className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-brand"
+          className="mb-6 inline-flex min-h-[44px] items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-brand"
         >
           <span aria-hidden>←</span>
           بازگشت به لیست چرخه‌ها
@@ -209,7 +209,7 @@ export default function CycleDetailPage() {
               </p>
             )}
 
-            <section className="mb-6 rounded-2xl border border-border bg-card p-6 shadow-surface">
+            <section className="mb-6 rounded-2xl border border-border bg-card p-4 shadow-surface sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground">شناسه اجرا</p>
@@ -224,7 +224,7 @@ export default function CycleDetailPage() {
                 />
               </div>
 
-              <dl className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 md:gap-4">
                 <div className="rounded-xl bg-muted/50 p-4">
                   <dt className="text-xs text-muted-foreground">شروع</dt>
                   <dd className="mt-1 text-sm font-medium">{faDate(cycle.started_at)}</dd>
@@ -253,7 +253,7 @@ export default function CycleDetailPage() {
             </section>
 
             {failedRuns.length > 0 && (
-              <section className="mb-6 rounded-2xl border border-destructive/30 bg-destructive/5 p-6">
+              <section className="mb-6 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 sm:p-6">
                 <h2 className="mb-3 text-sm font-bold text-destructive">
                   خطاها ({faNum(failedRuns.length)})
                 </h2>
@@ -270,13 +270,13 @@ export default function CycleDetailPage() {
               </section>
             )}
 
-            <div className="space-y-6">
+            <div className="space-y-4 md:space-y-6">
               {waves.map((wave) => (
                 <section
                   key={wave}
                   className="overflow-hidden rounded-2xl border border-border bg-card shadow-surface"
                 >
-                  <header className="border-b border-border bg-muted/40 px-5 py-3">
+                  <header className="border-b border-border bg-muted/40 px-4 py-3 sm:px-5">
                     <h2 className="text-sm font-bold">
                       موج {faNum(wave)}
                     </h2>
@@ -285,9 +285,9 @@ export default function CycleDetailPage() {
                     {teamRuns
                       .filter((r) => r.wave === wave)
                       .map((r) => (
-                        <li key={r.id} className="px-5 py-4">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-3">
+                        <li key={r.id} className="px-4 py-4 sm:px-5">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
                               <span className="text-sm font-bold text-card-foreground">
                                 {TEAM_LABEL[r.team] ?? r.team}
                               </span>
@@ -296,13 +296,13 @@ export default function CycleDetailPage() {
                                 label={TEAM_STATUS_LABEL[r.status]}
                               />
                             </div>
-                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                               <span>فراخوانی LLM: {faNum(r.llm_calls ?? 0)}</span>
                               <span>مدت: {faDuration(r.started_at, r.finished_at)}</span>
                             </div>
                           </div>
                           {r.output_summary && (
-                            <p className="mt-2 text-sm text-card-foreground/80">
+                            <p className="mt-2 line-clamp-4 text-sm leading-7 text-card-foreground/80 sm:line-clamp-none">
                               {r.output_summary}
                             </p>
                           )}

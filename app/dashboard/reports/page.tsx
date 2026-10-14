@@ -236,10 +236,10 @@ export default function ReportsPage() {
   const reportEmpty = selected && AXIS_TITLES.every((a) => !selected.report[a.key].trim());
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
+    <main className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
       {/* سربرگ صفحه */}
-      <header className="mb-8">
-        <h1 className="text-2xl font-bold md:text-3xl">گزارش چرخه‌ها</h1>
+      <header className="mb-6 md:mb-8">
+        <h1 className="text-xl font-bold sm:text-2xl md:text-3xl">گزارش چرخه‌ها</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           گزارش پنج‌محوری چرخه‌های موفق تیم‌های هوش مصنوعی تایلندگرد. برای خواندن گزارش، یک چرخه را
           از فهرست انتخاب کنید.
@@ -256,19 +256,19 @@ export default function ReportsPage() {
       ) : reports.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
+        <div className="grid gap-4 md:gap-6 lg:grid-cols-[300px_1fr]">
           {/* فهرست چرخه‌ها */}
           <aside aria-label="فهرست چرخه‌ها">
-            <ul className="flex flex-col gap-3">
+            <ul className="flex gap-3 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible lg:pb-0">
               {reports.map((r) => {
                 const active = r.id === selectedId;
                 return (
-                  <li key={r.id}>
+                  <li key={r.id} className="w-60 shrink-0 sm:w-64 lg:w-auto">
                     <button
                       type="button"
                       onClick={() => setSelectedId(r.id)}
                       aria-current={active ? 'true' : undefined}
-                      className={`w-full rounded-lg border p-4 text-start transition-colors ${
+                      className={`min-h-[88px] w-full rounded-lg border p-4 text-start transition-colors ${
                         active
                           ? 'border-brand bg-card shadow-surface'
                           : 'border-border bg-card hover:border-muted-foreground'
@@ -307,7 +307,7 @@ export default function ReportsPage() {
           {selected && (
             <article
               key={selected.id}
-              className="rounded-xl border border-border bg-card p-6 shadow-surface md:p-8"
+              className="rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6 md:p-8"
               aria-label={`گزارش چرخهٔ ${selected.run_id}`}
             >
               {/* سربرگ گزارش: تیم، تاریخ شمسی، ساعت تهران */}
@@ -347,11 +347,11 @@ export default function ReportsPage() {
               ) : (
                 <>
                   {/* پنج محور */}
-                  <ol className="mt-6 space-y-5">
+                  <ol className="mt-6 space-y-4 md:space-y-5">
                     {AXIS_TITLES.map((axis, i) => (
                       <li
                         key={axis.key}
-                        className="rounded-lg border border-border bg-background p-5"
+                        className="rounded-lg border border-border bg-background p-4 sm:p-5"
                       >
                         <div className="flex items-center gap-3">
                           <span
@@ -360,7 +360,7 @@ export default function ReportsPage() {
                           >
                             {faDigits(i + 1)}
                           </span>
-                          <h3 className="text-lg font-bold">{axis.title}</h3>
+                          <h3 className="text-base font-bold sm:text-lg">{axis.title}</h3>
                         </div>
                         <p className="mt-3 leading-8 text-foreground">{selected.report[axis.key]}</p>
                       </li>
@@ -370,7 +370,7 @@ export default function ReportsPage() {
                   {/* پاراگراف جمع‌بندی */}
                   <section
                     aria-label="در کل چی شد"
-                    className="mt-6 rounded-lg border border-brand/40 bg-brand/5 p-5"
+                    className="mt-6 rounded-lg border border-brand/40 bg-brand/5 p-4 sm:p-5"
                   >
                     <h3 className="text-lg font-bold text-brand">در کل چی شد؟</h3>
                     <p className="mt-3 leading-8 text-foreground">{selected.report.summary}</p>

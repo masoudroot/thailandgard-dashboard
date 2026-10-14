@@ -30,7 +30,7 @@ const CONNECTIONS: { name: string; desc: string; status: ConnectionStatus }[] = 
 ];
 
 const inputClass =
-  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground shadow-control placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30";
+  "w-full min-h-[44px] rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-control placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30";
 
 export default function SettingsPage() {
   const [llmModel, setLlmModel] = useState(LLM_MODELS[0]);
@@ -67,9 +67,9 @@ export default function SettingsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <header className="mb-8">
-        <h1 className="text-2xl font-bold text-foreground">تنظیمات</h1>
+    <main className="mx-auto max-w-3xl px-4 py-6 md:py-8">
+      <header className="mb-6 md:mb-8">
+        <h1 className="text-xl font-bold text-foreground sm:text-2xl">تنظیمات</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           پیکربندی مدل‌ها، زمان‌بندی چرخه‌ها و مشاهده وضعیت اتصال‌ها
         </p>
@@ -77,7 +77,7 @@ export default function SettingsPage() {
 
       <form onSubmit={handleSave} className="space-y-6">
         {/* مدل‌ها */}
-        <section className="rounded-xl border border-border bg-card p-6 shadow-surface">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6">
           <h2 className="mb-4 text-base font-bold text-card-foreground">مدل‌ها</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -120,7 +120,7 @@ export default function SettingsPage() {
         </section>
 
         {/* چرخه و محدودیت‌ها */}
-        <section className="rounded-xl border border-border bg-card p-6 shadow-surface">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6">
           <h2 className="mb-4 text-base font-bold text-card-foreground">چرخه و محدودیت‌ها</h2>
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
@@ -180,7 +180,7 @@ export default function SettingsPage() {
         </section>
 
         {/* وضعیت اتصال‌ها */}
-        <section className="rounded-xl border border-border bg-card p-6 shadow-surface">
+        <section className="rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6">
           <h2 className="mb-4 text-base font-bold text-card-foreground">وضعیت اتصال‌ها</h2>
           <ul className="divide-y divide-border">
             {CONNECTIONS.map((c) => (
@@ -213,20 +213,22 @@ export default function SettingsPage() {
           </p>
         </section>
 
-        {/* دکمه ذخیره */}
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-lg bg-brand px-6 py-2.5 text-sm font-bold text-brand-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {saving ? "در حال ذخیره…" : "ذخیره تنظیمات"}
-          </button>
-          {saved && (
-            <p role="status" className="text-sm font-medium text-success">
-              تنظیمات ذخیره شد.
-            </p>
-          )}
+        {/* دکمه ذخیره: چسبان پایین در موبایل، تمام‌عرض */}
+        <div className="sticky bottom-4 z-10 -mx-4 bg-background/85 px-4 pb-1 pt-3 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button
+              type="submit"
+              disabled={saving}
+              className="min-h-[48px] w-full rounded-lg bg-brand px-6 py-2.5 text-sm font-bold text-brand-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50 sm:w-auto"
+            >
+              {saving ? "در حال ذخیره…" : "ذخیره تنظیمات"}
+            </button>
+            {saved && (
+              <p role="status" className="text-sm font-medium text-success">
+                تنظیمات ذخیره شد.
+              </p>
+            )}
+          </div>
         </div>
       </form>
     </main>

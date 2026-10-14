@@ -328,7 +328,7 @@ export default function DashboardHomePage() {
             </p>
 
             {/* آمار کلی */}
-            <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 md:mt-8 md:gap-4 lg:grid-cols-4 lg:gap-6">
               {loading
                 ? Array.from({ length: 4 }).map((_, i) => (
                     <div
@@ -348,7 +348,7 @@ export default function DashboardHomePage() {
                           <s.icon size={20} strokeWidth={1.75} />
                         </span>
                         <div className="min-w-0">
-                          <div className="text-2xl font-extrabold leading-tight">
+                          <div className="text-3xl font-extrabold leading-tight md:text-4xl">
                             {s.value}
                           </div>
                           <div className="truncate text-sm text-muted-foreground">
@@ -366,11 +366,11 @@ export default function DashboardHomePage() {
         </section>
 
         {/* ── آخرین چرخه + هشدارها ── */}
-        <div className="mt-6 grid gap-6 lg:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:gap-4 md:mt-6 md:gap-6 lg:grid-cols-3">
           {/* کارت آخرین چرخه */}
           <section
             aria-label="آخرین چرخه"
-            className="rounded-3xl border border-border bg-card p-6 shadow-[var(--shadow-surface)] lg:col-span-2"
+            className="rounded-3xl border border-border bg-card p-4 shadow-[var(--shadow-surface)] sm:p-6 lg:col-span-2"
           >
             {loading || !cycle ? (
               <div className="h-64 animate-pulse rounded-2xl bg-muted" />
@@ -457,7 +457,7 @@ export default function DashboardHomePage() {
           {/* کارت هشدارها */}
           <section
             aria-label="هشدارهای اخیر"
-            className="rounded-3xl border border-border bg-card p-6 shadow-[var(--shadow-surface)]"
+            className="rounded-3xl border border-border bg-card p-4 shadow-[var(--shadow-surface)] sm:p-6"
           >
             <h2 className="text-xl font-bold">هشدارهای اخیر</h2>
             <div className="mt-4 space-y-4">
@@ -515,7 +515,7 @@ export default function DashboardHomePage() {
         {/* ── شش موج ── */}
         <section
           aria-label="موج‌های چرخه"
-          className="mt-6 rounded-3xl border border-border bg-card p-6 shadow-[var(--shadow-surface)] md:p-8"
+          className="mt-4 rounded-3xl border border-border bg-card p-4 shadow-[var(--shadow-surface)] sm:p-6 md:mt-6 md:p-8"
         >
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/10 text-brand">
@@ -539,7 +539,7 @@ export default function DashboardHomePage() {
                   aria-hidden="true"
                   className="absolute inset-x-8 top-5 hidden border-t-2 border-dashed border-border md:block"
                 />
-                <ol className="relative grid grid-cols-3 gap-6 md:grid-cols-6">
+                <ol className="relative grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-6 md:gap-6">
                   {cycle.waves.map((w) => {
                     const state = waveState(w, cycle.currentWave);
                     const done = state === "done";
@@ -578,7 +578,7 @@ export default function DashboardHomePage() {
               </div>
 
               {/* جزئیات هر موج */}
-              <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 md:mt-8 md:gap-4 lg:grid-cols-3">
                 {cycle.waves.map((w) => {
                   const state = waveState(w, cycle.currentWave);
                   return (
@@ -629,11 +629,11 @@ export default function DashboardHomePage() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="start-cycle-title"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 p-0 sm:items-center sm:p-4"
           onClick={() => !starting && setDialogOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-[var(--shadow-surface)]"
+            className="max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-border bg-card p-5 shadow-[var(--shadow-surface)] sm:max-w-md sm:rounded-3xl sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="start-cycle-title" className="text-lg font-bold">
@@ -643,12 +643,12 @@ export default function DashboardHomePage() {
               چرخهٔ تازه بعد از پایان موج جاری آغاز می‌شود و پانزده تیم از اول
               وارد صف می‌شوند. چرخهٔ در حال اجرا متوقف نمی‌شود.
             </p>
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
                 disabled={starting}
                 onClick={handleConfirmStart}
-                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-2xl bg-brand px-5 font-bold text-brand-foreground shadow-[var(--shadow-control)] transition hover:brightness-110 disabled:opacity-60"
+                className="inline-flex min-h-[48px] w-full flex-1 items-center justify-center gap-2 rounded-2xl bg-brand px-5 font-bold text-brand-foreground shadow-[var(--shadow-control)] transition hover:brightness-110 disabled:opacity-60"
               >
                 {starting ? (
                   <>
@@ -666,7 +666,7 @@ export default function DashboardHomePage() {
                 type="button"
                 disabled={starting}
                 onClick={() => setDialogOpen(false)}
-                className="inline-flex min-h-[44px] items-center justify-center rounded-2xl border border-border bg-card px-5 font-medium text-foreground transition hover:bg-muted disabled:opacity-60"
+                className="inline-flex min-h-[48px] w-full items-center justify-center rounded-2xl border border-border bg-card px-5 font-medium text-foreground transition hover:bg-muted disabled:opacity-60 sm:w-auto"
               >
                 انصراف
               </button>

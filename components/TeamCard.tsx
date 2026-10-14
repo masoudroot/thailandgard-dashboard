@@ -70,14 +70,16 @@ export default function TeamCard({
   const style = STATUS_STYLE[status] ?? STATUS_STYLE.pending;
 
   return (
-    <article className="flex h-full flex-col rounded-xl border border-border bg-card p-5 shadow-surface transition-transform duration-200 hover:-translate-y-0.5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+    <article className="flex h-full min-w-0 flex-col rounded-xl border border-border bg-card p-4 shadow-surface transition-transform duration-200 active:scale-[0.99] sm:p-5 hover:sm:-translate-y-0.5">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
           <h3 className="text-base font-bold text-card-foreground">{faName}</h3>
-          <p className="mt-1 text-xs leading-6 text-muted-foreground">{mission}</p>
+          <p className="mt-1 line-clamp-2 text-xs leading-6 text-muted-foreground">
+            {mission}
+          </p>
         </div>
         <span
-          className={`flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${style.chip}`}
+          className={`flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${style.chip}`}
         >
           <span className="relative flex h-2 w-2">
             {style.pulse && (
@@ -106,7 +108,7 @@ export default function TeamCard({
         )}
       </div>
 
-      <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
         <span className="text-xs text-muted-foreground">فراخوانی LLM</span>
         <span className="text-sm font-bold text-card-foreground">
           {faNum(llmCalls.toLocaleString('en-US'))}

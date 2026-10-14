@@ -291,6 +291,28 @@ async function createTask(input: {
 /*  صفحه                                                              */
 /* ------------------------------------------------------------------ */
 
+/** توضیح کار با قابلیت باز و بسته شدن (line-clamp در موبایل) */
+function TaskDescription({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-3">
+      <p
+        className={`text-sm leading-7 text-muted-foreground ${open ? "" : "line-clamp-3"}`}
+      >
+        {text}
+      </p>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="mt-1 inline-flex min-h-[32px] items-center text-xs font-medium text-brand hover:underline"
+      >
+        {open ? "بستن" : "بیشتر"}
+      </button>
+    </div>
+  );
+}
+
 export default function QueuePage() {
   const [tab, setTab] = useState<TaskStatus>("pending");
   const [tasks, setTasks] = useState<BuildTask[]>([]);
@@ -387,25 +409,25 @@ export default function QueuePage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
       {/* سربرگ */}
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">مدیر صف ساخت</h1>
+          <h1 className="text-xl font-bold sm:text-2xl">مدیر صف ساخت</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             کارهای پیشنهادی تیم‌ها را بررسی، تأیید یا رد کنید؛ یا کار تازه‌ای دستی ثبت کنید.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-full gap-2 sm:w-auto">
           <button
             type="button"
             onClick={reload}
-            className="rounded-lg border border-border bg-card px-4 py-2 text-sm shadow-control transition hover:bg-accent"
+            className="min-h-[44px] flex-1 rounded-lg border border-border bg-card px-4 py-2 text-sm shadow-control transition hover:bg-accent sm:flex-none"
           >
             تازه‌سازی
           </button>
           <button
             type="button"
             onClick={() => setFormOpen((v) => !v)}
-            className="rounded-lg bg-brand px-4 py-2 text-sm text-brand-foreground shadow-control transition hover:opacity-90"
+            className="min-h-[44px] flex-1 rounded-lg bg-brand px-4 py-2 text-sm text-brand-foreground shadow-control transition hover:opacity-90 sm:flex-none"
           >
             {formOpen ? "بستن فرم" : "ثبت کار تازه"}
           </button>
@@ -423,7 +445,7 @@ export default function QueuePage() {
                 value={form.title}
                 onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                 placeholder="مثلاً: بازطراحی بنر هیروی صفحهٔ تورها"
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                className="w-full min-h-[44px] rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
               />
             </label>
             <div className="grid grid-cols-2 gap-4">
@@ -432,7 +454,7 @@ export default function QueuePage() {
                 <select
                   value={form.team}
                   onChange={(e) => setForm((f) => ({ ...f, team: e.target.value }))}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                  className="w-full min-h-[44px] rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
                 >
                   {TEAMS.map((t) => (
                     <option key={t} value={t}>
@@ -446,7 +468,7 @@ export default function QueuePage() {
                 <select
                   value={form.priority}
                   onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value as TaskPriority }))}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                  className="w-full min-h-[44px] rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
                 >
                   {PRIORITIES.map((p) => (
                     <option key={p.key} value={p.key}>
@@ -463,14 +485,14 @@ export default function QueuePage() {
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                 rows={3}
                 placeholder="شرح کوتاه کار و دلیلش"
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                className="w-full min-h-[44px] rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
               />
             </label>
             <div className="md:col-span-2">
               <button
                 type="submit"
                 disabled={submitting}
-                className="rounded-lg bg-brand px-6 py-2 text-sm text-brand-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
+                className="min-h-[48px] w-full rounded-lg bg-brand px-6 py-2 text-sm font-bold text-brand-foreground shadow-control transition hover:opacity-90 disabled:opacity-50 sm:w-auto"
               >
                 {submitting ? "در حال ثبت..." : "ثبت در صف"}
               </button>
@@ -480,7 +502,7 @@ export default function QueuePage() {
       )}
 
       {/* فیلتر وضعیت */}
-      <nav className="mb-6 flex flex-wrap gap-2" aria-label="فیلتر وضعیت">
+      <nav className="mb-6 flex gap-2 overflow-x-auto pb-2 sm:flex-wrap sm:overflow-visible sm:pb-0" aria-label="فیلتر وضعیت">
         {STATUSES.map((s) => {
           const active = tab === s.key;
           return (
@@ -488,7 +510,7 @@ export default function QueuePage() {
               key={s.key}
               type="button"
               onClick={() => setTab(s.key)}
-              className={`rounded-full border px-4 py-1.5 text-sm transition ${
+              className={`min-h-[40px] shrink-0 rounded-full border px-4 py-1.5 text-sm transition ${
                 active
                   ? "border-brand bg-brand text-brand-foreground shadow-control"
                   : "border-border bg-card text-foreground hover:bg-accent"
@@ -505,7 +527,7 @@ export default function QueuePage() {
 
       {/* لیست کارها */}
       {loading ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="animate-pulse rounded-xl border border-border bg-card p-5">
               <div className="mb-3 h-4 w-1/3 rounded bg-secondary" />
@@ -538,9 +560,7 @@ export default function QueuePage() {
                 </div>
 
                 <h3 className="mb-1 text-base font-bold">{task.title}</h3>
-                {task.description && (
-                  <p className="mb-3 text-sm leading-7 text-muted-foreground">{task.description}</p>
-                )}
+                {task.description && <TaskDescription text={task.description} />}
 
                 {task.files.length > 0 && (
                   <div className="mb-3 flex flex-wrap gap-1.5">
@@ -564,7 +584,7 @@ export default function QueuePage() {
                         type="button"
                         disabled={acting === task.id}
                         onClick={() => handleAction(task.id, "approve")}
-                        className="rounded-lg bg-success px-4 py-1.5 text-sm text-success-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
+                        className="min-h-[44px] rounded-lg bg-success px-4 py-1.5 text-sm text-success-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
                       >
                         {acting === task.id ? "صبر کنید..." : "تأیید"}
                       </button>
@@ -572,7 +592,7 @@ export default function QueuePage() {
                         type="button"
                         disabled={acting === task.id}
                         onClick={() => handleAction(task.id, "reject")}
-                        className="rounded-lg border border-destructive px-4 py-1.5 text-sm text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
+                        className="min-h-[44px] rounded-lg border border-destructive px-4 py-1.5 text-sm text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
                       >
                         رد
                       </button>
@@ -589,7 +609,7 @@ export default function QueuePage() {
       {toast && (
         <div
           role="status"
-          className={`fixed bottom-6 start-1/2 z-50 -translate-x-1/2 rounded-xl px-5 py-3 text-sm shadow-surface ${
+          className={`fixed bottom-6 start-1/2 z-50 max-w-[calc(100vw-2rem)] translate-x-1/2 rounded-xl px-5 py-3 text-sm shadow-surface ${
             toast.kind === "ok" ? "bg-success text-success-foreground" : "bg-destructive text-destructive-foreground"
           }`}
         >

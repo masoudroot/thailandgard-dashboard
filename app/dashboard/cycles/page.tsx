@@ -205,9 +205,59 @@ export default function CyclesPage() {
             </button>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-surface">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-sm">
+          <>
+            {/* کارت‌های عمودی در موبایل */}
+            <div className="space-y-3 md:hidden">
+              {cycles.map((c) => (
+                <article
+                  key={c.id}
+                  className="rounded-2xl border border-border bg-card p-4 shadow-surface"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span
+                      className="truncate font-mono text-xs font-bold text-card-foreground"
+                      dir="ltr"
+                    >
+                      {c.run_id}
+                    </span>
+                    <StatusBadge status={c.status} />
+                  </div>
+                  <dl className="mt-4 space-y-2.5 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-xs text-muted-foreground">شروع</dt>
+                      <dd className="text-card-foreground">{faDate(c.started_at)}</dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-xs text-muted-foreground">پایان</dt>
+                      <dd className="text-card-foreground">{faDate(c.finished_at)}</dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-xs text-muted-foreground">تعداد تیم‌ها</dt>
+                      <dd className="font-medium text-card-foreground">
+                        {faNum(readCount(c))}
+                      </dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-xs text-muted-foreground">فراخوانی LLM</dt>
+                      <dd className="font-medium text-card-foreground">
+                        {faNum(readLlmCalls(c))}
+                      </dd>
+                    </div>
+                  </dl>
+                  <Link
+                    href={`/dashboard/cycles/${c.id}`}
+                    className="mt-4 flex min-h-[44px] items-center justify-center rounded-xl border border-border px-3 py-2 text-sm font-medium text-card-foreground transition-colors active:bg-muted"
+                  >
+                    مشاهده جزئیات
+                  </Link>
+                </article>
+              ))}
+            </div>
+
+            {/* جدول در دسکتاپ */}
+            <div className="hidden overflow-hidden rounded-2xl border border-border bg-card shadow-surface md:block">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/50 text-muted-foreground">
                     <th className="px-4 py-3 text-start font-medium">شناسه اجرا</th>
@@ -247,8 +297,9 @@ export default function CyclesPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
-          </div>
+          </>
         )}
       </div>
     </main>

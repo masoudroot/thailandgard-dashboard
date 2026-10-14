@@ -128,9 +128,9 @@ export default function MemoryPage() {
 
   return (
     <main dir="rtl" className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <div className="mx-auto max-w-3xl px-4 py-6 md:py-8">
         <header className="mb-6">
-          <h1 className="text-2xl font-bold">نمایشگر حافظه</h1>
+          <h1 className="text-xl font-bold sm:text-2xl">نمایشگر حافظه</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             حافظه بلندمدت تیم‌ها؛ کلیدها و مقدارهای ذخیره‌شده در جدول team_memory
           </p>
@@ -194,7 +194,8 @@ export default function MemoryPage() {
                     <button
                       type="button"
                       onClick={() => setOpenKey(open ? null : row.key)}
-                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-start"
+                      aria-expanded={open}
+                      className="flex min-h-[52px] w-full items-center justify-between gap-3 px-4 py-3 text-start"
                     >
                       <span className="font-mono text-sm font-semibold text-foreground" dir="ltr">
                         {row.key}
