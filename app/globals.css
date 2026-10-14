@@ -27,9 +27,28 @@
   --success-foreground: 255 255 255;
   --warning: 178 116 18;
   --warning-foreground: 255 255 255;
-  --radius: 10px;
-  --shadow-control: 0 1px 2px rgb(62 57 50 / 0.08);
-  --shadow-surface: 0 8px 24px rgb(62 57 50 / 0.1);
+  --info: 13 148 136;
+  --info-foreground: 255 255 255;
+  /* گوشه‌ها: مقیاس یکدست sm تا xl؛ --radius همان md است */
+  --radius: 12px;
+  --shape-sm: 8px;
+  --shape-md: 12px;
+  --shape-lg: 16px;
+  --shape-xl: 20px;
+  /* سایه‌های لایه‌ای: sm کنترل‌ها، md کارت، lg هاور/بالا‌آمدن، xl مودال */
+  --shadow-sm: 0 1px 2px rgb(62 57 50 / 0.06);
+  --shadow-md:
+    0 1px 2px rgb(62 57 50 / 0.05),
+    0 4px 12px rgb(62 57 50 / 0.07);
+  --shadow-lg:
+    0 2px 4px rgb(62 57 50 / 0.06),
+    0 12px 28px rgb(62 57 50 / 0.12);
+  --shadow-xl:
+    0 4px 8px rgb(62 57 50 / 0.06),
+    0 24px 56px rgb(62 57 50 / 0.18);
+  /* نام‌های قدیمی: نگهداری برای سازگاری */
+  --shadow-control: var(--shadow-sm);
+  --shadow-surface: var(--shadow-md);
   color-scheme: light;
 }
 
@@ -57,6 +76,20 @@
   --success-foreground: 24 24 27;
   --warning: 245 178 60;
   --warning-foreground: 24 24 27;
+  --info: 45 212 191;
+  --info-foreground: 24 24 27;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-md:
+    0 1px 2px rgb(0 0 0 / 0.3),
+    0 8px 24px rgb(0 0 0 / 0.35);
+  --shadow-lg:
+    0 2px 6px rgb(0 0 0 / 0.35),
+    0 16px 40px rgb(0 0 0 / 0.45);
+  --shadow-xl:
+    0 8px 16px rgb(0 0 0 / 0.4),
+    0 32px 64px rgb(0 0 0 / 0.5);
+  --shadow-control: var(--shadow-sm);
+  --shadow-surface: var(--shadow-md);
   color-scheme: dark;
 }
 
@@ -191,6 +224,24 @@
       transform 200ms ease,
       opacity 200ms ease;
   }
+}
+
+/* برق ملایم متحرک نوار پیشرفت */
+@keyframes tg-progress-shine {
+  0% {
+    transform: translateX(160%);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-420%);
+    opacity: 0;
+  }
+}
+.tg-progress-shine {
+  animation: tg-progress-shine 2.4s ease-in-out infinite;
 }
 
 /* کی‌فریم‌ها */
