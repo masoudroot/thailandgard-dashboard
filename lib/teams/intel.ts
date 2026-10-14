@@ -11,6 +11,7 @@
 
 import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
+import { fetchMarketData } from '../market';
 import type { MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 /** نام تیم در رجیستری تیم‌ها. */
@@ -205,8 +206,21 @@ function countFeedItems(worker2Text: string): number | null {
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const runId = input.runId;
   try {
-    // ۱. سرپرست: شکستن کار چرخه به سه مأموریت (با زمینه‌ی RAG)
-    const supervisorText = await callLLM(SUPERVISOR_PROMPT(input.ragContext ?? ''), {
+    // گام صفر: داده‌ی بازار از منبع بیرونی (کاملاً graceful؛
+    // شکست آن فقط یادداشت می‌شود و چرخه را متوقف نمی‌کند).
+    const market = await fetchMarketData();
+    const marketContext =
+      market.ok && market.data
+        ? `\n\nداده‌ی تازه‌ی بازار (منبع: ${market.source === 'live' ? 'زنده' : 'کش'}):\n${market.data.slice(0, 3000)}`
+        : '';
+    const marketNote = market.ok
+      ? market.source === 'off'
+        ? 'منبع داده‌ی بازار خاموش است.'
+        : `داده‌ی بازار از ${market.source === 'live' ? 'منبع زنده' : 'کش'} دریافت شد.`
+      : `هشدار داده‌ی بازار: ${market.note ?? 'در دسترس نیست.'} چرخه بدون داده‌ی بازار ادامه یافت.`;
+
+    // ۱. سرپرست: شکستن کار چرخه به سه مأموریت (با زمینه‌ی RAG + داده‌ی بازار)
+    const supervisorText = await callLLM(SUPERVISOR_PROMPT(input.ragContext ?? '') + marketContext, {
       system: SUPERVISOR_SYSTEM,
       temperature: 0.2,
       maxTokens: 1200,
@@ -249,7 +263,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       const reason = verdict.reason || 'منتقد خروجی را تأیید نکرد.';
       return {
         team: TEAM,
-        summary: `تیم intel در چرخهٔ ${runId} متوقف شد: ${reason}`,
+        summary: `تیم intel در چرخهٔ ${runId} متوقف شد: ${reason} ${marketNote}`,
         blockers: [`بلوکر تیم intel: ${reason}`],
         tasks: [],
         approved: false,
@@ -278,7 +292,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
     return {
       team: TEAM,
-      summary: `تیم intel چرخهٔ ${runId} را با تأیید منتقد بست (${verdict.reason}). ${itemsClause} ${tasksClause}`,
+      summary: `تیم intel چرخهٔ ${runId} را با تأیید منتقد بست (${verdict.reason}). ${itemsClause} ${tasksClause} ${marketNote}`,
       blockers: [],
       tasks,
       approved: true,
