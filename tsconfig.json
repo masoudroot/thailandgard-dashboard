@@ -1,16 +1,1 @@
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "skipLibCheck": true,
-    "jsx": "react-jsx",
-    "baseUrl": ".",
-    "paths": {
-      "next/server": ["/tmp/tsc-stub/node_modules/next/server/index.d.ts"],
-      "@supabase/supabase-js": ["/tmp/tsc-stub/node_modules/@supabase/supabase-js/index.d.ts"]
-    }
-  },
-  "include": ["lib/**/*.ts", "app/**/*.ts"]
-}
+{"compilerOptions":{"allowJs":true,"esModuleInterop":true,"incremental":true,"isolatedModules":true,"jsx":"preserve","lib":["dom","dom.iterable","esnext"],"module":"esnext","moduleResolution":"bundler","noEmit":true,"paths":{"@/*":["./*"]},"plugins":[{"name":"next"}],"resolveJsonModule":true,"skipLibCheck":true,"strict":true},"exclude":["node_modules"],"include":["next-env.d.ts","**/*.ts","**/*.tsx",".next/types/**/*.ts"]}

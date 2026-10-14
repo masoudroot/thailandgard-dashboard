@@ -1,0 +1,120 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* توکن‌های طراحی: روشن (پیش‌فرض) و تیره (کلاس dark روی html) */
+:root {
+  --background: 251 250 247;
+  --foreground: 62 57 50;
+  --card: 255 255 255;
+  --card-foreground: 62 57 50;
+  --primary: 62 57 50;
+  --primary-foreground: 251 250 247;
+  --secondary: 240 238 232;
+  --secondary-foreground: 62 57 50;
+  --muted: 243 241 236;
+  --muted-foreground: 118 111 100;
+  --accent: 240 238 232;
+  --accent-foreground: 62 57 50;
+  --border: 228 224 214;
+  --input: 228 224 214;
+  --ring: 193 74 14;
+  --brand: 193 74 14;
+  --brand-foreground: 255 255 255;
+  --destructive: 190 40 40;
+  --destructive-foreground: 255 255 255;
+  --success: 46 125 70;
+  --success-foreground: 255 255 255;
+  --warning: 178 116 18;
+  --warning-foreground: 255 255 255;
+  --radius: 10px;
+  --shadow-control: 0 1px 2px rgb(62 57 50 / 0.08);
+  --shadow-surface: 0 8px 24px rgb(62 57 50 / 0.1);
+}
+
+.dark {
+  --background: 24 24 27;
+  --foreground: 245 243 239;
+  --card: 33 33 38;
+  --card-foreground: 245 243 239;
+  --primary: 245 243 239;
+  --primary-foreground: 24 24 27;
+  --secondary: 44 44 51;
+  --secondary-foreground: 245 243 239;
+  --muted: 38 38 44;
+  --muted-foreground: 168 162 152;
+  --accent: 44 44 51;
+  --accent-foreground: 245 243 239;
+  --border: 56 56 64;
+  --input: 56 56 64;
+  --ring: 240 176 60;
+  --brand: 240 176 60;
+  --brand-foreground: 24 24 27;
+  --destructive: 239 100 100;
+  --destructive-foreground: 24 24 27;
+  --success: 74 200 120;
+  --success-foreground: 24 24 27;
+  --warning: 245 178 60;
+  --warning-foreground: 24 24 27;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Vazirmatn", "IRANSans", "Tahoma", ui-sans-serif, sans-serif;
+    font-size: 1rem;
+    line-height: 1.8;
+    letter-spacing: 0;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    line-height: 1.4;
+    letter-spacing: 0;
+    font-weight: 700;
+  }
+
+  ::selection {
+    background: rgb(var(--brand) / 0.25);
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* ورودی‌ها: اعداد و متن‌های لاتین (تلفن، ایمیل، کد) ذاتا چپ‌چین‌اند؛
+     روی خود کنترل dir="ltr" بگذارید، نه روی فرم. */
+  input,
+  textarea,
+  select {
+    letter-spacing: 0;
+  }
+}
+
+/* جلوگیری از زوم ناخواستهٔ سافاری روی آیفون هنگام فوکوس ورودی */
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select {
+    font-size: max(1rem, 1em);
+  }
+}
+
+/* احترام به کاهش حرکت */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

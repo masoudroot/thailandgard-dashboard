@@ -24,6 +24,9 @@ export type CycleStatus = 'running' | 'success' | 'failed' | 'canceled';
 
 export type TeamRunStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped';
 
+/** Lifecycle states of a durable job in the agent job queue (see lib/queue.ts). */
+export type JobStatus = 'pending' | 'running' | 'done' | 'failed';
+
 export interface Cycle {
   id: string;
   run_id: string;

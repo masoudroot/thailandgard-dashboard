@@ -1,0 +1,325 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import type {
+  Cycle,
+  CycleStatus,
+  TeamName,
+  TeamRun,
+  TeamRunStatus,
+} from '@/lib/types';
+
+/** تبدیل ارقام لاتین به فارسی */
+function faNum(v: string | number): string {
+  return String(v).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+}
+
+/** تاریخ و ساعت شمسی با ارقام فارسی */
+function faDate(iso: string | null): string {
+  if (!iso) return 'نامشخص';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'نامشخص';
+  return new Intl.DateTimeFormat('fa-IR', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(d);
+}
+
+/** مدت‌زمان اجرا به شکل «۲۳ دقیقه و ۱۰ ثانیه» */
+function faDuration(start: string | null, end: string | null): string {
+  if (!start) return 'نامشخص';
+  const s = new Date(start).getTime();
+  const e = end ? new Date(end).getTime() : Date.now();
+  if (Number.isNaN(s) || Number.isNaN(e) || e < s) return 'نامشخص';
+  const total = Math.floor((e - s) / 1000);
+  const m = Math.floor(total / 60);
+  const sec = total % 60;
+  if (m === 0) return `${faNum(sec)} ثانیه`;
+  return `${faNum(m)} دقیقه و ${faNum(sec)} ثانیه`;
+}
+
+const TEAM_LABEL: Record<TeamName, string> = {
+  artdir: 'کارگردانی هنری',
+  branding: 'برندینگ',
+  content: 'محتوا',
+  seo: 'سئو',
+  analytics: 'تحلیل',
+  intel: 'اطلاعات بازار',
+  lead: 'سرپرست',
+  design: 'دیزاین',
+  seocontent: 'محتوای سئو',
+  vibefarsi: 'وایب‌فارسی',
+  farsiui: 'رابط فارسی',
+  'design-ir': 'دیزاین ایران',
+  dev: 'توسعه',
+  qa: 'تضمین کیفیت',
+  inspector: 'بازرس',
+};
+
+const CYCLE_STATUS_LABEL: Record<CycleStatus, string> = {
+  running: 'در حال اجرا',
+  success: 'موفق',
+  failed: 'ناموفق',
+  canceled: 'لغوشده',
+};
+
+const TEAM_STATUS_LABEL: Record<TeamRunStatus, string> = {
+  pending: 'در انتظار',
+  running: 'در حال اجرا',
+  success: 'موفق',
+  failed: 'ناموفق',
+  skipped: 'رد شد',
+};
+
+function statusTone(status: CycleStatus | TeamRunStatus): string {
+  switch (status) {
+    case 'running':
+      return 'bg-warning/10 text-warning border-warning/30';
+    case 'success':
+      return 'bg-success/10 text-success border-success/30';
+    case 'failed':
+      return 'bg-destructive/10 text-destructive border-destructive/30';
+    default:
+      return 'bg-muted text-muted-foreground border-border';
+  }
+}
+
+function statusDot(status: CycleStatus | TeamRunStatus): string {
+  switch (status) {
+    case 'running':
+      return 'bg-warning';
+    case 'success':
+      return 'bg-success';
+    case 'failed':
+      return 'bg-destructive';
+    default:
+      return 'bg-muted-foreground';
+  }
+}
+
+function StatusBadge({
+  status,
+  label,
+}: {
+  status: CycleStatus | TeamRunStatus;
+  label: string;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${statusTone(status)}`}
+    >
+      <span className={`h-2 w-2 rounded-full ${statusDot(status)}`} />
+      {label}
+    </span>
+  );
+}
+
+const MOCK_CYCLE: Cycle = {
+  id: 'cyc-2026-10-14-01',
+  run_id: 'run_9f31ab',
+  status: 'running',
+  started_at: '2026-10-14T14:02:11+03:30',
+  finished_at: null,
+  stats: null,
+};
+
+const MOCK_TEAM_RUNS: TeamRun[] = [
+  { id: 'tr-1', cycle_id: 'cyc-2026-10-14-01', team: 'artdir', wave: 1, status: 'success', started_at: '2026-10-14T14:02:12+03:30', finished_at: '2026-10-14T14:20:45+03:30', output_summary: 'ری‌برند بصری هیرو تأیید شد؛ ۳ نسخه موکاپ تحویل داده شد.', llm_calls: 12, error: null },
+  { id: 'tr-2', cycle_id: 'cyc-2026-10-14-01', team: 'branding', wave: 1, status: 'success', started_at: '2026-10-14T14:02:12+03:30', finished_at: '2026-10-14T14:18:03+03:30', output_summary: 'پیام اصلی برند یکدست شد؛ شعار نهایی «ریشه را می‌جویم».', llm_calls: 9, error: null },
+  { id: 'tr-3', cycle_id: 'cyc-2026-10-14-01', team: 'content', wave: 1, status: 'success', started_at: '2026-10-14T14:02:13+03:30', finished_at: '2026-10-14T14:31:57+03:30', output_summary: '۵ پیش‌نویس مقاله آماده بازبینی؛ ۲ مورد نیاز به اصلاح لحن دارند.', llm_calls: 21, error: null },
+  { id: 'tr-4', cycle_id: 'cyc-2026-10-14-01', team: 'analytics', wave: 2, status: 'success', started_at: '2026-10-14T14:32:10+03:30', finished_at: '2026-10-14T14:55:41+03:30', output_summary: 'نرخ تبدیل هفته ۲.۴٪؛ ریزش اصلی در صفحه پرداخت شناسایی شد.', llm_calls: 7, error: null },
+  { id: 'tr-5', cycle_id: 'cyc-2026-10-14-01', team: 'intel', wave: 2, status: 'failed', started_at: '2026-10-14T14:32:10+03:30', finished_at: '2026-10-14T14:36:02+03:30', output_summary: null, llm_calls: 3, error: 'اتصال به منبع داده بیرونی قطع شد (timeout پس از ۳۰ ثانیه).' },
+  { id: 'tr-6', cycle_id: 'cyc-2026-10-14-01', team: 'lead', wave: 2, status: 'running', started_at: '2026-10-14T14:56:00+03:30', finished_at: null, output_summary: null, llm_calls: 5, error: null },
+  { id: 'tr-7', cycle_id: 'cyc-2026-10-14-01', team: 'design', wave: 3, status: 'pending', started_at: null, finished_at: null, output_summary: null, llm_calls: 0, error: null },
+  { id: 'tr-8', cycle_id: 'cyc-2026-10-14-01', team: 'seo', wave: 3, status: 'pending', started_at: null, finished_at: null, output_summary: null, llm_calls: 0, error: null },
+  { id: 'tr-9', cycle_id: 'cyc-2026-10-14-01', team: 'seocontent', wave: 3, status: 'pending', started_at: null, finished_at: null, output_summary: null, llm_calls: 0, error: null },
+];
+
+export default function CycleDetailPage() {
+  const params = useParams();
+  const id = Array.isArray(params.id) ? params.id[0] : (params.id as string);
+
+  const [cycle, setCycle] = useState<Cycle | null>(null);
+  const [teamRuns, setTeamRuns] = useState<TeamRun[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [usingMock, setUsingMock] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/cycles/${id}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = await res.json();
+      setCycle(data.cycle ?? data);
+      setTeamRuns(data.team_runs ?? data.teamRuns ?? []);
+      setUsingMock(false);
+    } catch {
+      setCycle(MOCK_CYCLE);
+      setTeamRuns(MOCK_TEAM_RUNS);
+      setUsingMock(true);
+    } finally {
+      setLoading(false);
+      setLastRefresh(new Date());
+    }
+  }, [id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const running = cycle?.status === 'running';
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(load, 10_000);
+    return () => clearInterval(t);
+  }, [running, load]);
+
+  const waves = Array.from(new Set(teamRuns.map((r) => r.wave))).sort(
+    (a, b) => a - b,
+  );
+  const totalLlmCalls = teamRuns.reduce((sum, r) => sum + (r.llm_calls ?? 0), 0);
+  const failedRuns = teamRuns.filter((r) => r.status === 'failed');
+
+  return (
+    <main dir="rtl" className="min-h-screen bg-background text-foreground">
+      <div className="mx-auto max-w-6xl px-4 py-8">
+        <Link
+          href="/dashboard/cycles"
+          className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-brand"
+        >
+          <span aria-hidden>←</span>
+          بازگشت به لیست چرخه‌ها
+        </Link>
+
+        {loading ? (
+          <div className="rounded-2xl border border-border bg-card p-10 text-center text-sm text-muted-foreground shadow-surface">
+            در حال بارگذاری جزئیات چرخه…
+          </div>
+        ) : !cycle ? (
+          <div className="rounded-2xl border border-border bg-card p-10 text-center text-sm text-muted-foreground shadow-surface">
+            چرخه‌ای با این شناسه پیدا نشد.
+          </div>
+        ) : (
+          <>
+            {usingMock && (
+              <p className="mb-4 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2.5 text-sm text-warning">
+                اتصال به API برقرار نشد؛ داده نمونه نمایش داده می‌شود.
+              </p>
+            )}
+
+            <section className="mb-6 rounded-2xl border border-border bg-card p-6 shadow-surface">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">شناسه اجرا</p>
+                  <h1 className="mt-1 font-mono text-lg font-bold" dir="ltr">
+                    {cycle.run_id}
+                  </h1>
+                  <p className="mt-1 text-xs text-muted-foreground">{cycle.id}</p>
+                </div>
+                <StatusBadge
+                  status={cycle.status}
+                  label={CYCLE_STATUS_LABEL[cycle.status]}
+                />
+              </div>
+
+              <dl className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div className="rounded-xl bg-muted/50 p-4">
+                  <dt className="text-xs text-muted-foreground">شروع</dt>
+                  <dd className="mt-1 text-sm font-medium">{faDate(cycle.started_at)}</dd>
+                </div>
+                <div className="rounded-xl bg-muted/50 p-4">
+                  <dt className="text-xs text-muted-foreground">پایان</dt>
+                  <dd className="mt-1 text-sm font-medium">{faDate(cycle.finished_at)}</dd>
+                </div>
+                <div className="rounded-xl bg-muted/50 p-4">
+                  <dt className="text-xs text-muted-foreground">تعداد تیم‌ها</dt>
+                  <dd className="mt-1 text-sm font-medium">{faNum(teamRuns.length)}</dd>
+                </div>
+                <div className="rounded-xl bg-muted/50 p-4">
+                  <dt className="text-xs text-muted-foreground">فراخوانی LLM</dt>
+                  <dd className="mt-1 text-sm font-medium">{faNum(totalLlmCalls)}</dd>
+                </div>
+              </dl>
+
+              <p className="mt-4 text-xs text-muted-foreground">
+                {running
+                  ? 'این چرخه در حال اجراست؛ هر ۱۰ ثانیه خودکار به‌روزرسانی می‌شود.'
+                  : 'این چرخه به پایان رسیده است.'}
+                {lastRefresh &&
+                  ` آخرین به‌روزرسانی: ${new Intl.DateTimeFormat('fa-IR', { timeStyle: 'medium' }).format(lastRefresh)}`}
+              </p>
+            </section>
+
+            {failedRuns.length > 0 && (
+              <section className="mb-6 rounded-2xl border border-destructive/30 bg-destructive/5 p-6">
+                <h2 className="mb-3 text-sm font-bold text-destructive">
+                  خطاها ({faNum(failedRuns.length)})
+                </h2>
+                <ul className="space-y-2">
+                  {failedRuns.map((r) => (
+                    <li key={r.id} className="text-sm">
+                      <span className="font-medium text-card-foreground">
+                        {TEAM_LABEL[r.team] ?? r.team}:
+                      </span>{' '}
+                      <span className="text-destructive">{r.error ?? 'خطای نامشخص'}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            <div className="space-y-6">
+              {waves.map((wave) => (
+                <section
+                  key={wave}
+                  className="overflow-hidden rounded-2xl border border-border bg-card shadow-surface"
+                >
+                  <header className="border-b border-border bg-muted/40 px-5 py-3">
+                    <h2 className="text-sm font-bold">
+                      موج {faNum(wave)}
+                    </h2>
+                  </header>
+                  <ul className="divide-y divide-border">
+                    {teamRuns
+                      .filter((r) => r.wave === wave)
+                      .map((r) => (
+                        <li key={r.id} className="px-5 py-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <span className="text-sm font-bold text-card-foreground">
+                                {TEAM_LABEL[r.team] ?? r.team}
+                              </span>
+                              <StatusBadge
+                                status={r.status}
+                                label={TEAM_STATUS_LABEL[r.status]}
+                              />
+                            </div>
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span>فراخوانی LLM: {faNum(r.llm_calls ?? 0)}</span>
+                              <span>مدت: {faDuration(r.started_at, r.finished_at)}</span>
+                            </div>
+                          </div>
+                          {r.output_summary && (
+                            <p className="mt-2 text-sm text-card-foreground/80">
+                              {r.output_summary}
+                            </p>
+                          )}
+                          {r.error && (
+                            <p className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                              {r.error}
+                            </p>
+                          )}
+                        </li>
+                      ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
