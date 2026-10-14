@@ -1,4 +1,5 @@
 import type { TeamName, TeamRunStatus } from '../lib/types';
+import StatusBadge from './dataviz/StatusBadge';
 
 const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
 
@@ -8,42 +9,6 @@ export function faNum(value: number | string): string {
     .replace(/[0-9]/g, (d) => FA_DIGITS[Number(d)])
     .replace(/,/g, '٬');
 }
-
-const STATUS_STYLE: Record<
-  TeamRunStatus,
-  { label: string; dot: string; chip: string; pulse: boolean }
-> = {
-  pending: {
-    label: 'در انتظار',
-    dot: 'bg-warning',
-    chip: 'bg-warning/10 text-warning',
-    pulse: false,
-  },
-  running: {
-    label: 'در حال اجرا',
-    dot: 'bg-brand',
-    chip: 'bg-brand/10 text-brand',
-    pulse: true,
-  },
-  success: {
-    label: 'موفق',
-    dot: 'bg-success',
-    chip: 'bg-success/10 text-success',
-    pulse: false,
-  },
-  failed: {
-    label: 'ناموفق',
-    dot: 'bg-destructive',
-    chip: 'bg-destructive/10 text-destructive',
-    pulse: false,
-  },
-  skipped: {
-    label: 'صرف‌نظر شده',
-    dot: 'bg-muted-foreground',
-    chip: 'bg-muted text-muted-foreground',
-    pulse: false,
-  },
-};
 
 export interface TeamCardProps {
   team: TeamName;
@@ -67,8 +32,6 @@ export default function TeamCard({
   llmCalls,
   error,
 }: TeamCardProps) {
-  const style = STATUS_STYLE[status] ?? STATUS_STYLE.pending;
-
   return (
     <article className="flex h-full min-w-0 flex-col rounded-xl border border-border bg-card p-4 shadow-surface transition-transform duration-200 active:scale-[0.99] sm:p-5 hover:sm:-translate-y-0.5">
       <div className="flex min-w-0 items-start justify-between gap-3">
@@ -78,17 +41,9 @@ export default function TeamCard({
             {mission}
           </p>
         </div>
-        <span
-          className={`flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${style.chip}`}
-        >
-          <span className="relative flex h-2 w-2">
-            {style.pulse && (
-              <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${style.dot}`} />
-            )}
-            <span className={`relative inline-flex h-2 w-2 rounded-full ${style.dot}`} />
-          </span>
-          {style.label}
-        </span>
+        <div className="shrink-0">
+          <StatusBadge status={status} />
+        </div>
       </div>
 
       <div className="mt-4 flex-1">

@@ -3,13 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import type {
-  Cycle,
-  CycleStatus,
-  TeamName,
-  TeamRun,
-  TeamRunStatus,
-} from '@/lib/types';
+import type { Cycle, TeamName, TeamRun } from '@/lib/types';
+import StatusBadge from '@/components/dataviz/StatusBadge';
+import ProgressBar from '@/components/dataviz/ProgressBar';
 
 /** تبدیل ارقام لاتین به فارسی */
 function faNum(v: string | number): string {
@@ -57,64 +53,6 @@ const TEAM_LABEL: Record<TeamName, string> = {
   qa: 'تضمین کیفیت',
   inspector: 'بازرس',
 };
-
-const CYCLE_STATUS_LABEL: Record<CycleStatus, string> = {
-  running: 'در حال اجرا',
-  success: 'موفق',
-  failed: 'ناموفق',
-  canceled: 'لغوشده',
-};
-
-const TEAM_STATUS_LABEL: Record<TeamRunStatus, string> = {
-  pending: 'در انتظار',
-  running: 'در حال اجرا',
-  success: 'موفق',
-  failed: 'ناموفق',
-  skipped: 'رد شد',
-};
-
-function statusTone(status: CycleStatus | TeamRunStatus): string {
-  switch (status) {
-    case 'running':
-      return 'bg-warning/10 text-warning border-warning/30';
-    case 'success':
-      return 'bg-success/10 text-success border-success/30';
-    case 'failed':
-      return 'bg-destructive/10 text-destructive border-destructive/30';
-    default:
-      return 'bg-muted text-muted-foreground border-border';
-  }
-}
-
-function statusDot(status: CycleStatus | TeamRunStatus): string {
-  switch (status) {
-    case 'running':
-      return 'bg-warning';
-    case 'success':
-      return 'bg-success';
-    case 'failed':
-      return 'bg-destructive';
-    default:
-      return 'bg-muted-foreground';
-  }
-}
-
-function StatusBadge({
-  status,
-  label,
-}: {
-  status: CycleStatus | TeamRunStatus;
-  label: string;
-}) {
-  return (
-    <span
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${statusTone(status)}`}
-    >
-      <span className={`h-2 w-2 rounded-full ${statusDot(status)}`} />
-      {label}
-    </span>
-  );
-}
 
 const MOCK_CYCLE: Cycle = {
   id: 'cyc-2026-10-14-01',
@@ -218,10 +156,7 @@ export default function CycleDetailPage() {
                   </h1>
                   <p className="mt-1 text-xs text-muted-foreground">{cycle.id}</p>
                 </div>
-                <StatusBadge
-                  status={cycle.status}
-                  label={CYCLE_STATUS_LABEL[cycle.status]}
-                />
+                <StatusBadge status={cycle.status} />
               </div>
 
               <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 md:gap-4">
@@ -271,30 +206,33 @@ export default function CycleDetailPage() {
             )}
 
             <div className="space-y-4 md:space-y-6">
-              {waves.map((wave) => (
-                <section
-                  key={wave}
-                  className="overflow-hidden rounded-2xl border border-border bg-card shadow-surface"
-                >
-                  <header className="border-b border-border bg-muted/40 px-4 py-3 sm:px-5">
-                    <h2 className="text-sm font-bold">
-                      موج {faNum(wave)}
-                    </h2>
-                  </header>
-                  <ul className="divide-y divide-border">
-                    {teamRuns
-                      .filter((r) => r.wave === wave)
-                      .map((r) => (
+              {waves.map((wave) => {
+                const waveRuns = teamRuns.filter((r) => r.wave === wave);
+                const doneRuns = waveRuns.filter(
+                  (r) => r.status === 'success' || r.status === 'failed',
+                );
+                const wavePct =
+                  waveRuns.length > 0
+                    ? (doneRuns.length / waveRuns.length) * 100
+                    : 0;
+                return (
+                  <section
+                    key={wave}
+                    className="overflow-hidden rounded-2xl border border-border bg-card shadow-surface"
+                  >
+                    <header className="border-b border-border bg-muted/40 px-4 py-3 sm:px-5">
+                      <h2 className="text-sm font-bold">موج {faNum(wave)}</h2>
+                      <ProgressBar value={wavePct} className="mt-2" />
+                    </header>
+                    <ul className="divide-y divide-border">
+                      {waveRuns.map((r) => (
                         <li key={r.id} className="px-4 py-4 sm:px-5">
                           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
                             <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
                               <span className="text-sm font-bold text-card-foreground">
                                 {TEAM_LABEL[r.team] ?? r.team}
                               </span>
-                              <StatusBadge
-                                status={r.status}
-                                label={TEAM_STATUS_LABEL[r.status]}
-                              />
+                              <StatusBadge status={r.status} />
                             </div>
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                               <span>فراخوانی LLM: {faNum(r.llm_calls ?? 0)}</span>
@@ -313,9 +251,10 @@ export default function CycleDetailPage() {
                           )}
                         </li>
                       ))}
-                  </ul>
-                </section>
-              ))}
+                    </ul>
+                  </section>
+                );
+              })}
             </div>
           </>
         )}

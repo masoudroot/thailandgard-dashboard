@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { Cycle, CycleStatus } from '@/lib/types';
+import type { Cycle } from '@/lib/types';
+import StatusBadge from '@/components/dataviz/StatusBadge';
+import TrendChart, { type TrendPoint } from '@/components/dataviz/TrendChart';
 
 /** تبدیل ارقام لاتین به فارسی */
 function faNum(v: string | number): string {
@@ -24,40 +26,6 @@ type CycleRow = Cycle & {
   team_count?: number;
   llm_calls?: number;
 };
-
-const STATUS_LABEL: Record<CycleStatus, string> = {
-  running: 'در حال اجرا',
-  success: 'موفق',
-  failed: 'ناموفق',
-  canceled: 'لغوشده',
-};
-
-function StatusBadge({ status }: { status: CycleStatus }) {
-  const tone =
-    status === 'running'
-      ? 'bg-warning/10 text-warning border-warning/30'
-      : status === 'success'
-        ? 'bg-success/10 text-success border-success/30'
-        : status === 'failed'
-          ? 'bg-destructive/10 text-destructive border-destructive/30'
-          : 'bg-muted text-muted-foreground border-border';
-  const dot =
-    status === 'running'
-      ? 'bg-warning'
-      : status === 'success'
-        ? 'bg-success'
-        : status === 'failed'
-          ? 'bg-destructive'
-          : 'bg-muted-foreground';
-  return (
-    <span
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${tone}`}
-    >
-      <span className={`h-2 w-2 rounded-full ${dot}`} />
-      {STATUS_LABEL[status]}
-    </span>
-  );
-}
 
 function readCount(c: CycleRow): number {
   if (typeof c.team_count === 'number') return c.team_count;
@@ -110,6 +78,15 @@ export default function CyclesPage() {
   const [creating, setCreating] = useState(false);
   const [usingMock, setUsingMock] = useState(false);
   const [error, setError] = useState('');
+
+  /* نقاط نمودار روند: از قدیمی‌ترین به جدیدترین، راست‌به‌چپ */
+  const trendPoints: TrendPoint[] = [...cycles]
+    .sort(
+      (a, b) =>
+        new Date(a.started_at ?? 0).getTime() -
+        new Date(b.started_at ?? 0).getTime(),
+    )
+    .map((c, i) => ({ label: `چرخهٔ ${faNum(i + 1)}`, value: readLlmCalls(c) }));
 
   const load = useCallback(async () => {
     try {
@@ -206,6 +183,14 @@ export default function CyclesPage() {
           </div>
         ) : (
           <>
+            {trendPoints.length >= 2 && (
+              <TrendChart
+                title="روند فراخوانی LLM در چرخه‌های اخیر"
+                unit="فراخوانی"
+                points={trendPoints}
+                className="mb-4 md:mb-6"
+              />
+            )}
             {/* کارت‌های عمودی در موبایل */}
             <div className="space-y-3 md:hidden">
               {cycles.map((c) => (

@@ -15,6 +15,12 @@ import {
   Waves,
   XCircle,
 } from "lucide-react";
+import {
+  ProgressBar,
+  StatCard,
+  StatusBadge,
+  type StatCardProps,
+} from "@/components/dataviz";
 
 /* ─────────────────────────────────────────────
    ابزارهای نمایشی
@@ -49,20 +55,6 @@ const TEAM_LABELS: Record<string, string> = {
 };
 
 type TeamStatus = "pending" | "running" | "success" | "failed";
-
-const TEAM_STATUS_LABEL: Record<TeamStatus, string> = {
-  pending: "در انتظار",
-  running: "در حال اجرا",
-  success: "موفق",
-  failed: "ناموفق",
-};
-
-const TEAM_STATUS_DOT: Record<TeamStatus, string> = {
-  pending: "bg-muted-foreground/40",
-  running: "bg-brand animate-pulse",
-  success: "bg-success",
-  failed: "bg-destructive",
-};
 
 interface WaveTeam {
   team: string;
@@ -252,13 +244,14 @@ export default function DashboardHomePage() {
   const loading = cycle === null || alerts === null;
 
   const queueCount = 7 + queuedExtra;
-  const stats = [
+  const stats: StatCardProps[] = [
     {
       icon: Activity,
       label: "چرخه‌های اجراشده",
       value: fa(42),
       hint: "از ابتدای مهر",
       tint: "bg-brand/10 text-brand",
+      trend: { dir: "up", pct: 8, note: "نسبت به هفتهٔ پیش" },
     },
     {
       icon: Users,
@@ -266,6 +259,7 @@ export default function DashboardHomePage() {
       value: fa(15),
       hint: "در ۶ موج",
       tint: "bg-success/10 text-success",
+      trend: { dir: "flat", pct: 0, note: "بدون تغییر" },
     },
     {
       icon: ClipboardList,
@@ -273,6 +267,7 @@ export default function DashboardHomePage() {
       value: fa(queueCount),
       hint: "منتظر شروع چرخه",
       tint: "bg-warning/10 text-warning",
+      trend: { dir: "down", pct: 12, note: "نسبت به دیروز" },
     },
     {
       icon: Clock3,
@@ -337,29 +332,7 @@ export default function DashboardHomePage() {
                     />
                   ))
                 : stats.map((s) => (
-                    <div
-                      key={s.label}
-                      className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-control)]"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${s.tint}`}
-                        >
-                          <s.icon size={20} strokeWidth={1.75} />
-                        </span>
-                        <div className="min-w-0">
-                          <div className="text-3xl font-extrabold leading-tight md:text-4xl">
-                            {s.value}
-                          </div>
-                          <div className="truncate text-sm text-muted-foreground">
-                            {s.label}
-                          </div>
-                        </div>
-                      </div>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {s.hint}
-                      </p>
-                    </div>
+                    <StatCard key={s.label} {...s} />
                   ))}
             </div>
           </div>
@@ -378,10 +351,9 @@ export default function DashboardHomePage() {
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h2 className="text-xl font-bold">آخرین چرخه</h2>
-                  <span className="inline-flex items-center gap-2 rounded-full bg-brand/10 px-3 py-1 text-sm font-medium text-brand">
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-brand" />
-                    در حال اجرا
-                  </span>
+                  <StatusBadge
+                    status={cycle.status === "failed" ? "failed" : cycle.status === "success" ? "success" : "running"}
+                  />
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm text-muted-foreground">
@@ -405,30 +377,11 @@ export default function DashboardHomePage() {
 
                 {/* نوار پیشرفت */}
                 <div className="mt-6">
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span className="font-medium">پیشرفت چرخه</span>
-                    <span className="font-bold text-brand">
-                      {fa(cycle.progress)}٪
-                    </span>
-                  </div>
-                  <div
-                    role="progressbar"
-                    aria-valuenow={cycle.progress}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-label="پیشرفت چرخه"
-                    className="h-3 overflow-hidden rounded-full bg-muted"
-                  >
-                    <div
-                      className="h-full rounded-full bg-gradient-to-l from-brand to-warning transition-[width] duration-700"
-                      style={{ width: `${cycle.progress}%` }}
-                    />
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {activeWaveTeams.filter((t) => t.status === "success").length}{" "}
-                    از {fa(activeWaveTeams.length)} تیم موج جاری کارشان را تمام
-                    کرده‌اند.
-                  </p>
+                  <ProgressBar
+                    value={cycle.progress}
+                    label="پیشرفت چرخه"
+                    caption={`${fa(activeWaveTeams.filter((t) => t.status === "success").length)} از ${fa(activeWaveTeams.length)} تیم موج جاری کارشان را تمام کرده‌اند.`}
+                  />
                 </div>
 
                 {/* دکمه شروع */}
@@ -602,15 +555,8 @@ export default function DashboardHomePage() {
                             key={t.team}
                             className="flex items-center justify-between gap-2 text-sm"
                           >
-                            <span className="flex items-center gap-2">
-                              <span
-                                className={`h-2.5 w-2.5 rounded-full ${TEAM_STATUS_DOT[t.status]}`}
-                              />
-                              {TEAM_LABELS[t.team] ?? t.team}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {TEAM_STATUS_LABEL[t.status]}
-                            </span>
+                            <span>{TEAM_LABELS[t.team] ?? t.team}</span>
+                            <StatusBadge status={t.status} />
                           </li>
                         ))}
                       </ul>
