@@ -45,10 +45,7 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/dashboard/settings",
     label: "تنظیمات",
     icon: Settings,
-    children: [
-      { href: "/dashboard/settings", label: "اتصال‌ها" },
-      { href: "/dashboard/settings/models", label: "مدل‌های هوش مصنوعی" },
-    ],
+    children: [{ href: "/dashboard/settings/models", label: "مدل‌های هوش مصنوعی" }],
   },
   { href: "/dashboard/debug", label: "دستیار فنی", icon: Wrench },
 ];

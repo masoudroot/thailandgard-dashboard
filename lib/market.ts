@@ -39,6 +39,8 @@ export interface MarketSource {
 /** نتیجه‌ی آخرین بررسی اتصال یک منبع (برای نمایش در تنظیمات). */
 export interface MarketLastCheck {
   ok: boolean;
+  /** 'limited' یعنی سایت زنده است ولی ربات‌ها را محدود می‌کند (بلاک IP دیتاسنتر). */
+  limited?: boolean;
   at: string;
   message: string;
   latencyMs: number | null;
@@ -88,6 +90,8 @@ export interface MarketResult {
 /** نتیجه‌ی دکمه‌ی «تست اتصال». */
 export interface MarketTestResult {
   ok: boolean;
+  /** 'limited' یعنی سایت زنده است ولی ربات‌ها را محدود می‌کند؛ به‌عنوان پیشنهاد ثبت می‌شود. */
+  limited?: boolean;
   message: string;
   latencyMs: number | null;
 }
@@ -317,9 +321,22 @@ export async function testMarketConnection(
     await recordCheck(sourceId, check);
     return { ok: true, message: check.message, latencyMs };
   } catch (err) {
-    const message = sanitize(err instanceof Error ? err.message : String(err));
-    await recordCheck(sourceId, { ok: false, at: new Date().toISOString(), message, latencyMs: null });
-    return { ok: false, message, latencyMs: null };
+    const raw = err instanceof Error ? err.message : String(err);
+    const message = sanitize(raw);
+    // سایت‌های خبری معمولاً IP دیتاسنتر (ورسل) را بلاک می‌کنند؛ این یعنی سایت زنده است
+    // ولی به ربات ما جواب نمی‌دهد. خطای واقعی نیست؛ هشدار ثبت می‌شود.
+    const limited = /پاسخ (403|429|503) برگرداند/.test(raw);
+    const limitedMessage = limited
+      ? 'سایت ربات‌ها را محدود می‌کند؛ به‌عنوان پیشنهاد برای تیم ثبت شد.'
+      : message;
+    await recordCheck(sourceId, {
+      ok: !limited,
+      limited,
+      at: new Date().toISOString(),
+      message: limitedMessage,
+      latencyMs: null,
+    });
+    return { ok: !limited, limited, message: limitedMessage, latencyMs: null };
   }
 }
 

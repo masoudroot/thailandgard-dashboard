@@ -87,12 +87,18 @@ export function WhereGuide({ steps }: { steps: string[] }) {
   );
 }
 
-/** پیام نتیجه (موفق/خطا) */
-export function ResultNote({ ok, text }: { ok: boolean; text: string }) {
+/** پیام نتیجه (موفق/هشدار/خطا) */
+export function ResultNote({ ok, limited, text }: { ok: boolean; limited?: boolean; text: string }) {
   return (
     <p
       role={ok ? "status" : "alert"}
-      className={`rounded-lg px-3 py-2.5 text-sm ${ok ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}
+      className={`rounded-lg px-3 py-2.5 text-sm ${
+        ok
+          ? "bg-success/10 text-success"
+          : limited
+            ? "bg-warning/10 text-warning"
+            : "bg-destructive/10 text-destructive"
+      }`}
     >
       {text}
     </p>

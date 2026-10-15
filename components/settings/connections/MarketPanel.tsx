@@ -23,7 +23,7 @@ interface MarketSourceView {
   url: string;
   enabled: boolean;
   hasCache: boolean;
-  lastCheck: { ok: boolean; message: string; latencyMs: number | null } | null;
+  lastCheck: { ok: boolean; limited?: boolean; message: string; latencyMs: number | null } | null;
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -54,7 +54,7 @@ export function MarketPanel() {
   const [adding, setAdding] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [testing, setTesting] = useState<Record<string, boolean>>({});
-  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; text: string }>>({});
+  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; limited?: boolean; text: string }>>({});
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -169,6 +169,7 @@ export function MarketPanel() {
           ...m,
           [id]: {
             ok: !!d.ok,
+            limited: !!d.limited,
             text:
               String(d.message ?? "") +
               (d.latencyMs != null ? ` (${faDigits(d.latencyMs)} میلی‌ثانیه)` : ""),
@@ -178,7 +179,7 @@ export function MarketPanel() {
         setSources((list) =>
           list.map((s) =>
             s.id === id
-              ? { ...s, lastCheck: { ok: !!d.ok, message: String(d.message ?? ""), latencyMs: d.latencyMs ?? null } }
+              ? { ...s, lastCheck: { ok: !!d.ok, limited: !!d.limited, message: String(d.message ?? ""), latencyMs: d.latencyMs ?? null } }
               : s,
           ),
         );
@@ -241,8 +242,8 @@ export function MarketPanel() {
                           {s.url}
                         </p>
                         {s.lastCheck && (
-                          <p className={`mt-1 text-xs ${s.lastCheck.ok ? "text-success" : "text-destructive"}`}>
-                            {s.lastCheck.ok ? "آخرین تست: سالم" : "آخرین تست: خطا"}
+                          <p className={`mt-1 text-xs ${s.lastCheck.ok ? "text-success" : s.lastCheck.limited ? "text-warning" : "text-destructive"}`}>
+                            {s.lastCheck.ok ? "آخرین تست: سالم" : s.lastCheck.limited ? "آخرین تست: محدودیت ربات" : "آخرین تست: خطا"}
                             {s.lastCheck.latencyMs != null && ` (${faDigits(s.lastCheck.latencyMs)} میلی‌ثانیه)`}
                             {s.hasCache && "؛ کش موجود است"}
                           </p>
@@ -254,7 +255,7 @@ export function MarketPanel() {
                         aria-label={`روشن/خاموش: ${s.name}`}
                       />
                     </div>
-                    {r && <ResultNote ok={r.ok} text={r.text} />}
+                    {r && <ResultNote ok={r.ok} limited={r.limited} text={r.text} />}
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                       <Button variant="outline" onClick={() => handleTest(s.id)} disabled={!!testing[s.id]}>
                         <RefreshCw strokeWidth={1.75} aria-hidden="true" />
