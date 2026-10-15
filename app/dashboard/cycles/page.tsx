@@ -125,7 +125,7 @@ export default function CyclesPage() {
       }
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'ساخت چرخه جدید انجام نشد.');
+      setError(e instanceof Error ? e.message : 'چرخهٔ جدید ساخته نشد؛ دوباره تلاش کنید.');
     } finally {
       setCreating(false);
     }
@@ -137,7 +137,7 @@ export default function CyclesPage() {
     <div className="mx-auto max-w-6xl">
         <PageHeader
           icon={Repeat2}
-          title="مانیتور چرخه‌ها"
+          title="چرخه‌ها"
           subtitle="چرخه‌های اجرایی تیم‌های هوش مصنوعی تایلندگرد"
           actions={
             <div className="flex flex-col items-stretch gap-1.5">
@@ -146,16 +146,16 @@ export default function CyclesPage() {
                 disabled={newCycleDisabled}
                 title={
                   activeCycle
-                    ? 'تا چرخهٔ فعال تمام یا لغو نشود، چرخهٔ جدید ساخته نمی‌شود'
+                    ? 'تا چرخهٔ فعال تمام یا لغو نشود، چرخهٔ جدیدی شروع نمی‌شود'
                     : 'شروع چرخهٔ جدید'
                 }
-                className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-control hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="tg-btn inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-control hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {creating ? 'در حال ساخت…' : 'چرخه جدید'}
+                {creating ? 'در حال ساخت…' : 'شروع چرخهٔ جدید'}
               </button>
               {activeCycle && (
                 <span className="text-center text-xs text-muted-foreground">
-                  چرخه‌ای فعال است؛ اول آن را ببندید
+                  یک چرخه در حال اجراست؛ برای شروع چرخهٔ جدید اول آن را ببندید یا لغو کنید
                 </span>
               )}
             </div>
@@ -167,7 +167,7 @@ export default function CyclesPage() {
             role="alert"
             className="tg-shake mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive"
           >
-            خطا در ساخت چرخه: {error}
+            ساخت چرخه انجام نشد: {error}
           </p>
         )}
 
@@ -178,12 +178,12 @@ export default function CyclesPage() {
         ) : loadState === 'unauthorized' ? (
           <EmptyState
             icon={KeyRound}
-            title="نشست شما منقضی شده است"
+            title="ورود شما منقضی شده است"
             description="برای دیدن چرخه‌ها دوباره وارد شوید."
             action={
               <Link
                 href="/login"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90"
               >
                 ورود دوباره
               </Link>
@@ -199,9 +199,9 @@ export default function CyclesPage() {
               <button
                 onClick={createCycle}
                 disabled={creating}
-                className="tg-btn inline-flex min-h-[48px] items-center justify-center rounded-xl bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90 disabled:opacity-50"
+                className="tg-btn inline-flex min-h-12 items-center justify-center rounded-xl bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90 disabled:opacity-50"
               >
-                {creating ? 'در حال ساخت…' : 'ساخت اولین چرخه'}
+                {creating ? 'در حال ساخت…' : 'شروع اولین چرخه'}
               </button>
             }
           />
@@ -255,9 +255,9 @@ export default function CyclesPage() {
                   </dl>
                   <Link
                     href={`/dashboard/cycles/${c.id}`}
-                    className="mt-4 flex min-h-[44px] items-center justify-center rounded-xl border border-border px-3 py-2 text-sm font-medium text-card-foreground transition-colors active:bg-muted"
+                    className="mt-4 flex min-h-11 items-center justify-center rounded-xl border border-border px-3 py-2 text-sm font-medium text-card-foreground transition-colors active:bg-muted"
                   >
-                    مشاهده جزئیات
+                    جزئیات
                   </Link>
                 </article>
               ))}
@@ -266,7 +266,7 @@ export default function CyclesPage() {
             {/* جدول در دسکتاپ */}
             <div className="hidden overflow-hidden rounded-xl border border-border bg-card shadow-surface md:block">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-sm">
+                <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/50 text-muted-foreground">
                     <th className="px-4 py-3 text-start font-medium">شناسه اجرا</th>
@@ -299,7 +299,7 @@ export default function CyclesPage() {
                           href={`/dashboard/cycles/${c.id}`}
                           className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-card-foreground transition-colors hover:border-ring hover:text-brand"
                         >
-                          مشاهده
+                          جزئیات
                         </Link>
                       </td>
                     </tr>

@@ -67,7 +67,7 @@ interface AxisReport {
   plan: string; // قرار است چه شود
   outcome: string; // چه شد
   actions: string; // چه کاری انجام شد
-  summary: string; // در کل چی شد؟
+  summary: string; // در کل چه شد؟
 }
 
 interface CycleReport extends Cycle {
@@ -76,20 +76,20 @@ interface CycleReport extends Cycle {
 }
 
 const TEAM_LABELS: Record<TeamName, string> = {
-  artdir: 'مدیریت هنری',
-  branding: 'برندینگ',
+  artdir: 'طراحی ارشد',
+  branding: 'برند',
   content: 'محتوا',
   seo: 'سئو',
-  analytics: 'تحلیل داده',
-  intel: 'هوشمندی',
-  lead: 'سرنخ',
-  design: 'طراحی',
+  analytics: 'تحلیل',
+  intel: 'اطلاعات',
+  lead: 'لید',
+  design: 'دیزاین',
   seocontent: 'محتوای سئو',
   vibefarsi: 'وایب‌فارسی',
-  farsiui: 'رابط فارسی',
-  'design-ir': 'طراحی ایرانی',
+  farsiui: 'فارسی UI',
+  'design-ir': 'دیزاین ایرانی',
   dev: 'توسعه',
-  qa: 'کنترل کیفیت',
+  qa: 'کیفیت',
   inspector: 'بازرس',
 };
 
@@ -200,9 +200,9 @@ export default function ReportsPage() {
       ) : reports.length === 0 ? (
         <ReportsEmptyState />
       ) : (
-        <div className="grid gap-4 md:gap-6 lg:grid-cols-[300px_1fr]">
+        <div className="flex flex-col gap-4 md:gap-6 lg:flex-row">
           {/* فهرست چرخه‌ها */}
-          <aside aria-label="فهرست چرخه‌ها">
+          <aside aria-label="فهرست چرخه‌ها" className="lg:w-72 lg:shrink-0">
             <ul className="flex gap-3 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible lg:pb-0">
               {reports.map((r) => {
                 const active = r.id === selectedId;
@@ -212,7 +212,7 @@ export default function ReportsPage() {
                       type="button"
                       onClick={() => setSelectedId(r.id)}
                       aria-current={active ? 'true' : undefined}
-                      className={`min-h-[88px] w-full rounded-lg border p-4 text-start transition-colors ${
+                      className={`min-h-20 w-full rounded-lg border p-4 text-start transition-colors ${
                         active
                           ? 'border-brand bg-card shadow-surface'
                           : 'border-border bg-card hover:border-muted-foreground'
@@ -251,7 +251,7 @@ export default function ReportsPage() {
           {selected && (
             <article
               key={selected.id}
-              className="rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6 md:p-8"
+              className="min-w-0 flex-1 rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6 md:p-8"
               aria-label={`گزارش چرخهٔ ${selected.run_id}`}
             >
               {/* سربرگ گزارش: تیم، تاریخ شمسی، ساعت تهران */}
@@ -313,10 +313,10 @@ export default function ReportsPage() {
 
                   {/* پاراگراف جمع‌بندی */}
                   <section
-                    aria-label="در کل چی شد"
+                    aria-label="در کل چه شد"
                     className="mt-6 rounded-lg border border-brand/40 bg-brand/5 p-4 sm:p-5"
                   >
-                    <h3 className="text-lg font-bold text-brand">در کل چی شد؟</h3>
+                    <h3 className="text-lg font-bold text-brand">در کل چه شد؟</h3>
                     <p className="mt-3 leading-8 text-foreground">{selected.report.summary}</p>
                   </section>
                 </>
@@ -335,8 +335,8 @@ export default function ReportsPage() {
 
 function LoadingState() {
   return (
-    <div className="tg-stagger grid gap-6 lg:grid-cols-[300px_1fr]" aria-busy="true">
-      <div className="flex flex-col gap-3">
+    <div className="tg-stagger flex flex-col gap-4 md:gap-6 lg:flex-row" aria-busy="true">
+      <div className="flex flex-col gap-3 lg:w-72 lg:shrink-0">
         {[0, 1, 2].map((i) => (
           <SkeletonStat key={i} />
         ))}

@@ -5,24 +5,24 @@ import { Brain, History, Search, SearchX, WifiOff, X } from 'lucide-react';
 import { TEAMS, type TeamName } from '@/lib/types';
 import EmptyState from '@/components/EmptyState';
 import PageHeader from '@/components/PageHeader';
-import { SkeletonPanel } from '@/components/Skeleton';
+import { SkeletonLines, SkeletonPanel } from '@/components/Skeleton';
 
 /** نام‌های فارسی خوانا برای ۱۵ تیم */
 const TEAM_LABELS: Record<TeamName, string> = {
-  artdir: 'آرت‌دایرکتور',
-  branding: 'برندینگ',
+  artdir: 'طراحی ارشد',
+  branding: 'برند',
   content: 'محتوا',
   seo: 'سئو',
-  analytics: 'تحلیل داده',
-  intel: 'اطلاعات بازار',
-  lead: 'لید و فروش',
-  design: 'طراحی',
+  analytics: 'تحلیل',
+  intel: 'اطلاعات',
+  lead: 'لید',
+  design: 'دیزاین',
   seocontent: 'محتوای سئو',
   vibefarsi: 'وایب‌فارسی',
-  farsiui: 'رابط فارسی',
-  'design-ir': 'طراحی ایران',
+  farsiui: 'فارسی UI',
+  'design-ir': 'دیزاین ایرانی',
   dev: 'توسعه',
-  qa: 'کنترل کیفیت',
+  qa: 'کیفیت',
   inspector: 'بازرس',
 };
 
@@ -86,7 +86,7 @@ function MemoryCard({ row }: { row: MemoryRow }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex min-h-[52px] w-full items-center justify-between gap-3 px-4 py-3 text-start"
+        className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-start"
       >
         <span className="min-w-0">
           <span className="block truncate font-mono text-sm font-semibold text-foreground" dir="ltr">
@@ -105,7 +105,7 @@ function MemoryCard({ row }: { row: MemoryRow }) {
         <div className="border-t border-border bg-muted/40">
           <pre
             dir="rtl"
-            className="overflow-x-auto whitespace-pre-wrap px-4 py-3 font-mono text-[13px] leading-7 text-foreground"
+            className="overflow-x-auto whitespace-pre-wrap px-4 py-3 font-mono text-sm leading-7 text-foreground"
           >
             {prettyJson(row.value)}
           </pre>
@@ -121,23 +121,23 @@ function MemoryCard({ row }: { row: MemoryRow }) {
               className="inline-flex items-center gap-1.5 text-xs font-medium text-brand hover:underline"
             >
               <History size={14} strokeWidth={2} aria-hidden="true" />
-              {historyOpen ? 'بستن تاریخچه' : 'دیدن تاریخچه‌ی این رکورد'}
+              {historyOpen ? 'بستن تاریخچه' : 'مشاهدهٔ تاریخچهٔ این رکورد'}
             </button>
 
             {historyOpen && (
               <div className="mt-3 space-y-2">
-                {historyLoading && <p className="text-xs text-muted-foreground">در حال بارگذاری…</p>}
+                {historyLoading && (<div aria-busy="true"><SkeletonLines lines={2} /><span className="sr-only">در حال بارگذاری…</span></div>)}
                 {!historyLoading && history !== null && history.length === 0 && (
                   <p className="text-xs leading-6 text-muted-foreground">
-                    برای این رکورد نسخه‌ی قبلی ثبت نشده است.
+                    برای این رکورد نسخهٔ قبلی ثبت نشده است.
                   </p>
                 )}
                 {!historyLoading &&
                   history !== null &&
                   history.map((h, i) => (
                     <div key={i} className="rounded-lg border border-border bg-card p-3">
-                      <p className="mb-1 text-[11px] text-muted-foreground">
-                        نسخه‌ی {faDigits(history.length - i)} · {jalaliFormatter.format(new Date(h.superseded_at))}
+                      <p className="mb-1 text-xs text-muted-foreground">
+                        نسخهٔ {faDigits(history.length - i)} · {jalaliFormatter.format(new Date(h.superseded_at))}
                       </p>
                       <pre
                         dir="rtl"
@@ -211,8 +211,8 @@ export default function MemoryPage() {
     <div className="mx-auto max-w-3xl">
         <PageHeader
           icon={Brain}
-          title="نمایشگر حافظه"
-          subtitle="حافظه بلندمدت تیم‌ها؛ جست‌وجو در متن، فیلتر تیم و تاریخچه‌ی هر رکورد"
+          title="حافظه"
+          subtitle="حافظهٔ بلندمدت تیم‌ها؛ جست‌وجو در متن، فیلتر تیم و تاریخچهٔ هر رکورد"
         />
 
         <div className="mb-6 flex flex-col gap-3 sm:flex-row">
@@ -223,7 +223,7 @@ export default function MemoryPage() {
               onChange={(e) => setTeam(e.target.value as TeamFilter)}
               className="rounded-xl border border-input bg-card px-3 py-2.5 text-foreground outline-none focus:border-ring"
             >
-              <option value="all">همه‌ی تیم‌ها</option>
+              <option value="all">همهٔ تیم‌ها</option>
               {TEAMS.map((t) => (
                 <option key={t} value={t}>
                   {TEAM_LABELS[t]} ({t})
@@ -272,13 +272,13 @@ export default function MemoryPage() {
         {state === 'offline' && (
           <EmptyState
             icon={WifiOff}
-            title="به دیتابیس متصل نیست"
-            description="حافظه بارگذاری نشد. اتصال را بررسی کنید و دوباره تلاش کنید. هیچ داده‌ی نمایشی نشان داده نمی‌شود."
+            title="به پایگاه داده متصل نیست"
+            description="حافظه بارگذاری نشد. اتصال را بررسی کنید و دوباره تلاش کنید. هیچ دادهٔ نمایشی نشان داده نمی‌شود."
             action={
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control transition-colors hover:opacity-90"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control transition-colors hover:opacity-90"
               >
                 تلاش دوباره
               </button>
@@ -297,7 +297,7 @@ export default function MemoryPage() {
                   <button
                     type="button"
                     onClick={() => setQuery('')}
-                    className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border bg-card px-5 py-2 text-sm font-medium text-card-foreground shadow-control transition-colors hover:bg-accent"
+                    className="inline-flex min-h-11 items-center justify-center rounded-xl border border-border bg-card px-5 py-2 text-sm font-medium text-card-foreground shadow-control transition-colors hover:bg-accent"
                   >
                     پاک کردن جست‌وجو
                   </button>
@@ -307,7 +307,7 @@ export default function MemoryPage() {
               <EmptyState
                 icon={Brain}
                 title="رکوردی ثبت نشده است"
-                description="بعد از اولین اجرای تیم‌ها در چرخه، حافظه‌ی بلندمدت همین‌جا نمایش داده می‌شود."
+                description="بعد از اولین اجرای تیم‌ها در چرخه، حافظهٔ بلندمدت همین‌جا نمایش داده می‌شود."
                 tint="bg-brand/10 text-brand"
               />
             )

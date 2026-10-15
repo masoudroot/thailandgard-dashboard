@@ -86,8 +86,8 @@ interface ApiError {
 
 const FILE_STATUS_FA: Record<string, { label: string; tint: string }> = {
   added: { label: 'افزوده', tint: 'bg-success/10 text-success' },
-  modified: { label: 'ویرایش', tint: 'bg-secondary text-secondary-foreground' },
-  removed: { label: 'حذف', tint: 'bg-destructive/10 text-destructive' },
+  modified: { label: 'ویرایش‌شده', tint: 'bg-secondary text-secondary-foreground' },
+  removed: { label: 'حذف‌شده', tint: 'bg-destructive/10 text-destructive' },
   renamed: { label: 'تغییرنام', tint: 'bg-secondary text-secondary-foreground' },
   copied: { label: 'کپی', tint: 'bg-secondary text-secondary-foreground' },
 };
@@ -95,7 +95,7 @@ const FILE_STATUS_FA: Record<string, { label: string; tint: string }> = {
 const PER_PAGE = 15;
 
 const inputClass =
-  'min-h-[44px] rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-control placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30';
+  'min-h-11 rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-control placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30';
 
 /* ------------------------------------------------------------------ */
 /* صفحه                                                                 */
@@ -133,7 +133,7 @@ export default function ChangesPage() {
         const body = await res.json();
         if (!res.ok || body?.ok === false) {
           throw {
-            message: String(body?.error?.message ?? 'خواندن تغییرات ناموفق بود.'),
+            message: String(body?.error?.message ?? 'خواندن تغییرات انجام نشد؛ دوباره تلاش کنید.'),
             notConnected: !!body?.error?.not_connected,
           } satisfies ApiError;
         }
@@ -178,7 +178,7 @@ export default function ChangesPage() {
       const res = await fetch(`/api/github/commits/${sha}`, { cache: 'no-store' });
       const body = await res.json();
       if (!res.ok || body?.ok === false || !body?.data?.commit) {
-        throw new Error(String(body?.error?.message ?? 'خواندن فایل‌ها ناموفق بود.'));
+        throw new Error(String(body?.error?.message ?? 'خواندن فایل‌ها انجام نشد؛ دوباره تلاش کنید.'));
       }
       setDetails((prev) => ({ ...prev, [sha]: body.data.commit as CommitDetail }));
     } catch {
@@ -251,7 +251,7 @@ export default function ChangesPage() {
             type="button"
             onClick={() => applyFilter({ team: 'all', since: '', until: '' })}
             disabled={team === 'all' && !since && !until}
-            className="min-h-[44px] w-full rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-40 md:w-auto"
+            className="min-h-11 w-full rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-40 md:w-auto"
           >
             پاک کردن فیلترها
           </button>
@@ -271,14 +271,14 @@ export default function ChangesPage() {
           className="rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-center"
         >
           <CircleAlert className="mx-auto h-10 w-10 text-destructive" aria-hidden="true" />
-          <h2 className="mt-3 text-lg font-bold text-foreground">خواندن تغییرات ناموفق بود</h2>
+          <h2 className="mt-3 text-lg font-bold text-foreground">خواندن تغییرات انجام نشد</h2>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-7 text-muted-foreground">
             {error.message}
           </p>
           <button
             type="button"
             onClick={() => fetchCommits(page, team, since, until)}
-            className="mt-4 inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90"
+            className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90"
           >
             <RotateCcw size={16} aria-hidden="true" />
             تلاش دوباره
@@ -304,7 +304,7 @@ export default function ChangesPage() {
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <h2 className="text-[15px] font-bold leading-7 text-foreground">
+                      <h2 className="text-base font-bold leading-7 text-foreground">
                         {c.title || '(بدون عنوان)'}
                       </h2>
                       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
@@ -328,7 +328,7 @@ export default function ChangesPage() {
                         type="button"
                         onClick={() => toggleFiles(c.sha)}
                         aria-expanded={open}
-                        className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-control transition-opacity hover:opacity-80"
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-control transition-opacity hover:opacity-80"
                       >
                         <FileDiff size={15} aria-hidden="true" />
                         فایل‌ها
@@ -342,7 +342,7 @@ export default function ChangesPage() {
                         href={c.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90"
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90"
                       >
                         <ExternalLink size={15} aria-hidden="true" />
                         گیت‌هاب
@@ -401,13 +401,13 @@ export default function ChangesPage() {
                                       {f.filename}
                                     </span>
                                     <span className="flex shrink-0 items-center gap-2">
-                                      <span className="font-mono text-[11px]" dir="ltr">
+                                      <span className="font-mono text-xs" dir="ltr">
                                         <span className="text-success">+{faNum(f.additions)}</span>
                                         {' '}
                                         <span className="text-destructive">-{faNum(f.deletions)}</span>
                                       </span>
                                       <span
-                                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${st.tint}`}
+                                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${st.tint}`}
                                       >
                                         {st.label}
                                       </span>
@@ -435,7 +435,7 @@ export default function ChangesPage() {
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className="min-h-[44px] rounded-lg border border-input bg-card px-5 py-2 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-40"
+              className="min-h-11 rounded-lg border border-input bg-card px-5 py-2 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-40"
             >
               قبلی
             </button>
@@ -446,7 +446,7 @@ export default function ChangesPage() {
               type="button"
               onClick={() => setPage((p) => p + 1)}
               disabled={!hasMore}
-              className="min-h-[44px] rounded-lg border border-input bg-card px-5 py-2 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-40"
+              className="min-h-11 rounded-lg border border-input bg-card px-5 py-2 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-40"
             >
               بعدی
             </button>
@@ -487,9 +487,9 @@ function NotConnectedGuide() {
           </span>
           <p>
             در گیت‌هاب یک توکن شخصی بسازید:{' '}
-            <span dir="ltr" className="font-mono text-[13px]">github.com/settings/tokens</span>
+            <span dir="ltr" className="font-mono text-sm">github.com/settings/tokens</span>
             {' '}← گزینهٔ «Generate new token (classic)» با دسترسی{' '}
-            <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5 font-mono text-[13px]">repo</code>
+            <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">repo</code>
             {' '}(ریپوی سایت خصوصی است و بدون این دسترسی دیده نمی‌شود).
           </p>
         </li>
@@ -503,7 +503,7 @@ function NotConnectedGuide() {
           <p>
             توکن را در صفحهٔ تنظیمات داشبورد، در کارت «اتصال گیت‌هاب» وارد و ذخیره کنید؛
             یا اگر روی ورسل دیپلوی کرده‌اید، متغیر محیطی{' '}
-            <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5 font-mono text-[13px]">GITHUB_TOKEN</code>
+            <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">GITHUB_TOKEN</code>
             {' '}را در تنظیمات پروژه بگذارید.
           </p>
         </li>
@@ -520,7 +520,7 @@ function NotConnectedGuide() {
       <div className="mt-6 text-center">
         <Link
           href="/dashboard/settings"
-          className="inline-flex min-h-[48px] items-center rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90"
+          className="inline-flex min-h-12 items-center rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90"
         >
           رفتن به تنظیمات
         </Link>

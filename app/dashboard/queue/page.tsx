@@ -66,20 +66,20 @@ const PRIORITIES: { key: TaskPriority; label: string }[] = [
 ];
 
 const TEAM_LABELS: Record<string, string> = {
-  artdir: 'کارگردانی هنری',
-  branding: 'برندینگ',
+  artdir: 'طراحی ارشد',
+  branding: 'برند',
   content: 'محتوا',
   seo: 'سئو',
   analytics: 'تحلیل',
-  intel: 'اطلاعات بازار',
-  lead: 'سرپرست',
+  intel: 'اطلاعات',
+  lead: 'لید',
   design: 'دیزاین',
   seocontent: 'محتوای سئو',
   vibefarsi: 'وایب‌فارسی',
-  farsiui: 'رابط فارسی',
-  'design-ir': 'دیزاین ایران',
+  farsiui: 'فارسی UI',
+  'design-ir': 'دیزاین ایرانی',
   dev: 'توسعه',
-  qa: 'تضمین کیفیت',
+  qa: 'کیفیت',
   inspector: 'بازرس',
 };
 
@@ -158,7 +158,7 @@ function TaskDescription({ text }: { text: string }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="mt-1 inline-flex min-h-[32px] items-center text-xs font-medium text-brand hover:underline"
+        className="mt-1 inline-flex min-h-11 items-center text-xs font-medium text-brand hover:underline"
       >
         {open ? 'بستن' : 'بیشتر'}
       </button>
@@ -277,7 +277,7 @@ export default function QueuePage() {
       await load();
       setTab('approved');
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'تأیید ناموفق بود.', 'err');
+      showToast(e instanceof Error ? e.message : 'کار تأیید نشد؛ دوباره تلاش کنید.', 'err');
     } finally {
       setActing(null);
     }
@@ -303,7 +303,7 @@ export default function QueuePage() {
       await load();
       setTab('rejected');
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'رد ناموفق بود.', 'err');
+      showToast(e instanceof Error ? e.message : 'کار رد نشد؛ دوباره تلاش کنید.', 'err');
     } finally {
       setActing(null);
     }
@@ -321,7 +321,7 @@ export default function QueuePage() {
       await load();
       setTab('in_progress');
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'شروع اجرا ناموفق بود.', 'err');
+      showToast(e instanceof Error ? e.message : 'اجرا شروع نشد؛ دوباره تلاش کنید.', 'err');
     } finally {
       setActing(null);
     }
@@ -374,7 +374,7 @@ export default function QueuePage() {
         showToast('کار تازه در «در انتظار تأیید» ثبت شد.');
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'ثبت کار ناموفق بود.', 'err');
+      showToast(err instanceof Error ? err.message : 'کار ثبت نشد؛ دوباره تلاش کنید.', 'err');
     } finally {
       setSubmitting(false);
     }
@@ -394,7 +394,7 @@ export default function QueuePage() {
               <button
                 type="button"
                 onClick={load}
-                className="tg-btn inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm shadow-control transition hover:bg-accent sm:flex-none"
+                className="tg-btn inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm shadow-control transition hover:bg-accent sm:flex-none"
               >
                 <RotateCw size={16} strokeWidth={2} aria-hidden="true" />
                 تازه‌سازی
@@ -403,10 +403,10 @@ export default function QueuePage() {
                 type="button"
                 onClick={() => setFormOpen((v) => !v)}
                 aria-expanded={formOpen}
-                className="tg-btn inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-control transition hover:opacity-90 sm:flex-none"
+                className="tg-btn inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-control transition hover:opacity-90 sm:flex-none"
               >
                 <Plus size={16} strokeWidth={2} aria-hidden="true" />
-                {formOpen ? 'بستن فرم' : 'تعریف کار جدید'}
+                {formOpen ? 'بستن فرم' : 'کار جدید'}
               </button>
             </>
           }
@@ -423,12 +423,12 @@ export default function QueuePage() {
         ) : loadState === 'unauthorized' ? (
           <EmptyState
             icon={KeyRound}
-            title="نشست شما منقضی شده است"
+            title="ورود شما منقضی شده است"
             description="برای دیدن صف ساخت دوباره وارد شوید."
             action={
               <Link
                 href="/login"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90"
               >
                 ورود دوباره
               </Link>
@@ -456,7 +456,7 @@ export default function QueuePage() {
                           value={form.title}
                           onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                           placeholder="مثلاً: بازطراحی بنر هیروی صفحهٔ تورها"
-                          className="min-h-[44px] w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
+                          className="min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
                         />
                       </label>
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -465,7 +465,7 @@ export default function QueuePage() {
                           <select
                             value={form.team}
                             onChange={(e) => setForm((f) => ({ ...f, team: e.target.value }))}
-                            className="min-h-[44px] w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
+                            className="min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
                           >
                             {TEAMS.map((t) => (
                               <option key={t} value={t}>
@@ -481,7 +481,7 @@ export default function QueuePage() {
                             onChange={(e) =>
                               setForm((f) => ({ ...f, priority: e.target.value as TaskPriority }))
                             }
-                            className="min-h-[44px] w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
+                            className="min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
                           >
                             {PRIORITIES.map((p) => (
                               <option key={p.key} value={p.key}>
@@ -498,7 +498,7 @@ export default function QueuePage() {
                           onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                           rows={3}
                           placeholder="شرح کوتاه کار و دلیلش"
-                          className="min-h-[44px] w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
+                          className="min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
                         />
                       </label>
                       <label className="block md:col-span-2">
@@ -511,7 +511,7 @@ export default function QueuePage() {
                           rows={2}
                           dir="ltr"
                           placeholder={'site/app/tours/page.tsx\nsite/components/Hero.tsx'}
-                          className="min-h-[44px] w-full rounded-lg border border-input bg-background px-3 py-2.5 font-mono text-sm"
+                          className="min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2.5 font-mono text-sm"
                         />
                       </label>
                     </div>
@@ -526,7 +526,7 @@ export default function QueuePage() {
                       <div role="radiogroup" aria-label="حالت اجرا هنگام ثبت">
                         <span className="mb-2 block text-sm font-medium">حالت اجرا هنگام ثبت</span>
                         <div className="space-y-2">
-                          <label className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 has-[:checked]:border-brand">
+                          <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 has-[:checked]:border-brand">
                             <input
                               type="radio"
                               name="execution-mode"
@@ -541,7 +541,7 @@ export default function QueuePage() {
                               </span>
                             </span>
                           </label>
-                          <label className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 has-[:checked]:border-brand">
+                          <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 has-[:checked]:border-brand">
                             <input
                               type="radio"
                               name="execution-mode"
@@ -560,7 +560,7 @@ export default function QueuePage() {
                       </div>
                       <div>
                         <span className="mb-2 block text-sm font-medium">نحوهٔ اجرای ساب‌ایجنت‌ها</span>
-                        <div className="flex min-h-[44px] items-center rounded-lg border border-border bg-card px-3 py-2">
+                        <div className="flex min-h-11 items-center rounded-lg border border-border bg-card px-3 py-2">
                           <Switch
                             checked={form.parallel}
                             onCheckedChange={(v) => setForm((f) => ({ ...f, parallel: v }))}
@@ -568,8 +568,8 @@ export default function QueuePage() {
                           />
                         </div>
                         <p className="mt-2 text-xs leading-6 text-muted-foreground">
-                          این سوییچ واقعاً به منطق اجرا وصل است؛ در اجرای فوری، مجری‌ها
-                          {form.parallel ? ' هم‌زمان' : ' ترتیبی'} کار می‌کنند.
+                          در اجرای فوری، مجری‌ها
+                          {form.parallel ? ' هم‌زمان' : ' یکی‌یکی'} کار می‌کنند.
                         </p>
                       </div>
                     </div>
@@ -579,7 +579,7 @@ export default function QueuePage() {
                     <button
                       type="submit"
                       disabled={submitting}
-                      className="tg-btn min-h-[48px] w-full rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control transition hover:opacity-90 disabled:opacity-50 sm:w-auto"
+                      className="tg-btn min-h-12 w-full rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control transition hover:opacity-90 disabled:opacity-50 sm:w-auto"
                     >
                       {submitting
                         ? 'در حال ثبت…'
@@ -605,7 +605,7 @@ export default function QueuePage() {
                     type="button"
                     onClick={() => setTab(s.key)}
                     aria-pressed={active}
-                    className={`tg-btn min-h-[40px] shrink-0 rounded-full border px-4 py-1.5 text-sm transition ${
+                    className={`tg-btn min-h-11 shrink-0 rounded-full border px-4 py-1.5 text-sm transition ${
                       active
                         ? 'border-primary bg-primary text-primary-foreground shadow-control'
                         : 'border-border bg-card text-foreground hover:bg-accent'
@@ -633,7 +633,7 @@ export default function QueuePage() {
                       tab === 'pending'
                         ? 'کاری در انتظار تأیید نیست'
                         : tab === 'approved'
-                          ? 'کار آمادهٔ اجرایی نیست'
+                          ? 'کاری آمادهٔ اجرا نیست'
                           : tab === 'in_progress'
                             ? 'کاری در حال انجام نیست'
                             : tab === 'done'
@@ -653,7 +653,7 @@ export default function QueuePage() {
                         <button
                           type="button"
                           onClick={() => setFormOpen(true)}
-                          className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-bold text-primary-foreground shadow-control transition hover:opacity-90"
+                          className="tg-btn inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-bold text-primary-foreground shadow-control transition hover:opacity-90"
                         >
                           <Plus size={16} strokeWidth={2} aria-hidden="true" />
                           تعریف کار جدید
@@ -737,16 +737,16 @@ export default function QueuePage() {
                               onChange={(e) => setRejectReason(e.target.value)}
                               rows={2}
                               placeholder="چرا این کار رد می‌شود؟"
-                              className="min-h-[44px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                              className="min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
                             />
                             <div className="mt-2 flex gap-2">
                               <button
                                 type="button"
                                 disabled={acting === task.id}
                                 onClick={() => handleReject(task.id)}
-                                className="tg-btn min-h-[44px] rounded-lg bg-destructive px-5 py-1.5 text-sm font-bold text-destructive-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
+                                className="tg-btn min-h-11 rounded-lg bg-destructive px-5 py-1.5 text-sm font-bold text-destructive-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
                               >
-                                {acting === task.id ? 'در حال رد…' : 'تأیید رد'}
+                                {acting === task.id ? 'در حال رد…' : 'رد کار'}
                               </button>
                               <button
                                 type="button"
@@ -755,7 +755,7 @@ export default function QueuePage() {
                                   setRejectingId(null);
                                   setRejectReason('');
                                 }}
-                                className="tg-btn min-h-[44px] rounded-lg border border-border px-5 py-1.5 text-sm transition hover:bg-accent disabled:opacity-50"
+                                className="tg-btn min-h-11 rounded-lg border border-border px-5 py-1.5 text-sm transition hover:bg-accent disabled:opacity-50"
                               >
                                 انصراف
                               </button>
@@ -773,9 +773,9 @@ export default function QueuePage() {
                                     type="button"
                                     disabled={acting === task.id}
                                     onClick={() => handleApprove(task.id)}
-                                    className="tg-btn min-h-[44px] rounded-lg bg-success px-5 py-1.5 text-sm font-medium text-success-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
+                                    className="tg-btn min-h-11 rounded-lg bg-success px-5 py-1.5 text-sm font-medium text-success-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
                                   >
-                                    {acting === task.id ? 'صبر کنید…' : 'تأیید'}
+                                    {acting === task.id ? 'صبر کنید…' : 'تأیید کار'}
                                   </button>
                                   <button
                                     type="button"
@@ -784,9 +784,9 @@ export default function QueuePage() {
                                       setRejectingId(task.id);
                                       setRejectReason('');
                                     }}
-                                    className="tg-btn min-h-[44px] rounded-lg border border-destructive px-5 py-1.5 text-sm text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
+                                    className="tg-btn min-h-11 rounded-lg border border-destructive px-5 py-1.5 text-sm text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
                                   >
-                                    رد
+                                    رد کار
                                   </button>
                                 </>
                               )}
@@ -796,7 +796,7 @@ export default function QueuePage() {
                                   disabled={acting === task.id}
                                   onClick={() => handleRunNow(task.id)}
                                   title="اجرای فوری با ساب‌ایجنت‌ها"
-                                  className="tg-btn inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-primary px-5 py-1.5 text-sm font-medium text-primary-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
+                                  className="tg-btn inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-primary px-5 py-1.5 text-sm font-medium text-primary-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
                                 >
                                   <Zap size={15} strokeWidth={2} aria-hidden="true" />
                                   {acting === task.id ? 'در حال شروع…' : 'همین الان اجرا شود'}

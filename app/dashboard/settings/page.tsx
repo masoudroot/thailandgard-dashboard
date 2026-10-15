@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bot, Cpu, Plus, RefreshCw, Settings, Timer, Trash2, TrendingUp, Wifi, KeyRound } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import { SkeletonLines } from "@/components/Skeleton";
 import { Switch } from "@/components/ui/Switch";
 import type { MarketLastCheck } from "@/lib/market";
 
@@ -34,7 +35,7 @@ const CONNECTIONS: { name: string; desc: string; status: ConnectionStatus }[] = 
 ];
 
 const inputClass =
-  "w-full min-h-[44px] rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-control placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30";
+  "w-full min-h-11 rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-control placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30";
 
 /** تاریخ شمسی کوتاه با ارقام فارسی */
 function faDateTime(iso: string | null): string {
@@ -105,7 +106,7 @@ function MarketSourceCard() {
       });
       const body = await res.json();
       if (!res.ok || body?.ok === false) {
-        throw new Error(body?.error?.message ?? "ذخیره ناموفق بود.");
+        throw new Error(body?.error?.message ?? "ذخیره انجام نشد؛ دوباره تلاش کنید.");
       }
       const cfg = body?.data;
       setHasCache(!!cfg?.hasCache);
@@ -113,7 +114,7 @@ function MarketSourceCard() {
       setSavedMsg(true);
       window.setTimeout(() => setSavedMsg(false), 4000);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "ذخیره ناموفق بود.");
+      setErrorMsg(err instanceof Error ? err.message : "ذخیره انجام نشد؛ دوباره تلاش کنید.");
     } finally {
       setSaving(false);
     }
@@ -131,7 +132,7 @@ function MarketSourceCard() {
       });
       const body = await res.json();
       if (!res.ok || body?.ok === false) {
-        throw new Error(body?.error?.message ?? "تست ناموفق بود.");
+        throw new Error(body?.error?.message ?? "تست اتصال انجام نشد؛ دوباره تلاش کنید.");
       }
       const r = body?.data;
       setTestMsg({
@@ -148,7 +149,7 @@ function MarketSourceCard() {
         // نادیده
       }
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "تست ناموفق بود.");
+      setErrorMsg(err instanceof Error ? err.message : "تست اتصال انجام نشد؛ دوباره تلاش کنید.");
     } finally {
       setTesting(false);
     }
@@ -166,7 +167,7 @@ function MarketSourceCard() {
       </p>
 
       {loading ? (
-        <p className="py-4 text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <div aria-busy="true"><SkeletonLines lines={3} /><span className="sr-only">در حال بارگذاری…</span></div>
       ) : (
         <div className="space-y-4">
           {/* روشن/خاموش */}
@@ -276,7 +277,7 @@ function MarketSourceCard() {
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="min-h-[48px] rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="min-h-12 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {saving ? "در حال ذخیره…" : "ذخیره"}
             </button>
@@ -284,7 +285,7 @@ function MarketSourceCard() {
               type="button"
               onClick={handleTest}
               disabled={testing || !url.trim()}
-              className="min-h-[48px] rounded-lg border border-input bg-background px-6 py-2.5 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-50"
+              className="min-h-12 rounded-lg border border-input bg-background px-6 py-2.5 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-50"
             >
               {testing ? "در حال تست…" : "تست اتصال"}
             </button>
@@ -346,7 +347,7 @@ function GithubTokenCard() {
       });
       const body = await res.json();
       if (!res.ok || body?.ok === false) {
-        throw new Error(body?.error?.message ?? "ذخیره ناموفق بود.");
+        throw new Error(body?.error?.message ?? "ذخیره انجام نشد؛ دوباره تلاش کنید.");
       }
       const d = body?.data;
       setConnected(!!d?.connected);
@@ -354,7 +355,7 @@ function GithubTokenCard() {
       setToken("");
       setMessage({ ok: true, text: String(d?.message ?? "گیت‌هاب متصل شد.") });
     } catch (err) {
-      setMessage({ ok: false, text: err instanceof Error ? err.message : "ذخیره ناموفق بود." });
+      setMessage({ ok: false, text: err instanceof Error ? err.message : "ذخیره انجام نشد؛ دوباره تلاش کنید." });
     } finally {
       setSaving(false);
     }
@@ -373,7 +374,7 @@ function GithubTokenCard() {
       </p>
 
       {loading ? (
-        <p className="py-4 text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <div aria-busy="true"><SkeletonLines lines={3} /><span className="sr-only">در حال بارگذاری…</span></div>
       ) : (
         <div className="space-y-4">
           <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
@@ -416,7 +417,7 @@ function GithubTokenCard() {
               className={inputClass}
             />
             <p className="mt-1 text-xs text-muted-foreground">
-              ذخیره، اتصال را با خود گیت‌هاب تست می‌کند و فقط در صورت موفق بودن ذخیره می‌شود.
+              اول اتصال با همین توکن تست می‌شود و فقط در صورت موفق بودن ذخیره می‌شود.
             </p>
           </div>
 
@@ -436,7 +437,7 @@ function GithubTokenCard() {
               type="button"
               onClick={handleSave}
               disabled={saving || !token.trim()}
-              className="min-h-[48px] rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="min-h-12 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {saving ? "در حال بررسی…" : "ذخیره و اتصال"}
             </button>
@@ -449,7 +450,7 @@ function GithubTokenCard() {
                 setLoading(false);
               }}
               disabled={loading}
-              className="min-h-[48px] rounded-lg border border-input bg-background px-6 py-2.5 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-50"
+              className="min-h-12 rounded-lg border border-input bg-background px-6 py-2.5 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-50"
             >
               بررسی دوباره وضعیت
             </button>
@@ -480,20 +481,20 @@ const TEAM_LIST = [
 ] as const;
 
 const TEAM_FA: Record<string, string> = {
-  artdir: "راهنمای هنری",
-  branding: "برندینگ",
+  artdir: "طراحی ارشد",
+  branding: "برند",
   content: "محتوا",
   seo: "سئو",
-  analytics: "تحلیل داده",
-  intel: "اطلاعات بازار",
-  lead: "لید و فروش",
-  design: "طراحی",
+  analytics: "تحلیل",
+  intel: "اطلاعات",
+  lead: "لید",
+  design: "دیزاین",
   seocontent: "محتوای سئو",
   vibefarsi: "وایب‌فارسی",
-  farsiui: "رابط فارسی",
-  "design-ir": "طراحی ایرانی",
+  farsiui: "فارسی UI",
+  "design-ir": "دیزاین ایرانی",
   dev: "توسعه",
-  qa: "کنترل کیفیت",
+  qa: "کیفیت",
   inspector: "بازرس",
 };
 
@@ -551,10 +552,10 @@ function LlmModelsCard() {
           if (d.teamModels && typeof d.teamModels === "object")
             setTeamModels(d.teamModels as Record<string, TeamModelEntry>);
         } else {
-          setErrorMsg(body?.error?.message ?? "خواندن تنظیمات ناموفق بود.");
+          setErrorMsg(body?.error?.message ?? "خواندن تنظیمات انجام نشد؛ دوباره تلاش کنید.");
         }
       } catch {
-        setErrorMsg("ارتباط با سرور برقرار نشد.");
+        setErrorMsg("به سرور وصل نشد؛ اتصال اینترنت را بررسی و دوباره تلاش کنید.");
       } finally {
         setLoading(false);
       }
@@ -597,7 +598,7 @@ function LlmModelsCard() {
       });
       const body = await res.json();
       if (!res.ok || body?.ok === false) {
-        throw new Error(body?.error?.message ?? "ذخیره ناموفق بود.");
+        throw new Error(body?.error?.message ?? "ذخیره انجام نشد؛ دوباره تلاش کنید.");
       }
       const ep = body?.data as MaskedEndpoint;
       if (ep) setEndpoints((list) => [...list, ep]);
@@ -605,14 +606,14 @@ function LlmModelsCard() {
       setAddBase("");
       setAddKey("");
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "ذخیره ناموفق بود.");
+      setErrorMsg(err instanceof Error ? err.message : "ذخیره انجام نشد؛ دوباره تلاش کنید.");
     } finally {
       setAdding(false);
     }
   }
 
   async function handleDelete(id: string, name: string) {
-    if (!window.confirm(`endpoint «${name}» حذف شود؟ تیم‌هایی که از آن استفاده می‌کنند به حالت پیش‌فرض برمی‌گردند.`)) return;
+    if (!window.confirm(`درگاه «${name}» حذف شود؟ تیم‌هایی که از آن استفاده می‌کنند به حالت پیش‌فرض برمی‌گردند.`)) return;
     setErrorMsg(null);
     try {
       const res = await fetch(`/api/settings/llm/${encodeURIComponent(id)}`, {
@@ -620,7 +621,7 @@ function LlmModelsCard() {
       });
       const body = await res.json();
       if (!res.ok || body?.ok === false) {
-        throw new Error(body?.error?.message ?? "حذف ناموفق بود.");
+        throw new Error(body?.error?.message ?? "حذف انجام نشد؛ دوباره تلاش کنید.");
       }
       setEndpoints((list) => list.filter((e) => e.id !== id));
       setTeamModels((map) => {
@@ -636,7 +637,7 @@ function LlmModelsCard() {
         return next;
       });
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "حذف ناموفق بود.");
+      setErrorMsg(err instanceof Error ? err.message : "حذف انجام نشد؛ دوباره تلاش کنید.");
     }
   }
 
@@ -671,16 +672,16 @@ function LlmModelsCard() {
         } else {
           setTestResults((m) => ({
             ...m,
-            [id]: { ok: false, message: String(d.message ?? "تست ناموفق بود."), latencyMs: null, count: null },
+            [id]: { ok: false, message: String(d.message ?? "تست اتصال انجام نشد؛ دوباره تلاش کنید."), latencyMs: null, count: null },
           }));
         }
       } else {
-        throw new Error(body?.error?.message ?? "تست ناموفق بود.");
+        throw new Error(body?.error?.message ?? "تست اتصال انجام نشد؛ دوباره تلاش کنید.");
       }
     } catch (err) {
       setTestResults((m) => ({
         ...m,
-        [id]: { ok: false, message: err instanceof Error ? err.message : "تست ناموفق بود.", latencyMs: null, count: null },
+        [id]: { ok: false, message: err instanceof Error ? err.message : "تست اتصال انجام نشد؛ دوباره تلاش کنید.", latencyMs: null, count: null },
       }));
     } finally {
       setTesting((m) => ({ ...m, [id]: false }));
@@ -729,13 +730,13 @@ function LlmModelsCard() {
       });
       const body = await res.json();
       if (!res.ok || body?.ok === false) {
-        throw new Error(body?.error?.message ?? "ذخیره ناموفق بود.");
+        throw new Error(body?.error?.message ?? "ذخیره انجام نشد؛ دوباره تلاش کنید.");
       }
       if (body?.data?.teamModels) setTeamModels(body.data.teamModels);
       setSavedMsg(true);
       window.setTimeout(() => setSavedMsg(false), 4000);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "ذخیره ناموفق بود.");
+      setErrorMsg(err instanceof Error ? err.message : "ذخیره انجام نشد؛ دوباره تلاش کنید.");
     } finally {
       setSavingTeams(false);
     }
@@ -748,12 +749,12 @@ function LlmModelsCard() {
         مدل‌های هوش مصنوعی
       </h2>
       <p className="mb-4 text-xs text-muted-foreground">
-        endpointهای سازگار با OpenAI (درگاه مدل‌ها) و انتخاب مدلِ هر یک از ۱۵ تیم.
+        درگاه‌های سازگار با OpenAI و انتخاب مدل هر یک از ۱۵ تیم.
         تیمی که تنظیم نشود، از متغیرهای محیطی (LLM_MODEL و LLM_API_KEY) استفاده می‌کند.
       </p>
 
       {loading ? (
-        <p className="py-4 text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <div aria-busy="true"><SkeletonLines lines={3} /><span className="sr-only">در حال بارگذاری…</span></div>
       ) : !connected ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-4">
           <p className="text-sm font-bold text-foreground">متصل نیست</p>
@@ -769,7 +770,7 @@ function LlmModelsCard() {
         <div className="space-y-6">
           {/* لیست endpointها */}
           <div>
-            <h3 className="mb-2 text-sm font-bold text-foreground">درگاه‌ها (endpointها)</h3>
+            <h3 className="mb-2 text-sm font-bold text-foreground">درگاه‌ها</h3>
             {endpoints.length === 0 ? (
               <p className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
                 هنوز درگاهی ثبت نشده است. اولین درگاه را با فرم پایین اضافه کنید.
@@ -830,7 +831,7 @@ function LlmModelsCard() {
                           type="button"
                           onClick={() => handleTest(ep.id)}
                           disabled={!!testing[ep.id]}
-                          className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-4 py-2 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-50"
+                          className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-4 py-2 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-50"
                         >
                           <RefreshCw size={15} strokeWidth={1.75} aria-hidden="true" />
                           {testing[ep.id] ? "در حال تست…" : "تست اتصال"}
@@ -838,10 +839,10 @@ function LlmModelsCard() {
                         <button
                           type="button"
                           onClick={() => handleDelete(ep.id, ep.name)}
-                          className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-destructive/30 bg-card px-4 py-2 text-sm font-medium text-destructive shadow-control transition-opacity hover:opacity-80"
+                          className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-destructive/30 bg-card px-4 py-2 text-sm font-medium text-destructive shadow-control transition-opacity hover:opacity-80"
                         >
                           <Trash2 size={15} strokeWidth={1.75} aria-hidden="true" />
-                          حذف
+                          حذف درگاه
                         </button>
                       </div>
                     </li>
@@ -855,7 +856,7 @@ function LlmModelsCard() {
           <div className="rounded-lg border border-border bg-background px-3 py-4">
             <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-foreground">
               <Plus size={15} strokeWidth={2} aria-hidden="true" />
-              افزودن درگاه جدید
+              افزودن درگاه
             </h3>
             <div className="grid gap-3 sm:grid-cols-3">
               <div>
@@ -905,7 +906,7 @@ function LlmModelsCard() {
               type="button"
               onClick={handleAdd}
               disabled={adding || !addName.trim() || !addBase.trim() || !addKey.trim()}
-              className="mt-3 min-h-[48px] rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="mt-3 min-h-12 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {adding ? "در حال ذخیره…" : "افزودن درگاه"}
             </button>
@@ -915,8 +916,8 @@ function LlmModelsCard() {
           <div>
             <h3 className="mb-1 text-sm font-bold text-foreground">مدل هر تیم</h3>
             <p className="mb-3 text-xs text-muted-foreground">
-              برای هر تیم یک درگاه و یک مدل انتخاب کنید. بعد از انتخاب درگاه، لیست
-              واقعی مدل‌های آن درگاه (از تست اتصال) برای انتخاب می‌آید؛ می‌توانید
+              برای هر تیم یک درگاه و یک مدل انتخاب کنید. بعد از انتخاب درگاه، فهرست
+              واقعی مدل‌های آن درگاه (از آخرین تست اتصال) برای انتخاب می‌آید؛ می‌توانید
               نام مدل را دستی هم تایپ کنید.
             </p>
             <ul className="space-y-3">
@@ -967,7 +968,7 @@ function LlmModelsCard() {
                             </span>
                           )}
                           {epId && loadingModels[epId] && (
-                            <span className="me-1 text-muted-foreground">(در حال گرفتن لیست…)</span>
+                            <span className="me-1 text-muted-foreground">(در حال گرفتن فهرست…)</span>
                           )}
                         </label>
                         <input
@@ -999,9 +1000,9 @@ function LlmModelsCard() {
                 type="button"
                 onClick={handleSaveTeams}
                 disabled={savingTeams}
-                className="min-h-[48px] rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
+                className="min-h-12 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
               >
-                {savingTeams ? "در حال ذخیره…" : "ذخیره مدل تیم‌ها"}
+                {savingTeams ? "در حال ذخیره…" : "ذخیره مدل‌های تیم‌ها"}
               </button>
               {savedMsg && (
                 <p role="status" className="text-sm font-medium text-success">
@@ -1061,7 +1062,7 @@ export default function SettingsPage() {
       <PageHeader
         icon={Settings}
         title="تنظیمات"
-        subtitle="پیکربندی مدل‌ها، زمان‌بندی چرخه‌ها و مشاهده وضعیت اتصال‌ها"
+        subtitle="پیکربندی مدل‌ها، زمان‌بندی چرخه‌ها و وضعیت اتصال‌ها"
       />
 
       <form onSubmit={handleSave} className="space-y-6">
@@ -1155,7 +1156,7 @@ export default function SettingsPage() {
             </div>
             <div>
               <label htmlFor="max-parallelism" className="mb-1.5 block text-sm font-medium text-foreground">
-                حداکثر موازی‌سازی موج
+                حداکثر موازی‌سازی در هر موج
               </label>
               <input
                 id="max-parallelism"
@@ -1217,7 +1218,7 @@ export default function SettingsPage() {
             <button
               type="submit"
               disabled={saving}
-              className="min-h-[48px] w-full rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50 sm:w-auto"
+              className="min-h-12 w-full rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50 sm:w-auto"
             >
               {saving ? "در حال ذخیره…" : "ذخیره تنظیمات"}
             </button>

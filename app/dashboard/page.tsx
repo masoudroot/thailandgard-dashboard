@@ -44,20 +44,20 @@ const WAVE_WORDS = ["اول", "دوم", "سوم", "چهارم", "پنجم", "ش�
 
 /** نام فارسی هر تیم */
 const TEAM_LABELS: Record<string, string> = {
-  artdir: "مدیر هنری",
-  branding: "برندینگ",
+  artdir: "طراحی ارشد",
+  branding: "برند",
   content: "محتوا",
   seo: "سئو",
-  analytics: "تحلیل داده",
-  intel: "اطلاعات بازار",
+  analytics: "تحلیل",
+  intel: "اطلاعات",
   lead: "لید",
-  design: "طراحی",
+  design: "دیزاین",
   seocontent: "محتوای سئو",
   vibefarsi: "وایب‌فارسی",
-  farsiui: "رابط فارسی",
-  "design-ir": "طراحی ایران",
+  farsiui: "فارسی UI",
+  "design-ir": "دیزاین ایرانی",
   dev: "توسعه",
-  qa: "کنترل کیفیت",
+  qa: "کیفیت",
   inspector: "بازرس",
 };
 
@@ -248,14 +248,13 @@ export default function DashboardHomePage() {
               داشبورد ایجنتیک تایلندگرد
             </h1>
             <p className="mt-3 max-w-2xl text-lg text-muted-foreground">
-              پانزده تیم هوش مصنوعی، شش موج، یک چرخهٔ بی‌وقفه برای رشد
-              تایلندگرد. این‌جا می‌بینی هر تیم کجای کار است و چرخهٔ بعدی را از
-              همین‌جا شروع می‌کنی.
+              پانزده تیم هوش مصنوعی در شش موج، پشت سر هم برای رشد تایلندگرد کار می‌کنند.
+              این‌جا می‌بینید هر تیم کجای کار است و چرخهٔ بعدی را از همین‌جا شروع می‌کنید.
             </p>
 
             {/* آمار کلی؛ وقتی اتصال نیست، به‌جای عدد ساختگی هیچی نشان نمی‌دهیم */}
             {!failed && (
-              <div className="tg-stagger mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 md:mt-8 md:gap-4 lg:grid-cols-4 lg:gap-6">
+              <div className="tg-stagger mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:mt-8 md:gap-6 lg:grid-cols-4">
                 {loading
                   ? Array.from({ length: 4 }).map((_, i) => (
                       <SkeletonStat key={i} />
@@ -274,7 +273,7 @@ export default function DashboardHomePage() {
         ) : (
           <>
         {/* ── آخرین چرخه + هشدارها ── */}
-        <div className="mt-4 grid gap-3 sm:gap-4 md:mt-6 md:gap-6 lg:grid-cols-3">
+        <div className="mt-4 grid gap-4 md:mt-6 md:gap-6 lg:grid-cols-3">
           {/* کارت آخرین چرخه */}
           <section
             aria-label="آخرین چرخه"
@@ -285,12 +284,12 @@ export default function DashboardHomePage() {
             ) : !cycle ? (
               <div className="py-6 text-center">
                 <p className="text-sm text-muted-foreground">
-                  هنوز چرخه‌ای اجرا نشده است؛ اولین چرخه را شروع کن.
+                  هنوز چرخه‌ای اجرا نشده است؛ اولین چرخه را شروع کنید.
                 </p>
                 <button
                   type="button"
                   onClick={() => setDialogOpen(true)}
-                  className="tg-btn mt-4 inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-primary px-6 font-bold text-primary-foreground shadow-control hover:brightness-105"
+                  className="tg-btn mt-4 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-6 font-bold text-primary-foreground shadow-control hover:brightness-105"
                 >
                   <Play size={20} strokeWidth={2} />
                   شروع چرخهٔ جدید
@@ -345,7 +344,7 @@ export default function DashboardHomePage() {
                     <button
                       type="button"
                       onClick={() => setDialogOpen(true)}
-                      className="tg-btn inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 font-bold text-primary-foreground shadow-control hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:w-auto"
+                      className="tg-btn inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 font-bold text-primary-foreground shadow-control hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:w-auto"
                     >
                       <Play size={20} strokeWidth={2} />
                       شروع چرخهٔ جدید
@@ -369,11 +368,11 @@ export default function DashboardHomePage() {
                 ))
               ) : alertsError ? (
                 <p className="rounded-xl bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
-                  هشدارها در دسترس نیست؛ سرویس هشدار وصل نیست.
+                  سرویس هشدار در دسترس نیست.
                 </p>
               ) : alerts.length === 0 ? (
                 <p className="rounded-xl bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
-                  هشدار تازه‌ای نیست؛ همه‌چیز آرام است.
+                  هشدار فعالی نیست.
                 </p>
               ) : (
                 alerts.map((a) => {
@@ -488,7 +487,7 @@ export default function DashboardHomePage() {
               </div>
 
               {/* جزئیات هر موج */}
-              <div className="tg-stagger mt-6 grid gap-3 sm:grid-cols-2 md:mt-8 md:gap-4 lg:grid-cols-3">
+              <div className="tg-stagger mt-6 grid gap-4 sm:grid-cols-2 md:mt-8 md:gap-6 lg:grid-cols-3">
                 {cycle.waves.map((w) => {
                   const state = waveState(w, cycle.currentWave);
                   return (
@@ -538,7 +537,7 @@ export default function DashboardHomePage() {
           onClick={() => !starting && setDialogOpen(false)}
         >
           <div
-            className="tg-pop max-h-[92dvh] w-full overflow-y-auto rounded-t-xl border border-border bg-card p-5 shadow-xl sm:max-w-md sm:rounded-xl sm:p-6"
+            className="tg-pop max-h-[92dvh] w-full overflow-y-auto rounded-t-xl border border-border bg-card p-5 shadow-overlay sm:max-w-md sm:rounded-xl sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="start-cycle-title" className="text-lg font-bold">
@@ -552,7 +551,7 @@ export default function DashboardHomePage() {
               <RippleButton
                 disabled={starting}
                 onClick={handleConfirmStart}
-                className="tg-btn inline-flex min-h-[48px] w-full flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-bold text-primary-foreground shadow-control hover:brightness-105 disabled:opacity-60"
+                className="tg-btn inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-bold text-primary-foreground shadow-control hover:brightness-105 disabled:opacity-60"
               >
                 {starting ? (
                   <>
@@ -570,7 +569,7 @@ export default function DashboardHomePage() {
                 type="button"
                 disabled={starting}
                 onClick={() => setDialogOpen(false)}
-                className="tg-btn inline-flex min-h-[48px] w-full items-center justify-center rounded-xl border border-border bg-card px-5 font-medium text-foreground hover:bg-muted disabled:opacity-60 sm:w-auto"
+                className="tg-btn inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-border bg-card px-5 font-medium text-foreground hover:bg-muted disabled:opacity-60 sm:w-auto"
               >
                 انصراف
               </button>

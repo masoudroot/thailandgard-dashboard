@@ -18,7 +18,7 @@ const STATUS_LABEL: Record<VizStatus, string> = {
   success: 'موفق',
   failed: 'ناموفق',
   pending: 'در انتظار',
-  canceled: 'لغوشده',
+  canceled: 'لغو شد',
   skipped: 'صرف‌نظر شده',
   stopped: 'متوقف شد',
 };
@@ -71,7 +71,7 @@ export default function StatusBadge({
 
   return (
     <span
-      className={`inline-flex min-h-[28px] items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_TONE[status]} ${className}`}
+      className={`inline-flex min-h-7 items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_TONE[status]} ${className}`}
     >
       {!noDot && (
         <span className="relative flex h-2 w-2 shrink-0">

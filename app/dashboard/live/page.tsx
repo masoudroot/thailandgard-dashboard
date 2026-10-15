@@ -43,7 +43,7 @@ const SUBAGENT_STATUS_LABEL: Record<Subagent['status'], string> = {
   running: 'در حال اجرا',
   paused: 'متوقف‌شده',
   stopped: 'متوقف شد',
-  success: 'تمام شد',
+  success: 'موفق',
   failed: 'ناموفق',
 };
 
@@ -81,7 +81,7 @@ function ControlButton({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setError(json?.error?.message ?? 'ناموفق بود.');
+        setError(json?.error?.message ?? 'انجام نشد؛ دوباره تلاش کنید.');
       } else {
         onDone();
       }
@@ -98,12 +98,12 @@ function ControlButton({
         type="button"
         onClick={run}
         disabled={busy}
-        className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors disabled:opacity-50 ${tone}`}
+        className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors disabled:opacity-50 ${tone}`}`
       >
         <Icon size={14} strokeWidth={2} aria-hidden="true" />
         {busy ? '…' : label}
       </button>
-      {error && <span className="text-[11px] text-destructive">{error}</span>}
+      {error && <span className="text-xs text-destructive">{error}</span>}
     </span>
   );
 }
@@ -129,13 +129,13 @@ function LiveTeamCard({
 
   const working = run?.status === 'running';
   const pill = !run ? (
-    <span className="inline-flex min-h-[28px] items-center rounded-full border border-border bg-muted/60 px-3 py-1 text-xs font-semibold text-muted-foreground">
-      منتظر
+    <span className="inline-flex min-h-7 items-center rounded-full border border-border bg-muted/60 px-3 py-1 text-xs font-semibold text-muted-foreground">
+      منتظر نوبت
     </span>
   ) : working ? (
     <StatusBadge status="running" label="در حال کار" />
   ) : (
-    <span className="inline-flex min-h-[28px] items-center rounded-full border border-border bg-muted/60 px-3 py-1 text-xs font-semibold text-muted-foreground">
+    <span className="inline-flex min-h-7 items-center rounded-full border border-border bg-muted/60 px-3 py-1 text-xs font-semibold text-muted-foreground">
       بیکار
     </span>
   );
@@ -203,8 +203,8 @@ function LiveTeamCard({
               />
             </div>
           ) : (
-            <p className="mt-1.5 text-[11px] leading-5 text-muted-foreground">
-              ستون‌های زنده هنوز به دیتابیس اضافه نشده‌اند.
+            <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+              ستون‌های زنده هنوز به پایگاه داده اضافه نشده‌اند.
             </p>
           )}
         </div>
@@ -235,7 +235,7 @@ function LiveTeamCard({
           <div className="mt-2 space-y-2">
             {!subagentsReady ? (
               <p className="text-xs leading-6 text-muted-foreground">
-                جدول ساب‌ایجنت‌ها هنوز در دیتابیس ساخته نشده است؛ کنترل زنده بعد
+                جدول ساب‌ایجنت‌ها هنوز در پایگاه داده ساخته نشده است؛ کنترل زنده بعد
                 از اجرای مایگریشن فعال می‌شود.
               </p>
             ) : subagents.length === 0 ? (
@@ -255,10 +255,10 @@ function LiveTeamCard({
                     className="rounded-lg border border-border bg-muted/40 p-3"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="min-w-0 flex-1 text-[13px] font-medium leading-6 text-card-foreground">
+                      <p className="min-w-0 flex-1 text-sm font-medium leading-6 text-card-foreground">
                         {s.label}
                       </p>
-                      <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-[11px] text-muted-foreground">
+                      <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-xs text-muted-foreground">
                         {SUBAGENT_STATUS_LABEL[s.status]}
                       </span>
                     </div>
@@ -294,14 +294,14 @@ function LiveTeamCard({
                         />
                       )}
                       {!canPause && !canResume && !canStop && (
-                        <span className="text-[11px] text-muted-foreground">قابل کنترل نیست (تمام شده).</span>
+                        <span className="text-xs text-muted-foreground">قابل کنترل نیست (تمام شده).</span>
                       )}
                     </div>
                   </div>
                 );
               })
             )}
-            <p className="text-[11px] leading-5 text-muted-foreground">
+            <p className="text-xs leading-5 text-muted-foreground">
               کنترل از مرز مرحله‌ی بعدی اعمال می‌شود؛ روی مرحله‌ای که هم‌اکنون در حال اجراست اثر فوری ندارد.
             </p>
           </div>
@@ -328,8 +328,8 @@ export default function LivePage() {
       const res = await fetch('/api/live', { cache: 'no-store' });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        const msg = json?.error?.message ?? 'خطا در خواندن وضعیت زنده.';
-        setErrorMsg(typeof msg === 'string' ? msg : 'خطا در خواندن وضعیت زنده.');
+        const msg = json?.error?.message ?? 'خواندن وضعیت زنده انجام نشد؛ دوباره تلاش کنید.';
+        setErrorMsg(typeof msg === 'string' ? msg : 'خواندن وضعیت زنده انجام نشد؛ دوباره تلاش کنید.');
         // خطای ۵۰۳ یعنی دیتابیس در دسترس نیست؛ بقیه‌ی خطاها فقط همین دور را از دست می‌دهند.
         if (res.status === 503) setState('offline');
         return;
@@ -389,10 +389,10 @@ export default function LivePage() {
         {state === 'offline' && (
           <EmptyState
             icon={WifiOff}
-            title="به دیتابیس متصل نیست"
+            title="به پایگاه داده متصل نیست"
             description={
               errorMsg ||
-              'صفحه نتوانست به دیتابیس وصل شود. متغیرهای SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY را در محیط اجرا بررسی کنید، بعد صفحه را تازه کنید.'
+              'صفحه نتوانست به پایگاه داده وصل شود. متغیرهای SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY را در محیط اجرا بررسی کنید، بعد صفحه را تازه کنید.'
             }
             action={
               <button
@@ -401,7 +401,7 @@ export default function LivePage() {
                   setState('loading');
                   void fetchLive();
                 }}
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control transition-colors hover:opacity-90"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control transition-colors hover:opacity-90"
               >
                 تلاش دوباره
               </button>
@@ -413,11 +413,11 @@ export default function LivePage() {
           <EmptyState
             icon={MoonStar}
             title="در حال حاضر چرخه‌ای در حال اجرا نیست"
-            description="وقتی چرخه‌ای شروع شود، وضعیت زنده‌ی هر ۱۵ تیم و ساب‌ایجنت‌هایشان همین‌جا دیده می‌شود. هیچ داده‌ی نمایشی نشان داده نمی‌شود."
+            description="وقتی چرخه‌ای شروع شود، وضعیت زنده‌ی هر ۱۵ تیم و ساب‌ایجنت‌هایشان همین‌جا دیده می‌شود. هیچ دادهٔ نمایشی نشان داده نمی‌شود."
             action={
               <Link
                 href="/dashboard/cycles"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control transition-colors hover:opacity-90"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control transition-colors hover:opacity-90"
               >
                 رفتن به چرخه‌ها
               </Link>
@@ -444,7 +444,7 @@ export default function LivePage() {
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
                     <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-success" />
                   </span>
-                  چرخه‌ی فعال
+                  چرخهٔ فعال
                 </span>
                 <span className="font-mono text-xs text-muted-foreground" dir="ltr">
                   {data.cycle.run_id}
@@ -484,7 +484,7 @@ export default function LivePage() {
             </div>
 
             <p className="mt-6 text-center text-xs leading-6 text-muted-foreground">
-              {WAVE_TITLES[1]} تا {WAVE_TITLES[6]} · همه‌ی اعداد از دیتابیس زنده می‌آیند.
+              {WAVE_TITLES[1]} تا {WAVE_TITLES[6]} · همهٔ اعداد از پایگاه دادهٔ زنده می‌آیند.
             </p>
           </>
         )}

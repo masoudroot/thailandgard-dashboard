@@ -48,7 +48,7 @@ function ReportsTab({ detail }: { detail: TeamDetail }) {
       <EmptyState
         icon={ScrollText}
         title="هنوز گزارشی برای این تیم ثبت نشده است"
-        description="بعد از اولین اجرای تیم در چرخه، گزارش هر اجرا (خلاصه‌ی خروجی، وضعیت و زمان) همین‌جا می‌آید."
+        description="بعد از اولین اجرای تیم در چرخه، گزارش هر اجرا (خلاصهٔ خروجی، وضعیت و زمان) همین‌جا می‌آید."
       />
     );
   }
@@ -100,7 +100,7 @@ function ReportsTab({ detail }: { detail: TeamDetail }) {
         <section className="pt-4">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-card-foreground">
             <Send size={16} strokeWidth={2} aria-hidden="true" />
-            اطلاع‌رسانی‌های ثبت‌شده در پنل
+            اطلاع‌رسانی‌های ثبت‌شده در داشبورد
             <span className="font-normal text-muted-foreground">({faNum(detail.notifications.length)})</span>
           </h2>
           <ul className="space-y-2">
@@ -164,7 +164,7 @@ export default function TeamDetailPage() {
           action={
             <Link
               href="/dashboard/teams"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground"
+              className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground"
             >
               بازگشت به تیم‌ها
             </Link>
@@ -184,7 +184,7 @@ export default function TeamDetailPage() {
           className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
         >
           <ArrowRight size={16} strokeWidth={2} aria-hidden="true" className="rotate-180" />
-          همه‌ی تیم‌ها
+          همهٔ تیم‌ها
         </Link>
 
         <PageHeader
@@ -194,7 +194,7 @@ export default function TeamDetailPage() {
         />
 
         {/* تب‌ها */}
-        <div className="mb-6 flex gap-1 rounded-xl border border-border bg-card p-1" role="tablist" aria-label="بخش‌های صفحه‌ی تیم">
+        <div className="mb-6 flex gap-1 rounded-xl border border-border bg-card p-1" role="tablist" aria-label="بخش‌های صفحهٔ تیم">
           {(
             [
               { id: 'overview', label: 'نمای کلی' },
@@ -232,13 +232,13 @@ export default function TeamDetailPage() {
         {state === 'offline' && (
           <EmptyState
             icon={WifiOff}
-            title="به دیتابیس متصل نیست"
+            title="به پایگاه داده متصل نیست"
             description="اطلاعات تیم بارگذاری نشد. اتصال را بررسی کنید و دوباره تلاش کنید."
             action={
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground"
               >
                 تلاش دوباره
               </button>

@@ -57,20 +57,20 @@ function unwrapPayload(body: unknown): unknown {
 }
 
 const TEAM_LABEL: Record<TeamName, string> = {
-  artdir: 'کارگردانی هنری',
-  branding: 'برندینگ',
+  artdir: 'طراحی ارشد',
+  branding: 'برند',
   content: 'محتوا',
   seo: 'سئو',
   analytics: 'تحلیل',
-  intel: 'اطلاعات بازار',
-  lead: 'سرپرست',
+  intel: 'اطلاعات',
+  lead: 'لید',
   design: 'دیزاین',
   seocontent: 'محتوای سئو',
   vibefarsi: 'وایب‌فارسی',
-  farsiui: 'رابط فارسی',
-  'design-ir': 'دیزاین ایران',
+  farsiui: 'فارسی UI',
+  'design-ir': 'دیزاین ایرانی',
   dev: 'توسعه',
-  qa: 'تضمین کیفیت',
+  qa: 'کیفیت',
   inspector: 'بازرس',
 };
 
@@ -148,7 +148,7 @@ export default function CycleDetailPage() {
       }
       await load();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'انجام عمل ناموفق بود.');
+      setActionError(e instanceof Error ? e.message : 'این عمل انجام نشد؛ دوباره تلاش کنید.');
     } finally {
       setActing(null);
     }
@@ -168,10 +168,10 @@ export default function CycleDetailPage() {
     <div className="mx-auto max-w-6xl">
         <Link
           href="/dashboard/cycles"
-          className="tg-link mb-6 inline-flex min-h-[44px] items-center gap-2 text-sm text-muted-foreground hover:text-brand"
+          className="tg-link mb-6 inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground hover:text-brand"
         >
           <ArrowRight size={16} strokeWidth={2} aria-hidden="true" className="rotate-180" />
-          بازگشت به لیست چرخه‌ها
+          بازگشت به چرخه‌ها
         </Link>
 
         {loadState === 'loading' ? (
@@ -181,12 +181,12 @@ export default function CycleDetailPage() {
         ) : loadState === 'unauthorized' ? (
           <EmptyState
             icon={KeyRound}
-            title="نشست شما منقضی شده است"
+            title="ورود شما منقضی شده است"
             description="برای دیدن جزئیات چرخه دوباره وارد شوید."
             action={
               <Link
                 href="/login"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90"
               >
                 ورود دوباره
               </Link>
@@ -196,13 +196,13 @@ export default function CycleDetailPage() {
           <EmptyState
             icon={SearchX}
             title="چرخه‌ای با این شناسه پیدا نشد"
-            description="شاید شناسه اشتباه است یا چرخه حذف شده است؛ به لیست چرخه‌ها برگردید."
+            description="شاید آدرس اشتباه است یا چرخه حذف شده؛ به فهرست چرخه‌ها برگردید."
             action={
               <Link
                 href="/dashboard/cycles"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border bg-card px-5 py-2 text-sm font-medium text-card-foreground shadow-control transition-colors hover:bg-accent"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-border bg-card px-5 py-2 text-sm font-medium text-card-foreground shadow-control transition-colors hover:bg-accent"
               >
-                بازگشت به لیست چرخه‌ها
+                بازگشت به چرخه‌ها
               </Link>
             }
           />
@@ -227,7 +227,7 @@ export default function CycleDetailPage() {
                     onClick={() => sendAction('pause')}
                     disabled={!isRunning || acting !== null}
                     title={pauseHint}
-                    className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-warning/40 bg-warning/10 px-5 py-2 text-sm font-medium text-warning transition-colors hover:bg-warning/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="tg-btn inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-warning/40 bg-warning/10 px-5 py-2 text-sm font-medium text-warning transition-colors hover:bg-warning/20 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Pause size={16} strokeWidth={2} aria-hidden="true" />
                     {acting === 'pause' ? 'در حال توقف…' : 'توقف چرخه'}
@@ -236,7 +236,7 @@ export default function CycleDetailPage() {
                     onClick={() => sendAction('resume')}
                     disabled={!isPaused || acting !== null}
                     title="ادامه از همان موجی که متوقف شده است"
-                    className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="tg-btn inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Play size={16} strokeWidth={2} aria-hidden="true" />
                     {acting === 'resume' ? 'در حال ادامه…' : 'ادامه'}
@@ -246,15 +246,15 @@ export default function CycleDetailPage() {
                       <button
                         onClick={() => sendAction('cancel')}
                         disabled={acting !== null}
-                        className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-destructive px-5 py-2 text-sm font-bold text-destructive-foreground shadow-control hover:opacity-90 disabled:opacity-40"
+                        className="tg-btn inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-destructive px-5 py-2 text-sm font-bold text-destructive-foreground shadow-control hover:opacity-90 disabled:opacity-40"
                       >
                         <XCircle size={16} strokeWidth={2} aria-hidden="true" />
-                        {acting === 'cancel' ? 'در حال لغو…' : 'بله، لغو شود'}
+                        {acting === 'cancel' ? 'در حال لغو…' : 'لغو چرخه'}
                       </button>
                       <button
                         onClick={() => setConfirmCancel(false)}
                         disabled={acting !== null}
-                        className="tg-btn inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border px-5 py-2 text-sm font-medium text-card-foreground hover:bg-muted disabled:opacity-40"
+                        className="tg-btn inline-flex min-h-11 items-center justify-center rounded-xl border border-border px-5 py-2 text-sm font-medium text-card-foreground hover:bg-muted disabled:opacity-40"
                       >
                         انصراف
                       </button>
@@ -264,7 +264,7 @@ export default function CycleDetailPage() {
                       onClick={() => setConfirmCancel(true)}
                       disabled={!isActive || acting !== null}
                       title="لغو چرخه؛ دیگر ادامه نمی‌یابد"
-                      className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-5 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/20 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="tg-btn inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-5 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/20 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <XCircle size={16} strokeWidth={2} aria-hidden="true" />
                       لغو چرخه
@@ -337,7 +337,7 @@ export default function CycleDetailPage() {
                       <span className="font-medium text-card-foreground">
                         {TEAM_LABEL[r.team] ?? r.team}:
                       </span>{' '}
-                      <span className="text-destructive">{r.error ?? 'خطای نامشخص'}</span>
+                      <span className="text-destructive">{r.error ?? 'جزئیات خطا ثبت نشده است.'}</span>
                     </li>
                   ))}
                 </ul>

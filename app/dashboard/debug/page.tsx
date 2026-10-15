@@ -37,7 +37,7 @@ function faDate(iso: string | null): string {
 }
 
 const inputClass =
-  "w-full min-h-[44px] rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-control placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30";
+  "w-full min-h-11 rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-control placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30";
 
 type PatchFile = { path: string; content: string };
 
@@ -137,7 +137,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
     <button
       type="button"
       onClick={copy}
-      className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-input bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-input bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {done ? <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
       {done ? "کپی شد" : label}
@@ -175,13 +175,13 @@ function ApplyButton({
       });
       const body = await readBody(res);
       if (!body.ok) {
-        setError(body.error?.message ?? "اعمال ناموفق بود.");
+        setError(body.error?.message ?? "اعمال انجام نشد؛ دوباره تلاش کنید.");
         return;
       }
       setOpen(false);
       onApplied();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "خطای شبکه.");
+      setError(e instanceof Error ? e.message : "خطای شبکه؛ دوباره تلاش کنید.");
     } finally {
       setBusy(false);
     }
@@ -192,7 +192,7 @@ function ApplyButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Wrench className="h-4 w-4" aria-hidden="true" />
         اعمال در گیت‌هاب
@@ -206,11 +206,11 @@ function ApplyButton({
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-t-xl bg-card p-5 shadow-xl sm:rounded-xl sm:p-6"
+            className="w-full max-w-md rounded-t-xl bg-card p-5 shadow-overlay sm:rounded-xl sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold leading-7">تأیید اعمال فیکس</h3>
+              <h3 className="text-base font-bold leading-7">فیکس در گیت‌هاب اعمال شود؟</h3>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
@@ -221,7 +221,7 @@ function ApplyButton({
               </button>
             </div>
             <p className="mt-2 text-sm leading-7 text-muted-foreground">
-              {faDigits(patchFiles.length)} فایل روی یک شاخه‌ی تازه از master کامیت می‌شود. پوش مستقیم روی master
+              {faDigits(patchFiles.length)} فایل روی یک شاخهٔ تازه از master کامیت می‌شود. پوش مستقیم روی master
               انجام نمی‌شود.
             </p>
             <div className="mt-4 space-y-3">
@@ -262,15 +262,15 @@ function ApplyButton({
                 type="button"
                 onClick={apply}
                 disabled={busy}
-                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
               >
                 {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                {busy ? "در حال اعمال..." : "تأیید و اعمال"}
+                {busy ? "در حال اعمال…" : "اعمال فیکس"}
               </button>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="min-h-[44px] rounded-lg border border-input px-4 text-sm font-medium hover:bg-accent"
+                className="min-h-11 rounded-lg border border-input px-4 text-sm font-medium hover:bg-accent"
               >
                 انصراف
               </button>
@@ -333,7 +333,7 @@ export default function DebugPage() {
       });
       const body = await readBody(res);
       if (!body.ok) {
-        setError(body.error?.message ?? "تحلیل ناموفق بود.");
+        setError(body.error?.message ?? "تحلیل انجام نشد؛ دوباره تلاش کنید.");
         return;
       }
       const d = body.data as { session: Session; diagnosis: Diagnosis; context: ContextSummary };
@@ -341,7 +341,7 @@ export default function DebugPage() {
       setBug("");
       loadSessions();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "خطای شبکه.");
+      setError(e instanceof Error ? e.message : "خطای شبکه؛ دوباره تلاش کنید.");
     } finally {
       setBusy(false);
     }
@@ -361,7 +361,7 @@ export default function DebugPage() {
       <PageHeader
         icon={Wrench}
         title="دستیار فنی"
-        subtitle="باگ را توصیف کنید؛ با زمینه‌ی واقعی (خطاهای team_runs و کامیت‌های گیت‌هاب) تحلیل می‌شود. هیچ داده‌ی نمایشی در کار نیست."
+        subtitle="باگ را توصیف کنید؛ با زمینهٔ واقعی (خطاهای team_runs و کامیت‌های گیت‌هاب) تحلیل می‌شود. هیچ دادهٔ نمایشی در کار نیست."
       />
 
       {/* وضعیت اتصال‌ها */}
@@ -379,7 +379,7 @@ export default function DebugPage() {
         )}
         <div>
           <p className="font-semibold">
-            {github ? github.message : "در حال بررسی اتصال گیت‌هاب..."}
+            {github ? github.message : "در حال بررسی اتصال گیت‌هاب…"}
           </p>
           {!github?.connected && github && (
             <p className="mt-1 text-muted-foreground">
@@ -403,7 +403,7 @@ export default function DebugPage() {
           rows={4}
           value={bug}
           onChange={(e) => setBug(e.target.value)}
-          placeholder="مثلاً: در صفحه‌ی چرخه‌ها روی موبایل جدول از کادر بیرون می‌زند و اسکرول افقی می‌سازد..."
+          placeholder="مثلاً: در صفحهٔ چرخه‌ها روی موبایل جدول از کادر بیرون می‌زند و اسکرول افقی می‌سازد..."
           className={`${inputClass} resize-y`}
         />
         {error && (
@@ -423,19 +423,19 @@ export default function DebugPage() {
             type="button"
             onClick={submit}
             disabled={busy}
-            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
-            {busy ? "در حال تحلیل با زمینه‌ی واقعی..." : "تحلیل باگ"}
+            {busy ? "در حال تحلیل با زمینهٔ واقعی..." : "تحلیل باگ"}
           </button>
         </div>
       </section>
 
-      {/* نتیجه‌ی تحلیل */}
+      {/* نتیجهٔ تحلیل */}
       {result && diag && (
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-bold leading-7">نتیجه‌ی تحلیل</h2>
+            <h2 className="text-base font-bold leading-7">نتیجهٔ تحلیل</h2>
             {conf && (
               <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${conf.className}`}>
                 {conf.label}
@@ -446,7 +446,7 @@ export default function DebugPage() {
           {result.context && (
             <div className="rounded-xl border border-border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
               <p>
-                زمینه‌ی استفاده‌شده: {result.context.errorsNote}{" "}
+                زمینهٔ تحلیل: {result.context.errorsNote}{" "}
                 {result.context.commitsCount >= 0
                   ? `کامیت‌های اخیر خوانده شد (${faDigits(result.context.commitsCount)}).`
                   : "کامیت‌های گیت‌هاب خوانده نشد (متصل نیست)."}
@@ -468,15 +468,15 @@ export default function DebugPage() {
             </div>
           )}
 
-          <RoleCard icon={Network} title="معمار سیستم | ریشه‌ی محتمل">
+          <RoleCard icon={Network} title="معمار سیستم | ریشهٔ محتمل">
             <p className="whitespace-pre-wrap">{diag.root_cause || "اطلاعات کافی نیست."}</p>
           </RoleCard>
 
-          <RoleCard icon={Palette} title="دیزاینر | اثر روی رابط کاربری">
+          <RoleCard icon={Palette} title="طراح | اثر روی رابط کاربری">
             <p className="whitespace-pre-wrap">{diag.ui_impact || "اطلاعات کافی نیست."}</p>
           </RoleCard>
 
-          <RoleCard icon={Code2} title="برنامه‌نویس | فیکس پیشنهادی">
+          <RoleCard icon={Code2} title="برنامه‌نویس | پیشنهاد رفع">
             <p className="whitespace-pre-wrap">{diag.fix_summary || "اطلاعات کافی نیست."}</p>
             {diag.fix_code && (
               <div className="mt-3">
@@ -487,13 +487,13 @@ export default function DebugPage() {
                   <code>{diag.fix_code}</code>
                 </pre>
                 <div className="mt-2">
-                  <CopyButton text={diag.fix_code} label="کپی کد فیکس" />
+                  <CopyButton text={diag.fix_code} label="کپی کد" />
                 </div>
               </div>
             )}
           </RoleCard>
 
-          <RoleCard icon={Bug} title="دیباگر | قدم‌های راستی‌آزمایی">
+          <RoleCard icon={Bug} title="اشکال‌زدا | قدم‌های راستی‌آزمایی">
             {diag.verification_steps.length > 0 ? (
               <ol className="list-decimal space-y-1 pe-5">
                 {diag.verification_steps.map((s, i) => (
@@ -514,7 +514,7 @@ export default function DebugPage() {
             {diag.patch_files.length > 0 && github?.connected ? (
               <div className="mt-2 space-y-2">
                 <p className="text-sm leading-7 text-muted-foreground">
-                  {faDigits(diag.patch_files.length)} فایل آماده‌ی اعمال است:{" "}
+                  {faDigits(diag.patch_files.length)} فایل آمادهٔ اعمال است:{" "}
                   <span dir="ltr" className="text-foreground">
                     {diag.patch_files.map((f) => f.path).join("، ")}
                   </span>
@@ -524,7 +524,7 @@ export default function DebugPage() {
                     sessionId={result.session.id}
                     patchFiles={diag.patch_files}
                     onApplied={() => {
-                      setAppliedMsg("فیکس روی شاخه‌ی تازه در گیت‌هاب کامیت شد.");
+                      setAppliedMsg("فیکس روی شاخهٔ تازه کامیت شد.");
                       loadSessions();
                     }}
                   />
@@ -552,16 +552,16 @@ export default function DebugPage() {
         </div>
       )}
 
-      {/* تاریخچه‌ی نشست‌ها */}
+      {/* تحلیل‌های قبلی */}
       <section>
         <h2 className="mb-2 flex items-center gap-2 text-base font-bold leading-7">
           <History className="h-5 w-5 text-brand" aria-hidden="true" />
-          تاریخچه‌ی نشست‌ها
+          تحلیل‌های قبلی
         </h2>
         {sessions.length === 0 ? (
           <EmptyState
             icon={Bug}
-            title="نشستی ثبت نشده"
+            title="تحلیلی ثبت نشده"
             description="هنوز باگی برای تحلیل ثبت نشده است؛ اولین شرح را بالا بنویسید."
           />
         ) : (
@@ -589,13 +589,13 @@ export default function DebugPage() {
                     <div className="space-y-2 border-t border-border p-3 text-sm leading-7">
                       {d.root_cause && (
                         <p>
-                          <strong>ریشه:</strong> {String(d.root_cause).slice(0, 300)}
+                          <strong>علت:</strong> {String(d.root_cause).slice(0, 300)}
                           {String(d.root_cause).length > 300 ? "..." : ""}
                         </p>
                       )}
                       {d.fix_summary && (
                         <p>
-                          <strong>فیکس:</strong> {String(d.fix_summary).slice(0, 300)}
+                          <strong>راه‌حل:</strong> {String(d.fix_summary).slice(0, 300)}
                           {String(d.fix_summary).length > 300 ? "..." : ""}
                         </p>
                       )}

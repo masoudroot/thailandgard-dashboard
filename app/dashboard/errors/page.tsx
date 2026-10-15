@@ -142,11 +142,11 @@ export default function ErrorsPage() {
       } else {
         setRetryNote({
           ok: false,
-          text: json?.error?.message ?? 'تلاش مجدد ناموفق بود؛ دوباره امتحان کنید.',
+          text: json?.error?.message ?? 'تلاش مجدد انجام نشد؛ دوباره تلاش کنید.',
         });
       }
     } catch {
-      setRetryNote({ ok: false, text: 'خطای شبکه؛ دوباره امتحان کنید.' });
+      setRetryNote({ ok: false, text: 'خطای شبکه؛ دوباره تلاش کنید.' });
     } finally {
       setRetryingId(null);
       setTimeout(() => void load(), 1500);
@@ -160,7 +160,7 @@ export default function ErrorsPage() {
         <PageHeader
           icon={TriangleAlert}
           title="خطاهای زنده"
-          subtitle="خطاهای واقعی ثبت‌شده در team_runs؛ بدون داده‌ی نمایشی"
+          subtitle="خطاهای واقعی ثبت‌شده در team_runs؛ بدون دادهٔ نمایشی"
           actions={
             <Button
               variant="outline"
@@ -207,7 +207,7 @@ export default function ErrorsPage() {
                 <EmptyState
                   icon={CheckCircle2}
                   title="خطایی ثبت نشده"
-                  description="در حال حاضر هیچ تیمی ران ناموفق یا گیرکرده ندارد. این لیست فقط از داده‌ی واقعی team_runs ساخته می‌شود."
+                  description="در حال حاضر هیچ تیمی ران ناموفق یا گیرکرده ندارد. این لیست فقط از دادهٔ واقعی team_runs ساخته می‌شود."
                   tint="bg-success/10 text-success"
                 />
               ) : (
@@ -235,7 +235,7 @@ export default function ErrorsPage() {
                           {stuck ? (
                             <p className="text-sm leading-7 text-card-foreground/90">
                               بیش از دو ساعت در وضعیت «در حال اجرا» مانده و خروجی ثبت نشده؛
-                              احتمالاً timeout یا گیرکردن فرایند.
+                              احتمالاً تایم‌اوت یا گیرکردن فرایند.
                             </p>
                           ) : (
                             <p className="text-sm leading-7 text-card-foreground/90">
@@ -290,7 +290,7 @@ export default function ErrorsPage() {
                           <h3 className="text-sm font-bold text-card-foreground">
                             {alert.kind === 'consecutive_failures'
                               ? 'تلاش‌های ناموفق پشت سر هم'
-                              : 'احتمال timeout'}
+                              : 'احتمال تایم‌اوت'}
                             {'؛ '}
                             {teamFaName(alert.team)}
                           </h3>
@@ -330,7 +330,7 @@ export default function ErrorsPage() {
                   value={teamFilter}
                   onChange={(e) => setTeamFilter(e.target.value as 'all' | TeamName)}
                 >
-                  <option value="all">همه تیم‌ها</option>
+                  <option value="all">همهٔ تیم‌ها</option>
                   {TEAMS.map((team) => (
                     <option key={team} value={team}>
                       {TEAM_META[team].faName}
