@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Database, RefreshCw } from "lucide-react";
+import { Check, Copy, Database, RefreshCw, Save } from "lucide-react";
 import {
   ConnectionRow,
   WhereGuide,
   GhostButton,
+  PrimaryButton,
   ResultNote,
+  inputClass,
   type ConnState,
 } from "./ConnectionRow";
 
@@ -17,42 +19,40 @@ function faDigits(value: string | number): string {
 
 /**
  * پنل «پایگاه داده» (سوپابیس).
- * اتصال از متغیرهای محیطی خوانده می‌شود؛ این پنل فقط وضعیت را تست می‌کند.
- * راهنمای تنظیم متغیرها در <details> است.
+ * مقادیر را از فرم می‌گیرد، تست زنده می‌کند و ذخیره می‌کند.
+ * نام متغیرهای محیطی فقط در راهنمای جمع‌شونده است.
  */
 export function SupabasePanel() {
   const [state, setState] = useState<ConnState>("loading");
   const [statusText, setStatusText] = useState("در حال بررسی…");
-  const [testing, setTesting] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const [url, setUrl] = useState("");
+  const [anonKey, setAnonKey] = useState("");
+  const [serviceKey, setServiceKey] = useState("");
+
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [manual, setManual] = useState<{ steps: string[]; message: string } | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  /** وضعیت اتصال فعلی سرور */
   async function check() {
     try {
       const res = await fetch("/api/settings/supabase/test", { cache: "no-store" });
       const body = await res.json().catch(() => ({}));
       const configured = body?.data?.configured ?? body?.configured;
-      // GET خلاصه می‌دهد، POST تست واقعی
       if (typeof configured === "boolean") {
-        setState(configured ? "unknown" : "fail");
-        setStatusText(configured ? "پیکربندی شده" : "متصل نیست");
+        setState(configured ? "ok" : "fail");
+        setStatusText(configured ? "متصل" : "متصل نیست");
         return;
       }
-      applyTest(body?.data ?? body);
+      const okVal = !!body?.data?.connected;
+      setState(okVal ? "ok" : "fail");
+      setStatusText(okVal ? "متصل" : "متصل نیست");
     } catch {
       setState("fail");
       setStatusText("متصل نیست");
-    }
-  }
-
-  function applyTest(d: { connected?: boolean; latencyMs?: number | null; message?: string }) {
-    const ok = !!d?.connected;
-    setState(ok ? "ok" : "fail");
-    setStatusText(ok ? "متصل" : "متصل نیست");
-    if (d?.message) {
-      setResult({
-        ok,
-        text: d.message + (ok && d.latencyMs != null ? ` (${faDigits(d.latencyMs)} میلی‌ثانیه)` : ""),
-      });
     }
   }
 
@@ -60,21 +60,79 @@ export function SupabasePanel() {
     void check();
   }, []);
 
+  /** تست با مقادیر فرم */
   async function handleTest() {
     setTesting(true);
     setResult(null);
+    setManual(null);
     try {
-      const res = await fetch("/api/settings/supabase/test", { method: "POST" });
+      const res = await fetch("/api/settings/supabase/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, anonKey, serviceKey }),
+      });
       const body = await res.json().catch(() => ({}));
-      applyTest(body?.data ?? body);
+      const d = body?.data ?? body;
+      const okVal = !!d?.connected;
+      setResult({
+        ok: okVal,
+        text: (d?.message ?? "تست انجام نشد.") + (okVal && d?.latencyMs != null ? ` (${faDigits(d.latencyMs)} میلی‌ثانیه)` : ""),
+      });
     } catch {
-      setState("fail");
-      setStatusText("متصل نیست");
       setResult({ ok: false, text: "تست انجام نشد؛ دوباره تلاش کنید." });
     } finally {
       setTesting(false);
     }
   }
+
+  /** ذخیره: ورسل مستقیم یا راهنمای دستی */
+  async function handleSave() {
+    setSaving(true);
+    setResult(null);
+    setManual(null);
+    try {
+      const res = await fetch("/api/settings/supabase/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, anonKey, serviceKey }),
+      });
+      const body = await res.json().catch(() => ({}));
+      const d = body?.data ?? body;
+      if (d?.saved) {
+        setResult({ ok: true, text: d?.message ?? "ذخیره شد." });
+        void check();
+      } else if (d?.needsManual) {
+        setManual({
+          steps: Array.isArray(d?.steps) ? d.steps : [],
+          message: d?.message ?? "مقادیر را دستی وارد کنید.",
+        });
+      } else {
+        setResult({ ok: false, text: d?.message ?? "ذخیره نشد؛ دوباره تلاش کنید." });
+      }
+    } catch {
+      setResult({ ok: false, text: "ذخیره نشد؛ دوباره تلاش کنید." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function copyValue(label: string, value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+      setTimeout(() => setCopied(null), 1500);
+    } catch {
+      setCopied(null);
+    }
+  }
+
+  const canTest = url.trim().length > 0 && serviceKey.trim().length > 0;
+
+  const copyRows = [
+    { label: "آدرس پروژه", value: url.trim() },
+    { label: "کلید anon", value: anonKey.trim() },
+    { label: "کلید service_role", value: serviceKey.trim() },
+  ].filter((r) => r.value.length > 0);
 
   return (
     <ConnectionRow
@@ -85,27 +143,96 @@ export function SupabasePanel() {
       statusText={statusText}
     >
       <div className="space-y-4">
-        <p className="text-sm leading-7 text-muted-foreground">
-          اتصال پایگاه داده از متغیرهای محیطی سرور خوانده می‌شود
-          (<span dir="ltr" className="font-mono">SUPABASE_URL</span> و{' '}
-          <span dir="ltr" className="font-mono">SUPABASE_SERVICE_ROLE_KEY</span>).
-          با دکمه زیر سلامت اتصال فعلی را تست کنید.
-        </p>
+        <div className="space-y-3">
+          <div>
+            <label htmlFor="sb-url" className="mb-1.5 block text-sm font-medium text-foreground">
+              آدرس پروژه
+            </label>
+            <input
+              id="sb-url"
+              dir="ltr"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://xyzcompany.supabase.co"
+              className={inputClass}
+              autoComplete="off"
+            />
+          </div>
+          <div>
+            <label htmlFor="sb-anon" className="mb-1.5 block text-sm font-medium text-foreground">
+              کلید anon
+            </label>
+            <input
+              id="sb-anon"
+              dir="ltr"
+              type="password"
+              value={anonKey}
+              onChange={(e) => setAnonKey(e.target.value)}
+              placeholder="کلید عمومی anon"
+              className={inputClass}
+              autoComplete="off"
+            />
+          </div>
+          <div>
+            <label htmlFor="sb-service" className="mb-1.5 block text-sm font-medium text-foreground">
+              کلید service_role
+            </label>
+            <input
+              id="sb-service"
+              dir="ltr"
+              type="password"
+              value={serviceKey}
+              onChange={(e) => setServiceKey(e.target.value)}
+              placeholder="کلید محرمانه service_role"
+              className={inputClass}
+              autoComplete="off"
+            />
+          </div>
+        </div>
 
         {result && <ResultNote ok={result.ok} text={result.text} />}
 
-        <div>
-          <GhostButton onClick={handleTest} disabled={testing}>
+        {manual && (
+          <div className="space-y-3 rounded-lg border border-border bg-background p-3">
+            <p className="text-sm leading-7 text-foreground">{manual.message}</p>
+            <div className="space-y-2">
+              {copyRows.map((r) => (
+                <div key={r.label} className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">{r.label}</span>
+                  <GhostButton onClick={() => void copyValue(r.label, r.value)}>
+                    <Copy size={14} strokeWidth={1.75} aria-hidden="true" />
+                    {copied === r.label ? "کپی شد" : "کپی"}
+                    {copied === r.label && <Check size={14} aria-hidden="true" className="text-success" />}
+                  </GhostButton>
+                </div>
+              ))}
+            </div>
+            {manual.steps.length > 0 && (
+              <ol className="list-decimal space-y-1.5 pe-4 ps-5 text-xs leading-6 text-muted-foreground marker:text-brand">
+                {manual.steps.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <GhostButton onClick={handleTest} disabled={testing || !canTest}>
             <RefreshCw size={15} strokeWidth={1.75} aria-hidden="true" />
             {testing ? "در حال تست…" : "تست اتصال"}
           </GhostButton>
+          <PrimaryButton onClick={handleSave} disabled={saving || !canTest}>
+            <Save size={15} strokeWidth={1.75} aria-hidden="true" />
+            {saving ? "در حال ذخیره…" : "ذخیره و اتصال"}
+          </PrimaryButton>
         </div>
 
         <WhereGuide
           steps={[
-            "در داشبورد سوپابیس، پروژه را باز کنید و از بخش Settings و سپس API، مقدارهای Project URL و service_role key را بردارید.",
-            "در داشبورد ورسل، پروژه thailandgard-dashboard و بخش Settings و سپس Environment Variables را باز کنید.",
-            "دو متغیر SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY را اضافه کنید و دیپلوی تازه بگیرید.",
+            "در داشبورد سوپابیس، پروژه را باز کنید و از بخش Settings و سپس API، مقدارهای Project URL و کلیدهای anon و service_role را بردارید.",
+            "مقادیر را در فرم بالا وارد کنید و «تست اتصال» را بزنید.",
+            "با «ذخیره و اتصال»، مقادیر در متغیرهای محیطی ورسل (SUPABASE_URL و بقیه) ثبت می‌شود؛ بعد یک دیپلوی تازه بگیرید.",
           ]}
         />
       </div>
