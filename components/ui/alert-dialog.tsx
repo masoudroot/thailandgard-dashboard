@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Button } from "./button";
+import { Button } from "./Button";
 import { Dialog } from "./dialog";
 
 export interface AlertDialogProps {
@@ -29,7 +29,7 @@ export function AlertDialog({ open, onOpenChange, title, description, confirmTex
       footer={
         <>
           <Button
-            variant={destructive ? "destructive" : "default"}
+            variant={destructive ? "danger" : "primary"}
             disabled={busy}
             onClick={async () => {
               setBusy(true);
