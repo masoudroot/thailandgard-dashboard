@@ -11,6 +11,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
+import { buildKnowledgePromptSection } from '../rag';
 import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'artdir';
@@ -40,12 +41,21 @@ interface CriticVerdict {
 
 /** سرپرست: از زمینه، سه مأموریت مجزا برای مجری‌ها می‌سازد. */
 async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
+  // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
+  // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
+  let knowledgeSection = '';
+  try {
+    knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
+  } catch {
+    knowledgeSection = '';
+  }
   const memoryLines = input.memory.map((m) => `- ${m.key}: ${m.value}`).join('\n');
   const wavesLines = Object.entries(input.previousWavesOutput)
     .map(([team, out]) => `- ${team}: ${out}`)
     .join('\n');
   const prompt = [
     'زمینه:',
+    ...(knowledgeSection ? [knowledgeSection, ''] : []),
     input.ragContext || '(زمینه‌ای نیست)',
     '',
     memoryLines ? `یادگیری‌های قبلی:\n${memoryLines}` : '',

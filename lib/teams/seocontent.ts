@@ -11,6 +11,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
+import { buildKnowledgePromptSection } from '../rag';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'seocontent';
@@ -83,7 +84,16 @@ function summarizeContentOutput(result: TeamResult | undefined): string {
 }
 
 async function runSupervisor(contentSummary: string): Promise<string[]> {
+  // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
+  // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
+  let knowledgeSection = '';
+  try {
+    knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
+  } catch {
+    knowledgeSection = '';
+  }
   const prompt = [
+    ...(knowledgeSection ? [knowledgeSection, ''] : []),
     `زمینه (خروجی تیم content):\n${contentSummary}`,
     '',
     `مأموریت تیم seocontent: ${MISSION} فقط روی محتواها کار می‌کند نه سئوی تکنیکال.`,

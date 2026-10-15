@@ -11,6 +11,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
+import { buildKnowledgePromptSection } from '../rag';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'design-ir';
@@ -99,10 +100,20 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
   const designOutput = describeDesignOutput(input.previousWavesOutput['design']);
 
+  // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
+  // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
+  let knowledgeSection = '';
+  try {
+    knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
+  } catch {
+    knowledgeSection = '';
+  }
+
   // ۱. سرپرست: شکستن کار این چرخه به سه مأموریت مجری
   await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
   const plan = await callLLMJson<SupervisorPlan>(
     [
+      ...(knowledgeSection ? [knowledgeSection, ''] : []),
       `زمینه و خروجی تیم design:\n${designOutput}`,
       '',
       'مأموریت تیم design-ir: «چشم ایرانی» زیرمجموعهٔ دیزاین است؛ طرح نمی‌کشد و کد نمی‌زند، می‌بیند و حکم می‌دهد.',

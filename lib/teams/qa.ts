@@ -10,6 +10,7 @@
 
 import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
+import { buildKnowledgePromptSection } from '../rag';
 import type { ProgressReporter,
   QueuedTask,
   TeamName,
@@ -155,9 +156,19 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
   const { runId, previousWavesOutput } = input;
   const context = buildContext(previousWavesOutput);
 
+  // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
+  // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
+  let knowledgeSection = '';
+  try {
+    knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
+  } catch {
+    knowledgeSection = '';
+  }
+
   // ۱. سرپرست: شکستن کار این چرخه به سه مأموریت مجزا برای سه مجری.
   const supervisorPrompt = [
     'زمینه (خروجی تیم dev و دانش بازیابی‌شده):',
+    ...(knowledgeSection ? [knowledgeSection, ''] : []),
     context,
     '',
     `مأموریت تیم qa: ${MISSION}`,

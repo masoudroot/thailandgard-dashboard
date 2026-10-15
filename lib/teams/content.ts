@@ -17,6 +17,7 @@
 
 import { callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
+import { buildKnowledgePromptSection } from '../rag';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'content';
@@ -80,11 +81,21 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const context = input.context ?? input.input ?? '';
   const blockers: string[] = [];
 
+  // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
+  // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
+  let knowledgeSection = '';
+  try {
+    knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
+  } catch {
+    knowledgeSection = '';
+  }
+
   // فراخوانی ۱: سرپرست؛ شکستن کار چرخه به سه مأموریت مجزا
   await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
   const plan = await callLLMJson<SupervisorPlan>(
     [
       'زمینه',
+      ...(knowledgeSection ? [knowledgeSection, ''] : []),
       context || '(زمینه‌ای داده نشد)',
       '',
       `مأموریت تیم content: ${MISSION}`,

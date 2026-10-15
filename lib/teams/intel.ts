@@ -12,6 +12,7 @@
 import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
 import { fetchMarketData } from '../market';
+import { buildKnowledgePromptSection } from '../rag';
 import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 /** نام تیم در رجیستری تیم‌ها. */
@@ -38,9 +39,10 @@ const SUPERVISOR_SYSTEM = 'تو سرپرست تیم intel تایلندگرد ه�
 const WORKER_SYSTEM = 'تو مجری تیم intel تایلندگرد هستی.';
 const CRITIC_SYSTEM = 'تو منتقد سخت‌گیر تیم intel هستی.';
 
-const SUPERVISOR_PROMPT = (ragContext: string) =>
+const SUPERVISOR_PROMPT = (knowledgeSection: string, ragContext: string) =>
   [
     'زمینه:',
+    ...(knowledgeSection ? [knowledgeSection, ''] : []),
     ragContext.trim() ? ragContext.trim() : '(زمینه‌ای در دسترس نیست)',
     '',
     'مأموریت تیم intel: چشم و گوش تایلندگرد است؛ تازه‌ترین خبرهای تایلند را از منابع معتبر می‌گیرد،',
@@ -223,9 +225,18 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         : `داده‌ی بازار از ${market.source === 'live' ? 'منبع زنده' : 'کش'} دریافت شد.`
       : `هشدار داده‌ی بازار: ${market.note ?? 'در دسترس نیست.'} چرخه بدون داده‌ی بازار ادامه یافت.`;
 
+    // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
+    // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
+    let knowledgeSection = '';
+    try {
+      knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
+    } catch {
+      knowledgeSection = '';
+    }
+
     // ۱. سرپرست: شکستن کار چرخه به سه مأموریت (با زمینه‌ی RAG + داده‌ی بازار)
     await reportLive?.('سرپرست: طراحی مأموریت‌ها', 30);
-    const supervisorText = await callLLM(SUPERVISOR_PROMPT(input.ragContext ?? '') + marketContext, {
+    const supervisorText = await callLLM(SUPERVISOR_PROMPT(knowledgeSection, input.ragContext ?? '') + marketContext, {
       system: SUPERVISOR_SYSTEM,
       temperature: 0.2,
       maxTokens: 1200,

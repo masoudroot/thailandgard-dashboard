@@ -9,6 +9,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
+import { buildKnowledgePromptSection } from '../rag';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'dev';
@@ -85,8 +86,19 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
   const designSummary =
     design?.summary?.trim() || 'خروجی تیم طراحی در این چرخه در دسترس نیست.';
 
+  // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
+  // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
+  let knowledgeSection = '';
+  try {
+    knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
+  } catch {
+    knowledgeSection = '';
+  }
+  const knowledgePrefix = knowledgeSection ? `${knowledgeSection}\n\n` : '';
+
   // ۱) سرپرست: تصمیم این چرخه و شکستن به سه مأموریت مجزا
   const supervisorPrompt =
+    knowledgePrefix +
     `زمینه (خروجی تیم طراحی):\n${designSummary}\n\n` +
     `مأموریت تیم dev: ${MISSION}\n\n` +
     'بر اساس زمینه، تصمیم بگیر این چرخه چه کاری باید انجام شود و آن را به سه مأموریت مجزا برای سه مجری بشکن. ' +

@@ -14,6 +14,7 @@
 
 import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
+import { buildKnowledgePromptSection } from '../rag';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 /** نام تیم در رجیستری سراسری (lib/types.ts). */
@@ -70,12 +71,13 @@ const DEFAULT_MISSIONS: [string, string, string] = [
   'به‌روزرسانی سند پیام‌ها (MESSAGES-DOC.md) با پیام‌های تازه و نوشتن دستور اصلاح دقیق هر رشته: کدام رشته، کجا، چه جایگزینی.',
 ];
 
-function supervisorPrompt(contentText: string): string {
+function supervisorPrompt(contentText: string, knowledgeSection = ''): string {
   const content =
     contentText.trim() ||
     '(در این چرخه متنی از تیم محتوا نرسیده؛ فقط بر اساس مأموریت کار کن)';
   return `متن‌های تحویل‌شدهٔ تیم محتوا:
 ${content}
+${knowledgeSection ? `\n${knowledgeSection}` : ''}
 
 مأموریت تیم farsiui: ممیز فارسی‌نویسی و راست‌چین است؛ قرارداد نوشتاری فارسی و قواعد راست‌چین را روی هر رشتهٔ روبه‌کاربر سایت نگه می‌دارد. تخصصش متن و جهت است نه انتخاب کامپوننت.
 
@@ -181,8 +183,16 @@ function faNum(n: number): string {
 
 /** سرپرست: شکستن کار چرخه به سه مأموریت. */
 async function planMissions(contentText: string): Promise<[string, string, string]> {
+  // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
+  // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
+  let knowledgeSection = '';
   try {
-    const raw = await callLLM(supervisorPrompt(contentText), {
+    knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
+  } catch {
+    knowledgeSection = '';
+  }
+  try {
+    const raw = await callLLM(supervisorPrompt(contentText, knowledgeSection), {
       system: SUPERVISOR_SYSTEM,
       temperature: 0.2,
       maxTokens: 1500,

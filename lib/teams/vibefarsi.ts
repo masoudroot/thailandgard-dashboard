@@ -8,6 +8,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
+import { buildKnowledgePromptSection } from '../rag';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'vibefarsi';
@@ -40,10 +41,11 @@ const SYSTEM_SUPERVISOR = 'تو سرپرست تیم vibefarsi تایلندگرد
 const SYSTEM_WORKER = 'تو مجری تیم vibefarsi تایلندگرد هستی.';
 const SYSTEM_CRITIC = 'تو منتقد سخت‌گیر تیم vibefarsi هستی.';
 
-function supervisorPrompt(designOutput: string | null): string {
+function supervisorPrompt(designOutput: string | null, knowledgeSection = ''): string {
   const context = designOutput ?? '(خروجی تیم design در این چرخه ثبت نشده است)';
   return [
     'زمینه (خروجی تیم design از موج‌های قبلی):',
+    ...(knowledgeSection ? [knowledgeSection, ''] : []),
     context,
     '',
     'مأموریت تیم vibefarsi:',
@@ -121,9 +123,18 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     blockers.push('خروجی تیم design در موج‌های قبلی ثبت نشده؛ ممیزی روی زمینه تهی انجام شد.');
   }
 
+  // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
+  // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
+  let knowledgeSection = '';
+  try {
+    knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
+  } catch {
+    knowledgeSection = '';
+  }
+
   // قدم ۱: سرپرست، سه مأموریت مجری‌ها را مشخص می‌کند
   await reportLive?.('سرپرست: طراحی مأموریت‌ها', 20);
-  const plan = await callLLMJson<SupervisorPlan>(supervisorPrompt(designOutput), {
+  const plan = await callLLMJson<SupervisorPlan>(supervisorPrompt(designOutput, knowledgeSection), {
     system: SYSTEM_SUPERVISOR,
   });
   const missions = Array.isArray(plan.workers) ? plan.workers.slice(0, 3) : [];

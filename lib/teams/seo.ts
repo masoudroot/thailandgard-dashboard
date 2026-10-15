@@ -13,6 +13,7 @@
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
+import { buildKnowledgePromptSection } from '../rag';
 
 export const TEAM: TeamName = 'seo';
 
@@ -187,9 +188,19 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     const contentSummary = getContentSummary(previousWavesOutput);
     const knowledgeText = knowledge?.trim() || '(دانش بازیابی‌شده‌ای در دسترس نیست)';
 
+    // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
+    // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
+    let knowledgeSection = '';
+    try {
+      knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
+    } catch {
+      knowledgeSection = '';
+    }
+    const combinedKnowledge = [knowledgeSection, knowledgeText].filter(Boolean).join('\n\n');
+
     // ۱. سرپرست: تصمیم چرخه و سه مأموریت
     await reportLive?.('سرپرست: طراحی مأموریت‌ها', 20);
-    const supervisorRaw = await callLLM(supervisorPrompt(knowledgeText, contentSummary), {
+    const supervisorRaw = await callLLM(supervisorPrompt(combinedKnowledge, contentSummary), {
       system: 'تو سرپرست تیم سئوی تایلندگرد هستی.',
       temperature: 0.4,
     });

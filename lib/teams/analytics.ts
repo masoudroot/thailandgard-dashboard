@@ -16,6 +16,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
+import { buildKnowledgePromptSection } from '../rag';
 import type { MemoryEntry, ProgressReporter, QueuedTask, TeamName, TeamResult, TeamProgressInput } from '../types';
 
 export const TEAM: TeamName = 'analytics';
@@ -87,10 +88,11 @@ function sanitize(input: string): string {
 }
 
 /** سرپرست: سه مأموریت مجزا از روی زمینه می‌سازد. */
-async function planWork(context: string): Promise<[string, string, string]> {
+async function planWork(context: string, knowledgeSection = ''): Promise<[string, string, string]> {
   const plan = await callLLMJson<SupervisorPlan>(
     [
       'زمینه:',
+      ...(knowledgeSection ? [knowledgeSection, ''] : []),
       context || 'زمینه‌ای در دست نیست.',
       '',
       `مأموریت تیم analytics: ${MISSION}`,
@@ -177,8 +179,17 @@ export async function runTeam(input: AnalyticsTeamInput): Promise<TeamResult> {
   const runId = typeof input?.runId === 'string' ? input.runId : 'unknown';
   const reportLive = input?.reportProgress;
   try {
+    // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
+    // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
+    let knowledgeSection = '';
+    try {
+      knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
+    } catch {
+      knowledgeSection = '';
+    }
+
     await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
-    const missions = await planWork(input.ragContext ?? input.context ?? '');
+    const missions = await planWork(input.ragContext ?? input.context ?? '', knowledgeSection);
     await reportLive?.('مجری‌ها: تحلیل رفتار و متریک‌ها', 55);
     const outputs = (await Promise.all(
       missions.map((mission, i) => runWorker(mission, i as 0 | 1 | 2)),
