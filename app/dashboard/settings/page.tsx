@@ -756,15 +756,18 @@ function LlmModelsCard() {
       {loading ? (
         <div aria-busy="true"><SkeletonLines lines={3} /><span className="sr-only">در حال بارگذاری…</span></div>
       ) : !connected ? (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-4">
+        <div className="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center">
           <p className="text-sm font-bold text-foreground">متصل نیست</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            برای مدیریت مدل‌ها باید پایگاه داده وصل باشد. متغیرهای محیطی
-            <code dir="ltr" className="mx-1 break-all rounded bg-background px-1 text-xs">SUPABASE_URL</code>
-            و
-            <code dir="ltr" className="mx-1 break-all rounded bg-background px-1 text-xs">SUPABASE_SERVICE_ROLE_KEY</code>
-            را در محیط اجرا تنظیم کنید و سرویس را دوباره راه‌اندازی کنید.
+          <p className="mx-auto mt-1 max-w-md text-sm leading-7 text-muted-foreground">
+            برای مدیریت مدل‌ها باید پایگاه داده وصل باشد. اتصال را بررسی کنید و دوباره تلاش کنید.
           </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-4 inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground hover:opacity-90"
+          >
+            تلاش دوباره
+          </button>
         </div>
       ) : (
         <div className="space-y-6">

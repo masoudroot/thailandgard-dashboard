@@ -472,68 +472,18 @@ export default function ChangesPage() {
 
 function NotConnectedGuide() {
   return (
-    <div className="rounded-xl border border-border bg-card p-6 shadow-surface sm:p-8">
-      <div className="mx-auto max-w-2xl text-center">
-        <span
-          aria-hidden="true"
-          className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-muted text-muted-foreground"
-        >
-          <Unplug size={26} strokeWidth={1.75} />
-        </span>
-        <h2 className="mt-4 text-xl font-bold text-foreground">گیت‌هاب متصل نیست</h2>
-        <p className="mt-2 text-sm leading-8 text-muted-foreground">
-          تاریخچهٔ تغییرات فقط از GitHub واقعی خوانده می‌شود و این‌جا هیچ لیست نمایشی
-          نمی‌سازیم. برای دیدن کامیت‌ها، یک توکن گیت‌هاب وصل کنید:
-        </p>
-      </div>
-      <ol className="mx-auto mt-6 max-w-2xl space-y-4 text-sm leading-8 text-foreground">
-        <li className="flex gap-3">
-          <span
-            aria-hidden="true"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-brand-foreground"
-          >
-            {faNum(1)}
-          </span>
-          <p>
-            در گیت‌هاب یک توکن شخصی بسازید:{' '}
-            <span dir="ltr" className="font-mono text-sm">github.com/settings/tokens</span>
-            {' '}← گزینهٔ «Generate new token (classic)» با دسترسی{' '}
-            <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">repo</code>
-            {' '}(ریپوی سایت خصوصی است و بدون این دسترسی دیده نمی‌شود).
-          </p>
-        </li>
-        <li className="flex gap-3">
-          <span
-            aria-hidden="true"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-brand-foreground"
-          >
-            {faNum(2)}
-          </span>
-          <p>
-            توکن را در صفحهٔ تنظیمات داشبورد، در کارت «اتصال گیت‌هاب» وارد و ذخیره کنید؛
-            یا اگر روی ورسل دیپلوی کرده‌اید، متغیر محیطی{' '}
-            <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">GITHUB_TOKEN</code>
-            {' '}را در تنظیمات پروژه بگذارید.
-          </p>
-        </li>
-        <li className="flex gap-3">
-          <span
-            aria-hidden="true"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-brand-foreground"
-          >
-            {faNum(3)}
-          </span>
-          <p>به همین صفحه برگردید؛ لیست واقعی کامیت‌ها خودکار خوانده می‌شود.</p>
-        </li>
-      </ol>
-      <div className="mt-6 text-center">
+    <EmptyState
+      icon={Unplug}
+      title="گیت‌هاب متصل نیست"
+      description="تاریخچهٔ تغییرات فقط از GitHub واقعی خوانده می‌شود. برای دیدن کامیت‌ها، اتصال گیت‌هاب را در تنظیمات برقرار کنید."
+      action={
         <Link
           href="/dashboard/settings"
-          className="inline-flex min-h-12 items-center rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90"
+          className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90"
         >
           رفتن به تنظیمات
         </Link>
-      </div>
-    </div>
+      }
+    />
   );
 }
