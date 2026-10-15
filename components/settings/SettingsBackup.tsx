@@ -109,6 +109,7 @@ export function SettingsBackup() {
           <Upload strokeWidth={1.75} aria-hidden="true" />
           ورودی (انتخاب فایل)
         </Button>
+        {/* ورودی فایل مخفی؛ الگوی خود رجیستری file-upload هم همین است (sr-only). عنصر دیدنی دکمهٔ Button بالاست. */}
         <input
           ref={fileRef}
           type="file"
