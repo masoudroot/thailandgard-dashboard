@@ -14,6 +14,7 @@
 import { getSupabase } from './api';
 import { runWithTeamContext } from './llm';
 import { notifyTeamReport } from './notify';
+import { listApprovedTasksForTeam } from './taskqueue';
 import {
   ACTIVE_CYCLE_STATUSES,
   normalizeCycleStatus,
@@ -551,10 +552,23 @@ async function runSingleTeam(
     await reportProgress('شروع اجرا', 5);
     const runTeam = await loadRunTeam(team);
     const memory = await loadTeamMemory(team);
+    // کارهای تأییدشدهٔ این تیم («برود در چرخه») در اولویت زمینهٔ اجرا قرار می‌گیرند.
+    let approvedContext = '';
+    try {
+      const approved = await listApprovedTasksForTeam(team);
+      if (approved.length > 0) {
+        const lines = approved.map(
+          (t) => `- ${t.title}: ${(t.description ?? '').slice(0, 300)}`,
+        );
+        approvedContext = `\n\nکارهای تأییدشدهٔ در انتظار این تیم (در اولویت انجام):\n${lines.join('\n')}`;
+      }
+    } catch (err) {
+      console.error(`[orchestrator] failed to load approved tasks for ${team}:`, err instanceof Error ? err.message : err);
+    }
     const input: TeamInput = {
       cycleId,
       runId: ctx.runId,
-      ragContext: buildRagContext(ctx.previousWavesOutput),
+      ragContext: buildRagContext(ctx.previousWavesOutput) + approvedContext,
       memory,
       previousWavesOutput: { ...ctx.previousWavesOutput },
       reportProgress,

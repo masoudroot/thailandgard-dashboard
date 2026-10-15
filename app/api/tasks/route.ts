@@ -4,7 +4,7 @@ import { InputError } from '../../../lib/llm-endpoints';
 import { enqueueTask, listTasks, saveTaskPrefs } from '../../../lib/taskqueue';
 import { triggerTaskRun } from '../../../lib/taskrunner';
 
-/** GET /api/tasks?status=pending — lists the task queue (newest first). */
+/** GET /api/tasks?status=pending: lists the task queue (newest first). */
 export async function GET(request: NextRequest): Promise<Response> {
   try {
     const status = request.nextUrl.searchParams.get('status') ?? undefined;
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
 }
 
-/** POST /api/tasks — ثبت دستی کار. Body: QueuedTask & { team, cycleId?, files_hint?, execution_mode?, parallel? }. */
+/** POST /api/tasks: ثبت دستی کار. Body: QueuedTask & { team, cycleId?, files_hint?, execution_mode?, parallel? }. */
 export async function POST(request: NextRequest): Promise<Response> {
   try {
     const body = await request.json();
