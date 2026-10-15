@@ -299,7 +299,7 @@ export default function DashboardHomePage() {
     cycle?.waves.find((w) => w.wave === cycle.currentWave)?.teams ?? [];
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <div className="bg-background text-foreground">
       <div className="mx-auto max-w-6xl px-4 pb-16 pt-8 md:px-8 md:pt-12">
         {/* ── هیرو ── */}
         <section
@@ -621,6 +621,6 @@ export default function DashboardHomePage() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

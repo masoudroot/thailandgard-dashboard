@@ -23,7 +23,6 @@
     box-shadow var(--tg-base) var(--tg-ease),
     filter var(--tg-base) var(--tg-ease),
     transform var(--tg-fast) var(--tg-ease);
-  will-change: transform;
 }
 @media (hover: hover) and (pointer: fine) {
   .tg-btn:hover {
@@ -44,7 +43,6 @@
     box-shadow var(--tg-base) var(--tg-ease),
     border-color var(--tg-base) var(--tg-ease),
     background-color var(--tg-base) var(--tg-ease);
-  will-change: transform;
 }
 @media (hover: hover) and (pointer: fine) {
   .tg-card:hover {

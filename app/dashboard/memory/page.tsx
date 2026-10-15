@@ -131,7 +131,7 @@ export default function MemoryPage() {
   }, [rows, query]);
 
   return (
-    <main dir="rtl" className="min-h-screen bg-background text-foreground">
+    <div dir="rtl" className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-3xl px-4 py-6 md:py-8">
         <PageHeader
           icon={Brain}
@@ -259,6 +259,6 @@ export default function MemoryPage() {
           </>
         )}
       </div>
-    </main>
+    </div>
   );
 }

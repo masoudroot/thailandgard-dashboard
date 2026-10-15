@@ -240,7 +240,7 @@ export default function ReportsPage() {
   const reportEmpty = selected && AXIS_TITLES.every((a) => !selected.report[a.key].trim());
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
       {/* سربرگ صفحه */}
       <PageHeader
         icon={FileText}
@@ -385,7 +385,7 @@ export default function ReportsPage() {
           )}
         </div>
       )}
-    </main>
+    </div>
   );
 }
 

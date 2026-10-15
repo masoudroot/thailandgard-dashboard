@@ -345,7 +345,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-6 md:py-8">
+    <div className="mx-auto max-w-3xl px-4 py-6 md:py-8">
       <PageHeader
         icon={Settings}
         title="تنظیمات"
@@ -522,6 +522,6 @@ export default function SettingsPage() {
       <div className="mt-6">
         <MarketSourceCard />
       </div>
-    </main>
+    </div>
   );
 }

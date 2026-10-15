@@ -137,7 +137,7 @@ export default function TeamsPage() {
   const totalCalls = (runs ?? []).reduce((sum, r) => sum + (r.llm_calls ?? 0), 0);
 
   return (
-    <main className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 md:py-8">
         <PageHeader
           icon={Users}
@@ -206,6 +206,6 @@ export default function TeamsPage() {
           </>
         )}
       </div>
-    </main>
+    </div>
   );
 }
