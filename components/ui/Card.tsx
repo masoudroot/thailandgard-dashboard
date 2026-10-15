@@ -1,103 +1,33 @@
-"use client";
-
 import * as React from "react";
-import { cx } from "./cx";
+import { cn } from "@/lib/utils";
 
-export type CardProps = React.HTMLAttributes<HTMLElement> & {
-  /** کارت تعاملی: هاور فقط بوردر را کمی پررنگ می‌کند؛ بدون سایه و بدون جابه‌جایی. */
-  interactive?: boolean;
-};
-
-/** کارت پایه: بوردر ۱px ظریف، بدون سایه، گوشهٔ سطح گرافیت (۲۲px)، پدینگ سخاوتمندانه. */
-export function Card({
-  interactive = false,
-  className,
-  children,
-  ...rest
-}: CardProps) {
-  return (
-    <section
-      className={cx(
-        "rounded-xl border border-border bg-card text-card-foreground",
-        interactive &&
-          "cursor-pointer transition-soft hover:border-muted-foreground/60",
-        className,
-      )}
-      {...rest}
-    >
-      {children}
-    </section>
-  );
-}
-
-export function CardHeader({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div className={cx("p-5 pb-0 sm:p-6 sm:pb-0", className)} {...rest}>
-      {children}
-    </div>
-  );
-}
-
-export function CardTitle({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLHeadingElement>) {
-  return (
-    <h3
-      className={cx("text-base font-bold leading-7 sm:text-lg", className)}
-      {...rest}
-    >
-      {children}
-    </h3>
-  );
-}
-
-export function CardDescription({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLParagraphElement>) {
-  return (
-    <p
-      className={cx("mt-1 text-sm leading-7 text-muted-foreground", className)}
-      {...rest}
-    >
-      {children}
-    </p>
-  );
-}
-
-export function CardContent({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div className={cx("p-5 sm:p-6", className)} {...rest}>
-      {children}
-    </div>
-  );
-}
-
-export function CardFooter({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
+export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cx(
-        "flex flex-col gap-2 border-t border-border p-5 sm:flex-row sm:items-center sm:justify-end sm:p-6",
+      className={cn(
+        "relative isolate rounded-surface border-line border-border bg-card text-card-foreground shadow-surface [--tw-border-style:var(--line-style)]",
+        // Glass systems blur what sits behind the card. The filter lives on a
+        // pseudo-element so the card never traps fixed-position popovers.
+        "before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:rounded-[inherit] before:[backdrop-filter:var(--surface-filter)] before:content-['']",
         className,
       )}
-      {...rest}
-    >
-      {children}
-    </div>
+      {...props}
+    />
   );
+}
+
+export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("flex flex-col gap-1 p-5", className)} {...props} />;
+}
+
+export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+  return <h3 className={cn("text-base font-semibold", className)} {...props} />;
+}
+
+export function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
+  return <p className={cn("text-sm text-muted-foreground", className)} {...props} />;
+}
+
+export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("p-5 pt-0", className)} {...props} />;
 }

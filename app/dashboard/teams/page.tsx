@@ -6,6 +6,7 @@ import NotConnected from '@/components/NotConnected';
 import PageHeader from '@/components/PageHeader';
 import TeamCard from '@/components/TeamCard';
 import { SkeletonTeamCard } from '@/components/Skeleton';
+import { Badge } from '@/components/ui/Badge';
 import { faNum } from '@/lib/format';
 import {
   TEAMS,
@@ -124,24 +125,21 @@ export default function TeamsPage() {
           <>
             <section className="mb-8 flex flex-wrap items-center gap-2 md:gap-3" aria-label="جمع‌بندی وضعیت تیم‌ها">
               {counts.map(({ status, count }) => (
-                <span
-                  key={status}
-                  className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground"
-                >
-                  {SUMMARY_LABEL[status]}: <strong className="text-card-foreground">{faNum(count)}</strong>
-                </span>
+                <Badge key={status} variant="secondary">
+                  {SUMMARY_LABEL[status]}: <strong>{faNum(count)}</strong>
+                </Badge>
               ))}
-              <span className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
-                مجموع فراخوانی LLM: <strong className="text-card-foreground">{faNum(totalCalls.toLocaleString('en-US'))}</strong>
-              </span>
+              <Badge variant="secondary">
+                مجموع فراخوانی LLM: <strong>{faNum(totalCalls.toLocaleString('en-US'))}</strong>
+              </Badge>
             </section>
 
             {WAVES.map(({ wave, teams }) => (
               <section key={wave} className="mb-10 last:mb-0">
                 <div className="mb-4 flex items-center gap-3">
-                  <span className="rounded-lg bg-brand/10 px-3 py-1 text-sm font-bold text-brand">
+                  <Badge variant="brand">
                     {WAVE_TITLES[wave] ?? `موج ${faNum(wave)}`}
-                  </span>
+                  </Badge>
                   <span className="h-px flex-1 bg-border" />
                 </div>
                 <div className="tg-stagger grid gap-4 sm:grid-cols-2 md:gap-5 lg:grid-cols-3">

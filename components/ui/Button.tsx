@@ -1,75 +1,46 @@
-"use client";
-
 import * as React from "react";
-import { Loader2 } from "lucide-react";
-import { cx } from "./cx";
+import { cn } from "@/lib/utils";
 
-export type ButtonVariant =
-  | "primary"
-  | "secondary"
-  | "outline"
-  | "ghost"
-  | "danger";
-export type ButtonSize = "sm" | "md" | "lg";
+type Variant = "default" | "secondary" | "outline" | "ghost" | "brand" | "destructive";
+type Size = "sm" | "md" | "lg" | "icon";
 
-const VARIANTS: Record<ButtonVariant, string> = {
-  primary:
-    "bg-primary text-primary-foreground hover:brightness-105 active:brightness-95",
-  secondary:
-    "border border-border bg-secondary text-secondary-foreground hover:bg-accent",
-  outline:
-    "border border-input bg-card text-foreground hover:bg-accent",
-  ghost: "text-foreground hover:bg-accent",
-  danger:
-    "bg-destructive text-destructive-foreground hover:brightness-105 active:brightness-95",
+const variants: Record<Variant, string> = {
+  default: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-control active:shadow-press",
+  secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 border-line border-border shadow-control active:shadow-press",
+  outline: "border-line border-input bg-transparent hover:bg-accent hover:text-accent-foreground shadow-control active:shadow-press",
+  ghost: "hover:bg-accent hover:text-accent-foreground",
+  brand: "bg-brand text-brand-foreground hover:bg-brand/90 shadow-control active:shadow-press",
+  destructive: "bg-destructive text-white hover:bg-destructive/90 shadow-control active:shadow-press",
 };
 
-const SIZES: Record<ButtonSize, string> = {
-  sm: "min-h-11 px-3 text-sm",
-  md: "min-h-11 px-5 text-sm",
-  lg: "min-h-12 px-7 text-base",
+const sizes: Record<Size, string> = {
+  sm: "h-8 px-3 text-[13px] gap-1.5",
+  md: "h-10 px-4 text-sm gap-2",
+  lg: "h-12 px-6 text-base gap-2.5",
+  icon: "size-10",
 };
 
-export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  loading?: boolean;
-};
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: Variant;
+  size?: Size;
+  asChild?: boolean;
+}
 
-/**
- * دکمهٔ پایهٔ سیستم دیزاین.
- * variant پیش‌فرض primary است (خنثی/جوهری، طبق جهت تک‌رنگ + یک لهجه)؛
- * اکشن اصلی همیشه در ابتدای گروه (راست در RTL) می‌نشیند.
- */
-export function Button({
-  variant = "primary",
-  size = "md",
-  loading = false,
-  disabled,
-  className,
-  children,
-  ...rest
-}: ButtonProps) {
-  const isDisabled = disabled || loading;
+export function Button({ className, variant = "default", size = "md", type = "button", ...props }: ButtonProps) {
   return (
     <button
-      type="button"
-      disabled={isDisabled}
-      aria-busy={loading || undefined}
-      className={cx(
-        "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-md font-semibold leading-6",
-        "transition-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        "disabled:pointer-events-none disabled:opacity-50",
-        VARIANTS[variant],
-        SIZES[size],
+      type={type}
+      className={cn(
+        // Shape, depth, press and motion come from the design-system tokens.
+        "inline-flex items-center justify-center whitespace-nowrap rounded-control font-semibold transition-all duration-(--motion) ease-motion",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "disabled:pointer-events-none disabled:opacity-50 active:[transform:var(--press)]",
+        "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+        variants[variant],
+        sizes[size],
         className,
       )}
-      {...rest}
-    >
-      {loading && (
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-      )}
-      {children}
-    </button>
+      {...props}
+    />
   );
 }

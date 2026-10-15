@@ -8,14 +8,12 @@ import {
   ClipboardList,
   Clock3,
   Info,
-  Loader2,
   Play,
   Users,
   Waves,
   XCircle,
 } from "lucide-react";
 import { TEAMS } from "@/lib/types";
-import RippleButton from "@/components/RippleButton";
 import NotConnected from "@/components/NotConnected";
 import {
   SkeletonPanel,
@@ -28,6 +26,19 @@ import {
   StatusBadge,
   type StatCardProps,
 } from "@/components/dataviz";
+import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
+
+type RegistryBadgeVariant =
+  | "default"
+  | "secondary"
+  | "outline"
+  | "success"
+  | "warning"
+  | "brand"
+  | "destructive";
+import { Card } from "@/components/ui/Card";
+import { Dialog } from "@/components/ui/dialog";
 
 /* ─────────────────────────────────────────────
    ابزارهای نمایشی
@@ -93,25 +104,25 @@ interface AlertItem {
 
 const ALERT_META: Record<
   AlertItem["severity"],
-  { icon: typeof Info; label: string; ring: string; badge: string }
+  { icon: typeof Info; label: string; ring: string; badge: RegistryBadgeVariant }
 > = {
   info: {
     icon: Info,
     label: "اطلاع",
     ring: "bg-brand/10 text-brand",
-    badge: "bg-brand/10 text-brand",
+    badge: "brand",
   },
   warning: {
     icon: AlertTriangle,
     label: "هشدار",
     ring: "bg-warning/10 text-warning",
-    badge: "bg-warning/10 text-warning",
+    badge: "warning",
   },
   critical: {
     icon: XCircle,
     label: "بحرانی",
     ring: "bg-destructive/10 text-destructive",
-    badge: "bg-destructive/10 text-destructive",
+    badge: "destructive",
   },
 };
 
@@ -239,9 +250,9 @@ export default function DashboardHomePage() {
     <div className="bg-background text-foreground">
       <div className="mx-auto max-w-6xl px-4 pb-16 pt-8 md:px-8 md:pt-12">
         {/* ── هیرو ── */}
-        <section
+        <Card
           aria-label="معرفی داشبورد"
-          className="tg-reveal rounded-xl border border-border bg-card p-6 shadow-surface md:p-10"
+          className="tg-reveal p-6 shadow-surface md:p-10"
         >
           <div className="relative">
             <h1 className="text-3xl font-extrabold">
@@ -263,7 +274,7 @@ export default function DashboardHomePage() {
               </div>
             )}
           </div>
-        </section>
+        </Card>
 
         {failed ? (
           /* بک‌اند در دسترس نیست: صادقانه می‌گوییم، عدد نمی‌سازیم */
@@ -275,9 +286,9 @@ export default function DashboardHomePage() {
         {/* ── آخرین چرخه + هشدارها ── */}
         <div className="mt-4 grid gap-4 md:mt-6 md:gap-6 lg:grid-cols-3">
           {/* کارت آخرین چرخه */}
-          <section
+          <Card
             aria-label="آخرین چرخه"
-            className="rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6 lg:col-span-2"
+            className="p-4 shadow-surface sm:p-6 lg:col-span-2"
           >
             {loading ? (
               <SkeletonPanel />
@@ -286,14 +297,15 @@ export default function DashboardHomePage() {
                 <p className="text-sm text-muted-foreground">
                   هنوز چرخه‌ای اجرا نشده است؛ اولین چرخه را شروع کنید.
                 </p>
-                <button
-                  type="button"
+                <Button
+                  variant="default"
+                  size="lg"
                   onClick={() => setDialogOpen(true)}
-                  className="tg-btn mt-4 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-6 font-bold text-primary-foreground shadow-control hover:brightness-105"
+                  className="mt-4"
                 >
                   <Play size={20} strokeWidth={2} />
                   شروع چرخهٔ جدید
-                </button>
+                </Button>
               </div>
             ) : (
               <>
@@ -341,24 +353,25 @@ export default function DashboardHomePage() {
                       آغاز می‌شود.
                     </p>
                   ) : (
-                    <button
-                      type="button"
+                    <Button
+                      variant="default"
+                      size="lg"
                       onClick={() => setDialogOpen(true)}
-                      className="tg-btn inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 font-bold text-primary-foreground shadow-control hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:w-auto"
+                      className="w-full sm:w-auto"
                     >
                       <Play size={20} strokeWidth={2} />
                       شروع چرخهٔ جدید
-                    </button>
+                    </Button>
                   )}
                 </div>
               </>
             )}
-          </section>
+          </Card>
 
           {/* کارت هشدارها */}
-          <section
+          <Card
             aria-label="هشدارهای اخیر"
-            className="rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6"
+            className="p-4 shadow-surface sm:p-6"
           >
             <h2 className="text-xl font-bold">هشدارهای اخیر</h2>
             <div className="tg-stagger mt-4 space-y-4">
@@ -393,11 +406,9 @@ export default function DashboardHomePage() {
                           <h3 className="truncate text-sm font-bold">
                             {a.title}
                           </h3>
-                          <span
-                            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${meta.badge}`}
-                          >
+                          <Badge variant={meta.badge} className="shrink-0">
                             {meta.label}
-                          </span>
+                          </Badge>
                         </div>
                         <p className="mt-1 line-clamp-2 text-xs leading-6 text-muted-foreground">
                           {a.detail}
@@ -411,13 +422,13 @@ export default function DashboardHomePage() {
                 })
               )}
             </div>
-          </section>
+          </Card>
         </div>
 
         {/* ── شش موج ── */}
-        <section
+        <Card
           aria-label="موج‌های چرخه"
-          className="mt-4 rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6 md:mt-6 md:p-8"
+          className="mt-4 p-4 shadow-surface sm:p-6 md:mt-6 md:p-8"
         >
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/10 text-brand">
@@ -491,12 +502,12 @@ export default function DashboardHomePage() {
                 {cycle.waves.map((w) => {
                   const state = waveState(w, cycle.currentWave);
                   return (
-                    <div
+                    <Card
                       key={w.wave}
-                      className={`rounded-xl border p-4 ${
+                      className={`p-4 ${
                         state === "active"
                           ? "border-brand/50 bg-brand/5"
-                          : "border-border"
+                          : ""
                       }`}
                     >
                       <h3 className="flex items-center justify-between text-sm font-bold">
@@ -516,67 +527,53 @@ export default function DashboardHomePage() {
                           </li>
                         ))}
                       </ul>
-                    </div>
+                    </Card>
                   );
                 })}
               </div>
             </>
           )}
-        </section>
+        </Card>
           </>
         )}
       </div>
 
       {/* ── گفت‌وگوی تأیید شروع چرخه ── */}
-      {dialogOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="start-cycle-title"
-          className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 p-0 sm:items-center sm:p-4"
-          onClick={() => !starting && setDialogOpen(false)}
-        >
-          <div
-            className="tg-pop max-h-[92dvh] w-full overflow-y-auto rounded-t-xl border border-border bg-card p-5 shadow-overlay sm:max-w-md sm:rounded-xl sm:p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 id="start-cycle-title" className="text-lg font-bold">
-              چرخهٔ جدید شروع شود؟
-            </h2>
-            <p className="mt-2 text-sm leading-7 text-muted-foreground">
-              چرخهٔ تازه بعد از پایان موج جاری آغاز می‌شود و پانزده تیم از اول
-              وارد صف می‌شوند. چرخهٔ در حال اجرا متوقف نمی‌شود.
-            </p>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <RippleButton
-                disabled={starting}
-                onClick={handleConfirmStart}
-                className="tg-btn inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-bold text-primary-foreground shadow-control hover:brightness-105 disabled:opacity-60"
-              >
-                {starting ? (
-                  <>
-                    <Loader2 size={18} strokeWidth={2} className="animate-spin" />
-                    در حال ثبت…
-                  </>
-                ) : (
-                  <>
-                    <Play size={18} strokeWidth={2} />
-                    شروع چرخه
-                  </>
-                )}
-              </RippleButton>
-              <button
-                type="button"
-                disabled={starting}
-                onClick={() => setDialogOpen(false)}
-                className="tg-btn inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-border bg-card px-5 font-medium text-foreground hover:bg-muted disabled:opacity-60 sm:w-auto"
-              >
-                انصراف
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(o) => {
+          if (!starting) setDialogOpen(o);
+        }}
+        title="چرخهٔ جدید شروع شود؟"
+        description="چرخهٔ تازه بعد از پایان موج جاری آغاز می‌شود و پانزده تیم از اول وارد صف می‌شوند. چرخهٔ در حال اجرا متوقف نمی‌شود."
+        footer={
+          <>
+            <Button
+              variant="default"
+              disabled={starting}
+              aria-busy={starting || undefined}
+              onClick={handleConfirmStart}
+              className="flex-1"
+            >
+              {starting ? (
+                "در حال ثبت…"
+              ) : (
+                <>
+                  <Play size={18} strokeWidth={2} />
+                  شروع چرخه
+                </>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={starting}
+              onClick={() => setDialogOpen(false)}
+            >
+              انصراف
+            </Button>
+          </>
+        }
+      />
     </div>
   );
 }

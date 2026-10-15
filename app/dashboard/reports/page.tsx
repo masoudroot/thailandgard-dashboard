@@ -7,15 +7,12 @@ import EmptyState from '@/components/EmptyState';
 import NotConnected from '@/components/NotConnected';
 import PageHeader from '@/components/PageHeader';
 import { SkeletonPanel, SkeletonStat } from '@/components/Skeleton';
+import { Badge } from '@/components/ui/Badge';
+import { faDigits } from "@/lib/format";
 
 /* ------------------------------------------------------------------ */
 /* کمک‌کننده‌های فارسی‌سازی                                          */
 /* ------------------------------------------------------------------ */
-
-/** ارقام لاتین را به فارسی تبدیل می‌کند. */
-function faDigits(value: number | string): string {
-  return String(value).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
-}
 
 /** تاریخ شمسی به وقت تهران. */
 function jalaliDate(iso: string): string {
@@ -220,9 +217,7 @@ export default function ReportsPage() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-bold">چرخهٔ {r.run_id}</span>
-                        <span className="rounded-full bg-success/15 px-2.5 py-0.5 text-xs font-bold text-success">
-                          موفق
-                        </span>
+                        <Badge variant="success">موفق</Badge>
                       </div>
                       <dl className="mt-3 space-y-1.5 text-sm text-muted-foreground">
                         <div className="flex justify-between gap-2">
@@ -262,12 +257,9 @@ export default function ReportsPage() {
                     <p className="text-xs text-muted-foreground">تیم‌ها</p>
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                       {selected.teams.map((t) => (
-                        <span
-                          key={t}
-                          className="rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground"
-                        >
+                        <Badge key={t} variant="secondary">
                           {TEAM_LABELS[t]}
-                        </span>
+                        </Badge>
                       ))}
                     </div>
                   </div>

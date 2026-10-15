@@ -16,6 +16,20 @@ import PageHeader from '@/components/PageHeader';
 import EmptyState from '@/components/EmptyState';
 import { SkeletonPanel } from '@/components/Skeleton';
 import { DatePicker } from '@/components/ui/date-picker';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+
+type RegistryBadgeVariant =
+  | 'default'
+  | 'secondary'
+  | 'outline'
+  | 'success'
+  | 'warning'
+  | 'brand'
+  | 'destructive';
+import { Card } from '@/components/ui/Card';
+import { Select } from '@/components/ui/Select';
+import { Field } from '@/components/ui/Input';
 import { faNum } from '@/lib/format';
 import { ALL_TEAM_SLUGS, teamFa } from '@/lib/github-teams';
 
@@ -99,18 +113,15 @@ interface ApiError {
   notConnected: boolean;
 }
 
-const FILE_STATUS_FA: Record<string, { label: string; tint: string }> = {
-  added: { label: 'افزوده', tint: 'bg-success/10 text-success' },
-  modified: { label: 'ویرایش‌شده', tint: 'bg-secondary text-secondary-foreground' },
-  removed: { label: 'حذف‌شده', tint: 'bg-destructive/10 text-destructive' },
-  renamed: { label: 'تغییرنام', tint: 'bg-secondary text-secondary-foreground' },
-  copied: { label: 'کپی', tint: 'bg-secondary text-secondary-foreground' },
+const FILE_STATUS_FA: Record<string, { label: string; variant: RegistryBadgeVariant }> = {
+  added: { label: 'افزوده', variant: 'success' },
+  modified: { label: 'ویرایش‌شده', variant: 'secondary' },
+  removed: { label: 'حذف‌شده', variant: 'destructive' },
+  renamed: { label: 'تغییرنام', variant: 'secondary' },
+  copied: { label: 'کپی', variant: 'secondary' },
 };
 
 const PER_PAGE = 15;
-
-const inputClass =
-  'min-h-11 rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-control placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30';
 
 /* ------------------------------------------------------------------ */
 /* صفحه                                                                 */
@@ -210,29 +221,25 @@ export default function ChangesPage() {
       />
 
       {/* فیلترها: موبایل روی هم، دسکتاپ در یک ردیف */}
-      <section
+      <Card
         aria-label="فیلتر تغییرات"
-        className="mb-8 grid gap-3 rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6 md:grid-cols-4"
+        className="mb-8 grid gap-3 p-4 shadow-surface sm:p-6 md:grid-cols-4"
       >
-        <div>
-          <label htmlFor="changes-team" className="mb-1.5 block text-sm font-medium text-foreground">
-            تیم
-          </label>
-          <select
+        <Field label="تیم">
+          <Select
             id="changes-team"
             value={team}
             onChange={(e) => applyFilter({ team: e.target.value })}
-            className={`${inputClass} w-full`}
-          >
-            <option value="all">همهٔ تیم‌ها</option>
-            {ALL_TEAM_SLUGS.map((slug) => (
-              <option key={slug} value={slug}>
-                {teamFa(slug)}
-              </option>
-            ))}
-            <option value="other">سایر (بدون برچسب تیم)</option>
-          </select>
-        </div>
+            options={[
+              { value: "all", label: "همهٔ تیم‌ها" },
+              ...ALL_TEAM_SLUGS.map((slug) => ({
+                value: slug,
+                label: teamFa(slug),
+              })),
+              { value: "other", label: "سایر (بدون برچسب تیم)" },
+            ]}
+          />
+        </Field>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-foreground">
             از تاریخ
@@ -256,16 +263,16 @@ export default function ChangesPage() {
           />
         </div>
         <div className="flex items-end">
-          <button
-            type="button"
+          <Button
+            variant="outline"
             onClick={() => applyFilter({ team: 'all', since: '', until: '' })}
             disabled={team === 'all' && !since && !until}
-            className="min-h-11 w-full rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-40 md:w-auto"
+            className="w-full md:w-auto"
           >
             پاک کردن فیلترها
-          </button>
+          </Button>
         </div>
-      </section>
+      </Card>
 
       {loading ? (
         <div aria-busy="true">
@@ -284,14 +291,14 @@ export default function ChangesPage() {
           <p className="mx-auto mt-2 max-w-xl text-sm leading-7 text-muted-foreground">
             {error.message}
           </p>
-          <button
-            type="button"
+          <Button
+            variant="default"
             onClick={() => fetchCommits(page, team, since, until)}
-            className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90"
+            className="mt-4"
           >
             <RotateCcw size={16} aria-hidden="true" />
             تلاش دوباره
-          </button>
+          </Button>
         </div>
       ) : commits.length === 0 ? (
         <EmptyState
@@ -317,11 +324,9 @@ export default function ChangesPage() {
                         {c.title || '(بدون عنوان)'}
                       </h2>
                       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
-                        <span
-                          className="rounded-full bg-secondary px-2.5 py-0.5 font-medium text-secondary-foreground"
-                        >
+                        <Badge variant="secondary">
                           {c.team ? teamFa(c.team) : 'سایر'}
-                        </span>
+                        </Badge>
                         <span>
                           {jalaliDate(c.date)}
                           {tehranTime(c.date) ? `، ساعت ${tehranTime(c.date)}` : ''}
@@ -333,11 +338,11 @@ export default function ChangesPage() {
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <button
-                        type="button"
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => toggleFiles(c.sha)}
                         aria-expanded={open}
-                        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-control transition-opacity hover:opacity-80"
                       >
                         <FileDiff size={15} aria-hidden="true" />
                         فایل‌ها
@@ -346,7 +351,7 @@ export default function ChangesPage() {
                           aria-hidden="true"
                           className={`transition-transform ${open ? 'rotate-180' : ''}`}
                         />
-                      </button>
+                      </Button>
                       <a
                         href={c.url}
                         target="_blank"
@@ -395,7 +400,7 @@ export default function ChangesPage() {
                               {detail.files.map((f) => {
                                 const st = FILE_STATUS_FA[f.status] ?? {
                                   label: f.status,
-                                  tint: 'bg-secondary text-secondary-foreground',
+                                  variant: 'secondary' as RegistryBadgeVariant,
                                 };
                                 return (
                                   <li
@@ -415,11 +420,9 @@ export default function ChangesPage() {
                                         {' '}
                                         <span className="text-destructive">-{faNum(f.deletions)}</span>
                                       </span>
-                                      <span
-                                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${st.tint}`}
-                                      >
+                                      <Badge variant={st.variant}>
                                         {st.label}
-                                      </span>
+                                      </Badge>
                                     </span>
                                   </li>
                                 );
@@ -440,25 +443,23 @@ export default function ChangesPage() {
             aria-label="صفحه‌بندی تغییرات"
             className="mt-6 flex items-center justify-between gap-3"
           >
-            <button
-              type="button"
+            <Button
+              variant="outline"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className="min-h-11 rounded-lg border border-input bg-card px-5 py-2 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-40"
             >
               قبلی
-            </button>
+            </Button>
             <p className="text-sm text-muted-foreground">
               صفحهٔ {faNum(page)}
             </p>
-            <button
-              type="button"
+            <Button
+              variant="outline"
               onClick={() => setPage((p) => p + 1)}
               disabled={!hasMore}
-              className="min-h-11 rounded-lg border border-input bg-card px-5 py-2 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-40"
             >
               بعدی
-            </button>
+            </Button>
           </nav>
         </>
       )}

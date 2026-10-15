@@ -12,6 +12,15 @@ import LoadMore, { useVisibleCount } from '@/components/LoadMore';
 import StatusBadge from '@/components/dataviz/StatusBadge';
 import TrendChart, { type TrendPoint } from '@/components/dataviz/TrendChart';
 import { SkeletonTable } from '@/components/Skeleton';
+import { Button } from '@/components/ui/Button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { faNum } from '@/lib/format';
 
 /** تاریخ و ساعت شمسی با ارقام فارسی */
@@ -154,18 +163,19 @@ export default function CyclesPage() {
           subtitle="چرخه‌های اجرایی تیم‌های هوش مصنوعی تایلندگرد"
           actions={
             <div className="flex flex-col items-stretch gap-1.5">
-              <button
+              <Button
+                variant="default"
                 onClick={createCycle}
-                disabled={newCycleDisabled}
+                disabled={newCycleDisabled || creating}
+                aria-busy={creating || undefined}
                 title={
                   activeCycle
                     ? 'تا چرخهٔ فعال تمام یا لغو نشود، چرخهٔ جدیدی شروع نمی‌شود'
                     : 'شروع چرخهٔ جدید'
                 }
-                className="tg-btn inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-control hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {creating ? 'در حال ساخت…' : 'شروع چرخهٔ جدید'}
-              </button>
+              </Button>
               {activeCycle && (
                 <span className="text-center text-xs text-muted-foreground">
                   یک چرخه در حال اجراست؛ برای شروع چرخهٔ جدید اول آن را ببندید یا لغو کنید
@@ -194,13 +204,9 @@ export default function CyclesPage() {
             title="خواندن چرخه‌ها ناموفق بود"
             description="پایگاه داده متصل است ولی دریافت فهرست چرخه‌ها خطا داد. دوباره تلاش کنید."
             action={
-              <button
-                type="button"
-                onClick={load}
-                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90"
-              >
+              <Button variant="default" onClick={load}>
                 تلاش دوباره
-              </button>
+              </Button>
             }
           />
         ) : loadState === 'unauthorized' ? (
@@ -224,13 +230,14 @@ export default function CyclesPage() {
             description="اولین چرخه را بسازید تا پانزده تیم هوش مصنوعی در شش موج وارد صف اجرا شوند."
             tint="bg-brand/10 text-brand"
             action={
-              <button
+              <Button
+                variant="default"
                 onClick={createCycle}
                 disabled={creating}
-                className="tg-btn inline-flex min-h-12 items-center justify-center rounded-xl bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90 disabled:opacity-50"
+                aria-busy={creating || undefined}
               >
                 {creating ? 'در حال ساخت…' : 'شروع اولین چرخه'}
-              </button>
+              </Button>
             }
           />
         ) : (
@@ -292,49 +299,44 @@ export default function CyclesPage() {
             </div>
 
             {/* جدول در دسکتاپ */}
-            <div className="hidden overflow-hidden rounded-xl border border-border bg-card shadow-surface md:block">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/50 text-muted-foreground">
-                    <th className="px-4 py-3 text-start font-medium">شناسه اجرا</th>
-                    <th className="px-4 py-3 text-start font-medium">وضعیت</th>
-                    <th className="px-4 py-3 text-start font-medium">شروع</th>
-                    <th className="px-4 py-3 text-start font-medium">پایان</th>
-                    <th className="px-4 py-3 text-start font-medium">تعداد تیم‌ها</th>
-                    <th className="px-4 py-3 text-start font-medium">فراخوانی LLM</th>
-                    <th className="px-4 py-3 text-start font-medium">جزئیات</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>شناسه اجرا</TableHead>
+                    <TableHead>وضعیت</TableHead>
+                    <TableHead>شروع</TableHead>
+                    <TableHead>پایان</TableHead>
+                    <TableHead>تعداد تیم‌ها</TableHead>
+                    <TableHead>فراخوانی LLM</TableHead>
+                    <TableHead>جزئیات</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {shownCycles.map((c) => (
-                    <tr
-                      key={c.id}
-                      className="tg-row border-b border-border last:border-0 hover:bg-muted/40"
-                    >
-                      <td className="px-4 py-3 font-mono text-xs text-card-foreground" dir="ltr">
+                    <TableRow key={c.id}>
+                      <TableCell dir="ltr" className="font-mono text-xs">
                         {c.run_id}
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell>
                         <StatusBadge status={cycleStatus(c)} />
-                      </td>
-                      <td className="px-4 py-3 text-card-foreground">{faDate(c.started_at)}</td>
-                      <td className="px-4 py-3 text-card-foreground">{faDate(c.finished_at)}</td>
-                      <td className="px-4 py-3 text-card-foreground">{faNum(readCount(c))}</td>
-                      <td className="px-4 py-3 text-card-foreground">{faNum(readLlmCalls(c))}</td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell>{faDate(c.started_at)}</TableCell>
+                      <TableCell>{faDate(c.finished_at)}</TableCell>
+                      <TableCell numeric>{faNum(readCount(c))}</TableCell>
+                      <TableCell numeric>{faNum(readLlmCalls(c))}</TableCell>
+                      <TableCell>
                         <Link
                           href={`/dashboard/cycles/${c.id}`}
                           className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-card-foreground transition-colors hover:border-ring hover:text-brand"
                         >
                           جزئیات
                         </Link>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-              </div>
+                </TableBody>
+              </Table>
             </div>
             {hasMore && (
               <LoadMore visible={visible} total={cycles.length} onShowMore={showMore} />

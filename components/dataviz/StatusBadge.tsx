@@ -1,5 +1,16 @@
 'use client';
 
+import { Badge } from '../ui/Badge';
+
+type RegistryBadgeVariant =
+  | 'default'
+  | 'secondary'
+  | 'outline'
+  | 'success'
+  | 'warning'
+  | 'brand'
+  | 'destructive';
+
 export type VizStatus =
   | 'running'
   | 'pausing'
@@ -23,28 +34,17 @@ const STATUS_LABEL: Record<VizStatus, string> = {
   stopped: 'متوقف شد',
 };
 
-const STATUS_TONE: Record<VizStatus, string> = {
-  running: 'border-warning/40 bg-warning/10 text-warning',
-  pausing: 'border-warning/40 bg-warning/10 text-warning',
-  paused: 'border-border bg-muted/60 text-muted-foreground',
-  success: 'border-success/40 bg-success/10 text-success',
-  failed: 'border-destructive/40 bg-destructive/10 text-destructive',
-  pending: 'border-border bg-muted/60 text-muted-foreground',
-  canceled: 'border-border bg-muted/60 text-muted-foreground',
-  skipped: 'border-border bg-muted/60 text-muted-foreground',
-  stopped: 'border-destructive/40 bg-destructive/10 text-destructive',
-};
-
-const STATUS_DOT: Record<VizStatus, string> = {
-  running: 'bg-warning',
-  pausing: 'bg-warning',
-  paused: 'bg-muted-foreground/60',
-  success: 'bg-success',
-  failed: 'bg-destructive',
-  pending: 'bg-muted-foreground/60',
-  canceled: 'bg-muted-foreground/60',
-  skipped: 'bg-muted-foreground/60',
-  stopped: 'bg-destructive',
+/** نگاشت وضعیت به واریانت بج رجیستری وایب‌فارسی. */
+const STATUS_VARIANT: Record<VizStatus, RegistryBadgeVariant> = {
+  running: 'warning',
+  pausing: 'warning',
+  paused: 'secondary',
+  success: 'success',
+  failed: 'destructive',
+  pending: 'secondary',
+  canceled: 'secondary',
+  skipped: 'secondary',
+  stopped: 'destructive',
 };
 
 export interface StatusBadgeProps {
@@ -57,8 +57,8 @@ export interface StatusBadgeProps {
 }
 
 /**
- * بج یکدست وضعیت: کنتراست کافی در هر دو تم روشن و تیره،
- * و نقطهٔ پالس‌دار برای وضعیت «در حال اجرا».
+ * بج یکدست وضعیت؛ روی بج رجیستری وایب‌فارسی سوار است و API قبلی را حفظ می‌کند.
+ * نقطهٔ پالس‌دار «در حال اجرا» رفتار ویژهٔ همین کامپوننت است و دستی مانده.
  */
 export default function StatusBadge({
   status,
@@ -66,28 +66,19 @@ export default function StatusBadge({
   noDot = false,
   className = '',
 }: StatusBadgeProps) {
-  const dot = STATUS_DOT[status];
   const pulsing = status === 'running' || status === 'pausing';
 
   return (
-    <span
-      className={`inline-flex min-h-7 items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_TONE[status]} ${className}`}
-    >
+    <Badge variant={STATUS_VARIANT[status]} className={className}>
       {!noDot && (
-        <span className="relative flex h-2 w-2 shrink-0">
+        <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
           {pulsing && (
-            <span
-              aria-hidden="true"
-              className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${dot}`}
-            />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-60" />
           )}
-          <span
-            aria-hidden="true"
-            className={`relative inline-flex h-2 w-2 rounded-full ${dot}`}
-          />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-current" />
         </span>
       )}
       {label ?? STATUS_LABEL[status]}
-    </span>
+    </Badge>
   );
 }

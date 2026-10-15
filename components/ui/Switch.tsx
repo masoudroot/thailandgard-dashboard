@@ -1,72 +1,50 @@
 "use client";
 
 import * as React from "react";
-import { cx } from "./cx";
+import { cn } from "@/lib/utils";
 
-export type SwitchProps = {
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-  label?: string;
-  disabled?: boolean;
-  id?: string;
-  className?: string;
-} & Omit<
-  React.ButtonHTMLAttributes<HTMLButtonElement>,
-  "onClick" | "type" | "role" | "id" | "disabled" | "className"
->;
+interface SwitchProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onChange"> {
+  checked?: boolean;
+  defaultChecked?: boolean;
+  onCheckedChange?: (checked: boolean) => void;
+}
 
-/** سوییچ/تاگل پایه؛ در RTL آینه‌ای است («روشن» سمت چپ/انتها می‌نشیند). */
 export function Switch({
-  checked,
-  onCheckedChange,
-  label,
-  disabled = false,
-  id,
   className,
-  ...rest
+  checked,
+  defaultChecked = false,
+  onCheckedChange,
+  ...props
 }: SwitchProps) {
-  const inputId = React.useId();
-  const switchId = id ?? `tg-switch-${inputId}`;
+  const [internal, setInternal] = React.useState(defaultChecked);
+  const isControlled = checked !== undefined;
+  const on = isControlled ? checked : internal;
 
   return (
-    <label
-      htmlFor={switchId}
-      className={cx(
-        "inline-flex cursor-pointer items-center gap-2",
-        disabled && "cursor-not-allowed opacity-50",
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => {
+        if (!isControlled) setInternal(!on);
+        onCheckedChange?.(!on);
+      }}
+      className={cn(
+        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-[calc(var(--shape-control)*999)] border border-transparent transition-colors duration-(--motion) ease-motion",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        on ? "bg-primary" : "bg-input",
         className,
       )}
+      {...props}
     >
-      <button
-        type="button"
-        role="switch"
-        id={switchId}
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={() => onCheckedChange(!checked)}
-        {...rest}
-        className={cx(
-          "relative h-6 w-11 shrink-0 rounded-full transition-soft",
-          /* ناحیهٔ کلیک نامرئی: تاچ‌تارگت ۴۴px بدون تغییر ظاهر سوییچ */
-          "before:absolute before:-inset-2.5 before:content-['']",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-          "disabled:cursor-not-allowed",
-          checked ? "bg-brand" : "bg-input",
+      <span
+        className={cn(
+          "pointer-events-none block size-5 rounded-[calc(var(--shape-control)*999)] shadow transition-[transform,background-color] duration-(--motion) ease-motion",
+          on ? "bg-primary-foreground" : "bg-foreground",
+          // RTL: the "on" position is the inline-start side; translate toward -x.
+          on ? "-translate-x-5" : "-translate-x-0.5",
         )}
-      >
-        <span
-          aria-hidden="true"
-          className={cx(
-            "absolute start-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 motion-reduce:transition-none",
-            checked && "translate-x-5 rtl:-translate-x-5",
-          )}
-        />
-      </button>
-      {label && (
-        <span className="text-sm font-medium leading-6 text-foreground">
-          {label}
-        </span>
-      )}
-    </label>
+      />
+    </button>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, AlertCircle } from "lucide-react";
-import { Modal, Button, Input, Select, cx } from "../ui";
+import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { Modal, Button, Input, Select, Field, cx } from "../ui";
 
 export type KnowledgeCategoryOption = {
   id: string;
@@ -176,8 +176,12 @@ export function KnowledgeForm({
           <Button
             type="submit"
             form="knowledge-form"
-            loading={saving}
+            disabled={saving}
+            aria-busy={saving || undefined}
           >
+            {saving && (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            )}
             {isEdit ? "ذخیرهٔ تغییرات" : "ثبت دانش"}
           </Button>
         </>
@@ -204,15 +208,16 @@ export function KnowledgeForm({
             </p>
           )}
 
-          <Input
-            label="عنوان"
-            placeholder="مثلاً: تعریف نهایی لحن برند تایلندگرد"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            error={titleError}
-            autoComplete="off"
-            maxLength={200}
-          />
+          <Field label="عنوان">
+            <Input
+              placeholder="مثلاً: تعریف نهایی لحن برند تایلندگرد"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              error={titleError}
+              autoComplete="off"
+              maxLength={200}
+            />
+          </Field>
 
           <div className="w-full">
             <label
@@ -267,30 +272,29 @@ export function KnowledgeForm({
               })}
             </div>
           ) : (
-            <Select
-              label="دسته (اختیاری)"
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              disabled={saving}
-            >
-              <option value="">بدون دسته</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
+            <Field label="دسته (اختیاری)">
+              <Select
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                disabled={saving}
+                placeholder="بدون دسته"
+                options={categories.map((c) => ({ value: c.id, label: c.name }))}
+              />
+            </Field>
           )}
 
-          <Input
+          <Field
             label="منبع (اختیاری)"
-            placeholder="مثلاً: سند برند، صفحهٔ ۱۲ یا https://…"
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
             hint="لینک یا توضیح کوتاهی که نشان دهد این دانش از کجا آمده."
-            autoComplete="off"
-            maxLength={500}
-          />
+          >
+            <Input
+              placeholder="مثلاً: سند برند، صفحهٔ ۱۲ یا https://…"
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              autoComplete="off"
+              maxLength={500}
+            />
+          </Field>
         </div>
       </form>
     </Modal>

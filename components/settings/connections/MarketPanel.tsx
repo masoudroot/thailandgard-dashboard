@@ -8,16 +8,13 @@ import { Input, Field, Label } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import {
+import { faDigits } from "@/lib/format";
   ConnectionRow,
   WhereGuide,
   ResultNote,
   type ConnState,
 } from "./ConnectionRow";
 
-/** تبدیل ارقام لاتین به فارسی */
-function faDigits(value: string | number): string {
-  return String(value).replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
-}
 
 interface MarketSourceView {
   id: string;

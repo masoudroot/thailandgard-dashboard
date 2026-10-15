@@ -8,22 +8,32 @@ import {
   Copy,
   FileDiff,
   History,
-  Loader2,
   Network,
   Palette,
   Send,
   TriangleAlert,
   Unplug,
   Wrench,
-  X,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
+import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
 
-/** تبدیل ارقام لاتین به فارسی */
-function faDigits(value: string | number): string {
-  return String(value).replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
-}
+type RegistryBadgeVariant =
+  | "default"
+  | "secondary"
+  | "outline"
+  | "success"
+  | "warning"
+  | "brand"
+  | "destructive";
+import { Card } from "@/components/ui/Card";
+import { Input, Field } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog } from "@/components/ui/dialog";
+import { faDigits } from "@/lib/format";
+
 
 /** تاریخ شمسی با ارقام فارسی */
 function faDate(iso: string | null): string {
@@ -35,9 +45,6 @@ function faDate(iso: string | null): string {
     timeStyle: "short",
   }).format(d);
 }
-
-const inputClass =
-  "w-full min-h-11 rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-control placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30";
 
 type PatchFile = { path: string; content: string };
 
@@ -76,10 +83,10 @@ type GithubInfo = {
   message: string;
 };
 
-const CONFIDENCE_LABEL: Record<string, { label: string; className: string }> = {
-  high: { label: "اطمینان بالا", className: "bg-success/10 text-success" },
-  medium: { label: "اطمینان متوسط", className: "bg-warning/10 text-warning" },
-  low: { label: "اطمینان پایین", className: "bg-destructive/10 text-destructive" },
+const CONFIDENCE_LABEL: Record<string, { label: string; variant: RegistryBadgeVariant }> = {
+  high: { label: "اطمینان بالا", variant: "success" },
+  medium: { label: "اطمینان متوسط", variant: "warning" },
+  low: { label: "اطمینان پایین", variant: "destructive" },
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -107,13 +114,13 @@ function RoleCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-border bg-card p-4">
+    <Card className="p-4">
       <h3 className="flex items-center gap-2 text-sm font-bold leading-6 text-foreground">
         <Icon className="h-4 w-4 text-brand" aria-hidden="true" />
         {title}
       </h3>
       <div className="mt-2 text-sm leading-7 text-foreground/90">{children}</div>
-    </section>
+    </Card>
   );
 }
 
@@ -134,14 +141,10 @@ function CopyButton({ text, label }: { text: string; label: string }) {
     setTimeout(() => setDone(false), 2000);
   }
   return (
-    <button
-      type="button"
-      onClick={copy}
-      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-input bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
+    <Button variant="outline" size="sm" onClick={copy}>
       {done ? <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
       {done ? "کپی شد" : label}
-    </button>
+    </Button>
   );
 }
 
@@ -189,95 +192,58 @@ function ApplyButton({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
+      <Button variant="default" onClick={() => setOpen(true)}>
         <Wrench className="h-4 w-4" aria-hidden="true" />
         اعمال در گیت‌هاب
-      </button>
-      {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-label="تأیید اعمال فیکس"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-t-xl bg-card p-5 shadow-overlay sm:rounded-xl sm:p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold leading-7">فیکس در گیت‌هاب اعمال شود؟</h3>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="بستن"
-                className="rounded-lg p-2 text-muted-foreground hover:bg-accent"
-              >
-                <X className="h-5 w-5" aria-hidden="true" />
-              </button>
-            </div>
-            <p className="mt-2 text-sm leading-7 text-muted-foreground">
-              {faDigits(patchFiles.length)} فایل روی یک شاخهٔ تازه از master کامیت می‌شود. پوش مستقیم روی master
-              انجام نمی‌شود.
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        title="فیکس در گیت‌هاب اعمال شود؟"
+        description={`${faDigits(patchFiles.length)} فایل روی یک شاخهٔ تازه از master کامیت می‌شود. پوش مستقیم روی master انجام نمی‌شود.`}
+        footer={
+          <>
+            <Button
+              variant="default"
+              disabled={busy}
+              aria-busy={busy || undefined}
+              onClick={apply}
+              className="flex-1"
+            >
+              {busy ? "در حال اعمال…" : "اعمال فیکس"}
+            </Button>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              انصراف
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Field label="نام شاخه (اختیاری)">
+            <Input
+              id="apply-branch"
+              dir="ltr"
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              placeholder="fix/debug-xxxxxxxx-20261015"
+            />
+          </Field>
+          <Field label="پیام کامیت">
+            <Input
+              id="apply-message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="fix: توضیح کوتاه فیکس"
+            />
+          </Field>
+          {error && (
+            <p className="flex items-start gap-1.5 text-sm leading-6 text-destructive">
+              <TriangleAlert className="mt-1 h-4 w-4 shrink-0" aria-hidden="true" />
+              {error}
             </p>
-            <div className="mt-4 space-y-3">
-              <div>
-                <label htmlFor="apply-branch" className="mb-1 block text-xs font-medium text-muted-foreground">
-                  نام شاخه (اختیاری)
-                </label>
-                <input
-                  id="apply-branch"
-                  dir="ltr"
-                  value={branch}
-                  onChange={(e) => setBranch(e.target.value)}
-                  placeholder="fix/debug-xxxxxxxx-20261015"
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label htmlFor="apply-message" className="mb-1 block text-xs font-medium text-muted-foreground">
-                  پیام کامیت
-                </label>
-                <input
-                  id="apply-message"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="fix: توضیح کوتاه فیکس"
-                  className={inputClass}
-                />
-              </div>
-            </div>
-            {error && (
-              <p className="mt-3 flex items-start gap-1.5 text-sm leading-6 text-destructive">
-                <TriangleAlert className="mt-1 h-4 w-4 shrink-0" aria-hidden="true" />
-                {error}
-              </p>
-            )}
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={apply}
-                disabled={busy}
-                className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-              >
-                {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                {busy ? "در حال اعمال…" : "اعمال فیکس"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="min-h-11 rounded-lg border border-input px-4 text-sm font-medium hover:bg-accent"
-              >
-                انصراف
-              </button>
-            </div>
-          </div>
+          )}
         </div>
-      )}
+      </Dialog>
     </>
   );
 }
@@ -394,17 +360,16 @@ export default function DebugPage() {
       </div>
 
       {/* فرم چت */}
-      <section className="rounded-xl border border-border bg-card p-4 sm:p-6">
+      <Card className="p-4 sm:p-6">
         <label htmlFor="bug-desc" className="mb-2 block text-sm font-bold leading-6">
           باگ را توصیف کنید
         </label>
-        <textarea
+        <Textarea
           id="bug-desc"
           rows={4}
           value={bug}
           onChange={(e) => setBug(e.target.value)}
           placeholder="مثلاً: در صفحهٔ چرخه‌ها روی موبایل جدول از کادر بیرون می‌زند و اسکرول افقی می‌سازد..."
-          className={`${inputClass} resize-y`}
         />
         {error && (
           <p className="mt-2 flex items-start gap-1.5 text-sm leading-6 text-destructive">
@@ -419,17 +384,23 @@ export default function DebugPage() {
           </p>
         )}
         <div className="mt-3 flex justify-end">
-          <button
-            type="button"
+          <Button
+            variant="default"
             onClick={submit}
             disabled={busy}
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-busy={busy || undefined}
           >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
-            {busy ? "در حال تحلیل با زمینهٔ واقعی..." : "تحلیل باگ"}
-          </button>
+            {busy ? (
+              "در حال تحلیل با زمینهٔ واقعی..."
+            ) : (
+              <>
+                <Send className="h-4 w-4" aria-hidden="true" />
+                تحلیل باگ
+              </>
+            )}
+          </Button>
         </div>
-      </section>
+      </Card>
 
       {/* نتیجهٔ تحلیل */}
       {result && diag && (
@@ -437,9 +408,9 @@ export default function DebugPage() {
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-base font-bold leading-7">نتیجهٔ تحلیل</h2>
             {conf && (
-              <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${conf.className}`}>
+              <Badge variant={conf.variant}>
                 {conf.label}
-              </span>
+              </Badge>
             )}
           </div>
 
@@ -506,7 +477,7 @@ export default function DebugPage() {
           </RoleCard>
 
           {/* اعمال فیکس */}
-          <section className="rounded-xl border border-border bg-card p-4 sm:p-6">
+          <Card className="p-4 sm:p-6">
             <h3 className="flex items-center gap-2 text-sm font-bold leading-6">
               <FileDiff className="h-4 w-4 text-brand" aria-hidden="true" />
               اعمال فیکس
@@ -548,7 +519,7 @@ export default function DebugPage() {
                 کنید.
               </p>
             )}
-          </section>
+          </Card>
         </div>
       )}
 
@@ -581,9 +552,9 @@ export default function DebugPage() {
                       <p className="truncate text-sm font-medium leading-6">{s.bug_desc}</p>
                       <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{faDate(s.created_at)}</p>
                     </div>
-                    <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                    <Badge variant="secondary" className="shrink-0">
                       {STATUS_LABEL[s.status] ?? s.status}
-                    </span>
+                    </Badge>
                   </button>
                   {open && d && (
                     <div className="space-y-2 border-t border-border p-3 text-sm leading-7">

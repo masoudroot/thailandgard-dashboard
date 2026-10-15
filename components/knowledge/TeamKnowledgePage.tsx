@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Inbox,
   Link2,
+  Loader2,
   Pencil,
   Plus,
   Trash2,
@@ -225,7 +226,7 @@ export default function TeamKnowledgePage({
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {score !== null && (
-              <Badge variant="brand" dot>
+              <Badge variant="brand">
                 امتیاز دانش {faNum(Math.round(score))} از {faNum(100)}
               </Badge>
             )}
@@ -298,7 +299,7 @@ export default function TeamKnowledgePage({
                 >
                   {cat.name}
                 </h2>
-                <Badge variant="neutral">
+                <Badge variant="secondary">
                   {faNum(cat.items.length)} دانش
                 </Badge>
               </div>
@@ -329,7 +330,7 @@ export default function TeamKnowledgePage({
             <section aria-label="بدون دسته">
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <h2 className="text-lg font-bold text-foreground">بدون دسته</h2>
-                <Badge variant="neutral">
+                <Badge variant="secondary">
                   {faNum(data.uncategorized.length)} دانش
                 </Badge>
               </div>
@@ -373,10 +374,14 @@ export default function TeamKnowledgePage({
         footer={
           <>
             <Button
-              variant="danger"
+              variant="destructive"
               onClick={() => void confirmDelete()}
-              loading={deleting}
+              disabled={deleting}
+              aria-busy={deleting || undefined}
             >
+              {deleting && (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              )}
               حذف
             </Button>
             <Button
@@ -426,11 +431,16 @@ function KnowledgeItemCard({
               variant="ghost"
               size="sm"
               onClick={onEdit}
-              loading={editing}
+              disabled={editing}
+              aria-busy={editing || undefined}
               aria-label={`ویرایش ${item.title}`}
               title="ویرایش"
             >
-              {!editing && <Pencil size={16} aria-hidden="true" />}
+              {editing ? (
+                <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Pencil size={16} aria-hidden="true" />
+              )}
             </Button>
             <Button
               variant="ghost"

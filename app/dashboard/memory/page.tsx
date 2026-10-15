@@ -6,6 +6,7 @@ import { TEAMS, type TeamName } from '@/lib/types';
 import EmptyState from '@/components/EmptyState';
 import PageHeader from '@/components/PageHeader';
 import { SkeletonLines, SkeletonPanel } from '@/components/Skeleton';
+import { faDigits } from "@/lib/format";
 
 /** نام‌های فارسی خوانا برای ۱۵ تیم */
 const TEAM_LABELS: Record<TeamName, string> = {
@@ -40,7 +41,6 @@ interface HistoryEntry {
   superseded_at: string;
 }
 
-const faDigits = (n: number | string) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]);
 
 const jalaliFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
   dateStyle: 'medium',

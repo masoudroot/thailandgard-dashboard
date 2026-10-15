@@ -6,6 +6,9 @@ import PageHeader from '@/components/PageHeader';
 import EmptyState from '@/components/EmptyState';
 import { SkeletonLines } from '@/components/Skeleton';
 import { Switch } from '@/components/ui/Switch';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { TimePicker } from '@/components/ui/time-picker';
 import { faNum } from '@/lib/format';
 import { KEY_CURRENCIES, type NavasanItem, type RatesSchedule } from '@/lib/rates';
 
@@ -142,15 +145,21 @@ export default function RatesPage() {
         title="نرخ ارز"
         subtitle="ربات نرخ ارز؛ ۴ بار در روز از نوسان می‌خواند"
         actions={
-          <button
-            type="button"
+          <Button
+            variant="default"
             onClick={handleFetch}
             disabled={fetching}
-            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            aria-busy={fetching || undefined}
           >
-            <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
-            {fetching ? 'در حال دریافت…' : 'دریافت دستی'}
-          </button>
+            {fetching ? (
+              'در حال دریافت…'
+            ) : (
+              <>
+                <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
+                دریافت دستی
+              </>
+            )}
+          </Button>
         }
       />
 
@@ -217,14 +226,14 @@ export default function RatesPage() {
 
           {/* نمودار دلار */}
           {data && data.history.length >= 2 && (
-            <section aria-label="نمودار دلار" className="rounded-lg border border-border bg-card px-4 py-4">
+            <Card aria-label="نمودار دلار" className="px-4 py-4">
               <h2 className="mb-3 text-sm font-bold text-foreground">روند دلار تهران (۷ روز)</h2>
               <RateChart history={data.history} symbol="usd_sell" />
-            </section>
+            </Card>
           )}
 
           {/* تنظیمات */}
-          <section aria-label="تنظیمات ربات" className="rounded-lg border border-border bg-card px-4 py-4">
+          <Card aria-label="تنظیمات ربات" className="px-4 py-4">
             <h2 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-foreground">
               <Settings2 size={15} strokeWidth={2} aria-hidden="true" />
               تنظیمات ربات
@@ -242,31 +251,34 @@ export default function RatesPage() {
                   <label htmlFor={`rate-time-${i}`} className="mb-1.5 block text-xs text-muted-foreground">
                     خوانش {faNum(i + 1)}
                   </label>
-                  <input
+                  {/* TimePicker کنترل‌نشده است: مقدار ناقص حین تایپ نباید times را پاک کند؛
+                      فقط ساعت کامل «HH:mm» به والد برمی‌گردد. */}
+                  <TimePicker
                     id={`rate-time-${i}`}
-                    type="time"
-                    dir="ltr"
-                    value={t}
-                    onChange={(e) => setTimeAt(i, e.target.value)}
-                    className="w-full min-h-11 rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
+                    defaultValue={t}
+                    clearable={false}
+                    onChange={(v) => {
+                      if (v !== null) setTimeAt(i, v);
+                    }}
                   />
                 </div>
               ))}
             </div>
-            <button
-              type="button"
+            <Button
+              variant="default"
               onClick={handleSaveSchedule}
               disabled={saving}
-              className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-6 py-2 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              aria-busy={saving || undefined}
+              className="mt-4"
             >
               {saving ? 'در حال ذخیره…' : 'ذخیره تنظیمات'}
-            </button>
+            </Button>
             {saveMsg && (
               <p role="status" className="mt-2 text-sm text-muted-foreground">
                 {saveMsg}
               </p>
             )}
-          </section>
+          </Card>
         </div>
       )}
     </div>

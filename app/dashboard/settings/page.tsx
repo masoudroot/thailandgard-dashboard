@@ -7,11 +7,8 @@ import { Button } from "@/components/ui/Button";
 import { Input, Field } from "@/components/ui/Input";
 import { ConnectionsHub } from "@/components/settings/connections/ConnectionsHub";
 import { SettingsBackup } from "@/components/settings/SettingsBackup";
+import { faDigits } from "@/lib/format";
 
-/** تبدیل ارقام لاتین به فارسی */
-function faDigits(value: string | number): string {
-  return String(value).replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
-}
 
 /** تاریخ شمسی کوتاه با ارقام فارسی */
 function faDateTime(iso: string | null): string {

@@ -23,6 +23,11 @@ import PageHeader from '@/components/PageHeader';
 import { SkeletonPanel } from '@/components/Skeleton';
 import LoadMore, { useVisibleCount } from '@/components/LoadMore';
 import { Switch } from '@/components/ui/Switch';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { Input, Label, Field } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Textarea } from '@/components/ui/textarea';
 
 /* ------------------------------------------------------------------ */
 /*  مدل داده (آینهٔ واقعی build_queue + تنظیمات اجرا)                   */
@@ -391,23 +396,23 @@ export default function QueuePage() {
           subtitle="کارهای پیشنهادی تیم‌ها را بررسی و تأیید کنید، یا کار تازه‌ای ثبت کنید."
           actions={
             <>
-              <button
-                type="button"
+              <Button
+                variant="outline"
                 onClick={load}
-                className="tg-btn inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm shadow-control transition hover:bg-accent sm:flex-none"
+                className="flex-1 sm:flex-none"
               >
                 <RotateCw size={16} strokeWidth={2} aria-hidden="true" />
                 تازه‌سازی
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="default"
                 onClick={() => setFormOpen((v) => !v)}
                 aria-expanded={formOpen}
-                className="tg-btn inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-control transition hover:opacity-90 sm:flex-none"
+                className="flex-1 sm:flex-none"
               >
                 <Plus size={16} strokeWidth={2} aria-hidden="true" />
                 {formOpen ? 'بستن فرم' : 'کار جدید'}
-              </button>
+              </Button>
             </>
           }
         />
@@ -450,68 +455,51 @@ export default function QueuePage() {
                       مشخصات کار
                     </legend>
                     <div className="grid gap-4 md:grid-cols-2">
-                      <label className="block">
-                        <span className="mb-1 block text-sm font-medium">عنوان *</span>
-                        <input
+                      <Field label="عنوان *">
+                        <Input
                           value={form.title}
                           onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                           placeholder="مثلاً: بازطراحی بنر هیروی صفحهٔ تورها"
-                          className="min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
                         />
-                      </label>
+                      </Field>
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <label className="block">
-                          <span className="mb-1 block text-sm font-medium">تیم مجری *</span>
-                          <select
+                        <Field label="تیم مجری *">
+                          <Select
                             value={form.team}
                             onChange={(e) => setForm((f) => ({ ...f, team: e.target.value }))}
-                            className="min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
-                          >
-                            {TEAMS.map((t) => (
-                              <option key={t} value={t}>
-                                {teamLabel(t)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="block">
-                          <span className="mb-1 block text-sm font-medium">اولویت</span>
-                          <select
+                            options={TEAMS.map((t) => ({ value: t, label: teamLabel(t) }))}
+                          />
+                        </Field>
+                        <Field label="اولویت">
+                          <Select
                             value={form.priority}
                             onChange={(e) =>
                               setForm((f) => ({ ...f, priority: e.target.value as TaskPriority }))
                             }
-                            className="min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
-                          >
-                            {PRIORITIES.map((p) => (
-                              <option key={p.key} value={p.key}>
-                                {p.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                            options={PRIORITIES.map((p) => ({ value: p.key, label: p.label }))}
+                          />
+                        </Field>
                       </div>
                       <label className="block md:col-span-2">
                         <span className="mb-1 block text-sm font-medium">توضیح</span>
-                        <textarea
+                        <Textarea
                           value={form.description}
                           onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                           rows={3}
                           placeholder="شرح کوتاه کار و دلیلش"
-                          className="min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
                         />
                       </label>
                       <label className="block md:col-span-2">
                         <span className="mb-1 block text-sm font-medium">
                           فایل‌های مرتبط <span className="font-normal text-muted-foreground">(هر خط یک مسیر)</span>
                         </span>
-                        <textarea
+                        <Textarea
                           value={form.files}
                           onChange={(e) => setForm((f) => ({ ...f, files: e.target.value }))}
                           rows={2}
                           dir="ltr"
                           placeholder={'site/app/tours/page.tsx\nsite/components/Hero.tsx'}
-                          className="min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2.5 font-mono text-sm"
+                          className="font-mono"
                         />
                       </label>
                     </div>
@@ -560,12 +548,15 @@ export default function QueuePage() {
                       </div>
                       <div>
                         <span className="mb-2 block text-sm font-medium">نحوهٔ اجرای ساب‌ایجنت‌ها</span>
-                        <div className="flex min-h-11 items-center rounded-lg border border-border bg-card px-3 py-2">
+                        <div className="flex min-h-11 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
                           <Switch
+                            id="queue-parallel-switch"
                             checked={form.parallel}
                             onCheckedChange={(v) => setForm((f) => ({ ...f, parallel: v }))}
-                            label={form.parallel ? 'موازی: سه مجری هم‌زمان' : 'ترتیبی: مجری‌ها یکی‌یکی'}
                           />
+                          <Label htmlFor="queue-parallel-switch" className="cursor-pointer">
+                            {form.parallel ? 'موازی: سه مجری هم‌زمان' : 'ترتیبی: مجری‌ها یکی‌یکی'}
+                          </Label>
                         </div>
                         <p className="mt-2 text-xs leading-6 text-muted-foreground">
                           در اجرای فوری، مجری‌ها
@@ -576,17 +567,19 @@ export default function QueuePage() {
                   </fieldset>
 
                   <div>
-                    <button
+                    <Button
                       type="submit"
+                      variant="default"
                       disabled={submitting}
-                      className="tg-btn min-h-12 w-full rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control transition hover:opacity-90 disabled:opacity-50 sm:w-auto"
+                      aria-busy={submitting || undefined}
+                      className="w-full sm:w-auto"
                     >
                       {submitting
                         ? 'در حال ثبت…'
                         : form.executionMode === 'now'
                           ? 'ثبت و اجرای فوری'
                           : 'ثبت در صف تأیید'}
-                    </button>
+                    </Button>
                   </div>
                 </form>
               </section>
@@ -650,14 +643,10 @@ export default function QueuePage() {
                     tint="bg-muted text-muted-foreground"
                     action={
                       tab === 'pending' ? (
-                        <button
-                          type="button"
-                          onClick={() => setFormOpen(true)}
-                          className="tg-btn inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-bold text-primary-foreground shadow-control transition hover:opacity-90"
-                        >
+                        <Button variant="default" onClick={() => setFormOpen(true)}>
                           <Plus size={16} strokeWidth={2} aria-hidden="true" />
                           تعریف کار جدید
-                        </button>
+                        </Button>
                       ) : undefined
                     }
                   />
@@ -679,23 +668,17 @@ export default function QueuePage() {
                         className="tg-card flex flex-col rounded-xl border border-border bg-card p-4 shadow-surface sm:p-5"
                       >
                         <div className="mb-3 flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-                            تیم {teamLabel(task.team)}
-                          </span>
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${PRIORITY_STYLE[task.priority]}`}
-                          >
+                          <Badge variant="secondary">تیم {teamLabel(task.team)}</Badge>
+                          <Badge className={PRIORITY_STYLE[task.priority]}>
                             اولویت {priorityLabel}
-                          </span>
-                          <span className={`rounded-full px-3 py-1 text-xs ${STATUS_BADGE[task.status]}`}>
-                            {statusLabel}
-                          </span>
+                          </Badge>
+                          <Badge className={STATUS_BADGE[task.status]}>{statusLabel}</Badge>
                           {pref && (
-                            <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
+                            <Badge variant="secondary">
                               {pref.execution_mode === 'now' ? 'اجرای فوری' : 'در چرخه'}
                               {' · '}
                               {pref.parallel ? 'موازی' : 'ترتیبی'}
-                            </span>
+                            </Badge>
                           )}
                         </div>
 
@@ -732,33 +715,31 @@ export default function QueuePage() {
                             <label className="mb-2 block text-xs font-medium text-muted-foreground">
                               دلیل رد (الزامی)
                             </label>
-                            <textarea
+                            <Textarea
                               value={rejectReason}
                               onChange={(e) => setRejectReason(e.target.value)}
                               rows={2}
                               placeholder="چرا این کار رد می‌شود؟"
-                              className="min-h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
                             />
                             <div className="mt-2 flex gap-2">
-                              <button
-                                type="button"
+                              <Button
+                                variant="destructive"
                                 disabled={acting === task.id}
+                                aria-busy={acting === task.id || undefined}
                                 onClick={() => handleReject(task.id)}
-                                className="tg-btn min-h-11 rounded-lg bg-destructive px-5 py-1.5 text-sm font-bold text-destructive-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
                               >
                                 {acting === task.id ? 'در حال رد…' : 'رد کار'}
-                              </button>
-                              <button
-                                type="button"
+                              </Button>
+                              <Button
+                                variant="outline"
                                 disabled={acting === task.id}
                                 onClick={() => {
                                   setRejectingId(null);
                                   setRejectReason('');
                                 }}
-                                className="tg-btn min-h-11 rounded-lg border border-border px-5 py-1.5 text-sm transition hover:bg-accent disabled:opacity-50"
                               >
                                 انصراف
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         ) : (
@@ -769,14 +750,17 @@ export default function QueuePage() {
                             <div className="flex gap-2">
                               {task.status === 'pending' && (
                                 <>
+                                  {/* دکمهٔ تأیید سبز می‌ماند: رجیستری Button واریانت success ندارد و
+                                      primary هم برای «اجرا» رزرو است؛ فقط با توکن‌های تم. */}
                                   <button
                                     type="button"
                                     disabled={acting === task.id}
                                     onClick={() => handleApprove(task.id)}
-                                    className="tg-btn min-h-11 rounded-lg bg-success px-5 py-1.5 text-sm font-medium text-success-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
+                                    className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-success px-5 py-1.5 text-sm font-semibold text-success-foreground transition-soft hover:brightness-105 disabled:pointer-events-none disabled:opacity-50"
                                   >
                                     {acting === task.id ? 'صبر کنید…' : 'تأیید کار'}
                                   </button>
+                                  {/* ردِ خط‌دار قرمز هم معادل رجیستری ندارد؛ فقط با توکن‌های تم. */}
                                   <button
                                     type="button"
                                     disabled={acting === task.id}
@@ -784,23 +768,22 @@ export default function QueuePage() {
                                       setRejectingId(task.id);
                                       setRejectReason('');
                                     }}
-                                    className="tg-btn min-h-11 rounded-lg border border-destructive px-5 py-1.5 text-sm text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
+                                    className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-destructive px-5 py-1.5 text-sm font-semibold text-destructive transition-soft hover:bg-destructive hover:text-destructive-foreground disabled:pointer-events-none disabled:opacity-50"
                                   >
                                     رد کار
                                   </button>
                                 </>
                               )}
                               {(task.status === 'approved' || task.status === 'pending') && (
-                                <button
-                                  type="button"
+                                <Button
+                                  variant="default"
                                   disabled={acting === task.id}
                                   onClick={() => handleRunNow(task.id)}
                                   title="اجرای فوری با ساب‌ایجنت‌ها"
-                                  className="tg-btn inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-primary px-5 py-1.5 text-sm font-medium text-primary-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
                                 >
                                   <Zap size={15} strokeWidth={2} aria-hidden="true" />
                                   {acting === task.id ? 'در حال شروع…' : 'همین الان اجرا شود'}
-                                </button>
+                                </Button>
                               )}
                             </div>
                           </div>

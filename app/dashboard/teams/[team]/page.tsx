@@ -8,6 +8,8 @@ import PageHeader from '../../../../components/PageHeader';
 import EmptyState from '../../../../components/EmptyState';
 import StatusBadge from '../../../../components/dataviz/StatusBadge';
 import { SkeletonPanel } from '../../../../components/Skeleton';
+import { Button } from '../../../../components/ui/Button';
+import { Card } from '../../../../components/ui/Card';
 import { TEAMS, type TeamName, type TeamRun } from '../../../../lib/types';
 import { TEAM_META, WAVE_TITLES } from '../../../../lib/team-meta';
 
@@ -162,11 +164,8 @@ export default function TeamDetailPage() {
           title="تیم نامعتبر است"
           description="چنین تیمی در داشبورد تعریف نشده است."
           action={
-            <Link
-              href="/dashboard/teams"
-              className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground"
-            >
-              بازگشت به تیم‌ها
+            <Link href="/dashboard/teams">
+              <Button variant="default">بازگشت به تیم‌ها</Button>
             </Link>
           }
         />
@@ -235,20 +234,16 @@ export default function TeamDetailPage() {
             title="به پایگاه داده متصل نیست"
             description="اطلاعات تیم بارگذاری نشد. اتصال را بررسی کنید و دوباره تلاش کنید."
             action={
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground"
-              >
+              <Button variant="default" onClick={() => window.location.reload()}>
                 تلاش دوباره
-              </button>
+              </Button>
             }
           />
         )}
 
         {state === 'ready' && detail && tab === 'overview' && (
           <div className="space-y-3">
-            <section className="rounded-xl border border-border bg-card p-4 shadow-surface sm:p-5">
+            <Card className="p-4 shadow-surface sm:p-5">
               <h2 className="text-sm font-bold text-card-foreground">مشخصات تیم</h2>
               <dl className="mt-3 space-y-2 text-sm">
                 <div className="flex justify-between gap-4">
@@ -266,9 +261,9 @@ export default function TeamDetailPage() {
                   <dd className="text-card-foreground">{faNum(detail.runs.length)}</dd>
                 </div>
               </dl>
-            </section>
+            </Card>
 
-            <section className="rounded-xl border border-border bg-card p-4 shadow-surface sm:p-5">
+            <Card className="p-4 shadow-surface sm:p-5">
               <h2 className="text-sm font-bold text-card-foreground">آخرین اجرا</h2>
               {lastRun ? (
                 <div className="mt-3 space-y-2">
@@ -285,7 +280,7 @@ export default function TeamDetailPage() {
                   این تیم هنوز در هیچ چرخه‌ای اجرا نشده است.
                 </p>
               )}
-            </section>
+            </Card>
           </div>
         )}
 

@@ -5,16 +5,13 @@ import { Check, Copy, Database, RefreshCw, Save } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Field } from "@/components/ui/Input";
 import {
+import { faDigits } from "@/lib/format";
   ConnectionRow,
   WhereGuide,
   ResultNote,
   type ConnState,
 } from "./ConnectionRow";
 
-/** تبدیل ارقام لاتین به فارسی */
-function faDigits(value: string | number): string {
-  return String(value).replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
-}
 
 /**
  * پنل «پایگاه داده» (سوپابیس).

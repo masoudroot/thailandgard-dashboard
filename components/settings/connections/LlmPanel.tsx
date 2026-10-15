@@ -11,16 +11,13 @@ import { AlertDialog } from "@/components/ui/alert-dialog";
 import { TEAMS } from "@/lib/types";
 import { TEAM_META } from "@/lib/team-meta";
 import {
+import { faDigits } from "@/lib/format";
   ConnectionRow,
   WhereGuide,
   ResultNote,
   type ConnState,
 } from "./ConnectionRow";
 
-/** تبدیل ارقام لاتین به فارسی */
-function faDigits(value: string | number): string {
-  return String(value).replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
-}
 
 interface MaskedEndpoint {
   id: string;

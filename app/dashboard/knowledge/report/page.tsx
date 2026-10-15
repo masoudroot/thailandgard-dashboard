@@ -16,12 +16,20 @@ import { SkeletonPanel } from '@/components/Skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import type { KnowledgeReport } from '@/app/api/knowledge/report/route';
 
 const faNum = (n: number): string =>
   new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 1 }).format(n);
 
-type BadgeKind = 'success' | 'warning' | 'destructive' | 'neutral';
+type BadgeKind = 'success' | 'warning' | 'destructive' | 'secondary';
 
 function scoreBadge(score: number): { kind: BadgeKind; label: string } {
   if (score >= 70) return { kind: 'success', label: 'خوب' };
@@ -212,46 +220,43 @@ export default function KnowledgeReportPage() {
           </Card>
 
           {/* جدول دسکتاپ */}
-          <div className="hidden overflow-hidden rounded-xl border border-border bg-card lg:block">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-right">
-                  <th className="w-40 px-5 py-3 font-bold text-foreground">تیم</th>
-                  <th className="w-64 px-5 py-3 font-bold text-foreground">امتیاز</th>
-                  <th className="px-5 py-3 font-bold text-foreground">
+          <div className="hidden lg:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-40 font-bold text-foreground">تیم</TableHead>
+                  <TableHead className="w-64 font-bold text-foreground">امتیاز</TableHead>
+                  <TableHead className="font-bold text-foreground">
                     سه پیشنهاد مربی
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {report.teams.map((t) => {
                   const badge = scoreBadge(t.score);
                   return (
-                    <tr
-                      key={t.team}
-                      className="border-b border-border align-top last:border-0"
-                    >
-                      <td className="px-5 py-4">
+                    <TableRow key={t.team} className="align-top">
+                      <TableCell>
                         <div className="font-bold text-foreground">{t.faName}</div>
                         <div className="mt-1">
                           {t.hasData ? (
                             <Badge variant={badge.kind}>{badge.label}</Badge>
                           ) : (
-                            <Badge variant="neutral">خوانده نشد</Badge>
+                            <Badge variant="secondary">خوانده نشد</Badge>
                           )}
                         </div>
-                      </td>
-                      <td className="px-5 py-4">
+                      </TableCell>
+                      <TableCell>
                         <ScoreBar score={t.score} label={`امتیاز دانش تیم ${t.faName}`} />
-                      </td>
-                      <td className="px-5 py-4">
+                      </TableCell>
+                      <TableCell>
                         <Suggestions items={t.topSuggestions} />
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
 
           {/* کارت‌های موبایل و تبلت */}
@@ -266,7 +271,7 @@ export default function KnowledgeReportPage() {
                       {t.hasData ? (
                         <Badge variant={badge.kind}>{badge.label}</Badge>
                       ) : (
-                        <Badge variant="neutral">خوانده نشد</Badge>
+                        <Badge variant="secondary">خوانده نشد</Badge>
                       )}
                     </div>
                   </CardHeader>

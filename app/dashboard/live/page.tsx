@@ -7,6 +7,9 @@ import PageHeader from '../../../components/PageHeader';
 import EmptyState from '../../../components/EmptyState';
 import StatusBadge from '../../../components/dataviz/StatusBadge';
 import { SkeletonTeamCard } from '../../../components/Skeleton';
+import { Button } from '../../../components/ui/Button';
+import { Badge } from '../../../components/ui/Badge';
+import { Card } from '../../../components/ui/Card';
 import { TEAMS, type Cycle, type Subagent, type TeamName, type TeamRun } from '../../../lib/types';
 import { faNum } from '../../../lib/format';
 import { TEAM_META, WAVE_TITLES } from '../../../lib/team-meta';
@@ -53,14 +56,12 @@ function ControlButton({
   action,
   label,
   icon: Icon,
-  tone,
   onDone,
 }: {
   subagentId: string;
   action: 'pause' | 'resume' | 'stop';
   label: string;
   icon: typeof Pause;
-  tone: string;
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -94,15 +95,16 @@ function ControlButton({
 
   return (
     <span className="inline-flex flex-col items-start gap-1">
-      <button
-        type="button"
+      <Button
+        variant={action === 'stop' ? 'destructive' : 'outline'}
+        size="sm"
         onClick={run}
         disabled={busy}
-        className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors disabled:opacity-50 ${tone}`}
+        aria-busy={busy || undefined}
       >
         <Icon size={14} strokeWidth={2} aria-hidden="true" />
         {busy ? '…' : label}
-      </button>
+      </Button>
       {error && <span className="text-xs text-destructive">{error}</span>}
     </span>
   );
@@ -129,15 +131,11 @@ function LiveTeamCard({
 
   const working = run?.status === 'running';
   const pill = !run ? (
-    <span className="inline-flex min-h-7 items-center rounded-full border border-border bg-muted/60 px-3 py-1 text-xs font-semibold text-muted-foreground">
-      منتظر نوبت
-    </span>
+    <Badge variant="secondary">منتظر نوبت</Badge>
   ) : working ? (
     <StatusBadge status="running" label="در حال کار" />
   ) : (
-    <span className="inline-flex min-h-7 items-center rounded-full border border-border bg-muted/60 px-3 py-1 text-xs font-semibold text-muted-foreground">
-      بیکار
-    </span>
+    <Badge variant="secondary">بیکار</Badge>
   );
 
   const outcome =
@@ -258,9 +256,9 @@ function LiveTeamCard({
                       <p className="min-w-0 flex-1 text-sm font-medium leading-6 text-card-foreground">
                         {s.label}
                       </p>
-                      <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-xs text-muted-foreground">
+                      <Badge variant="secondary" className="shrink-0">
                         {SUBAGENT_STATUS_LABEL[s.status]}
-                      </span>
+                      </Badge>
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       {canPause && (
@@ -269,7 +267,6 @@ function LiveTeamCard({
                           action="pause"
                           label="توقف موقت"
                           icon={Pause}
-                          tone="border-border bg-card text-card-foreground hover:bg-accent"
                           onDone={refresh}
                         />
                       )}
@@ -279,7 +276,6 @@ function LiveTeamCard({
                           action="resume"
                           label="ادامه"
                           icon={Play}
-                          tone="border-success/40 bg-success/10 text-success"
                           onDone={refresh}
                         />
                       )}
@@ -289,7 +285,6 @@ function LiveTeamCard({
                           action="stop"
                           label="توقف کامل"
                           icon={Square}
-                          tone="border-destructive/40 bg-destructive/10 text-destructive"
                           onDone={refresh}
                         />
                       )}
@@ -395,16 +390,15 @@ export default function LivePage() {
               'صفحه نتوانست به پایگاه داده وصل شود. اتصال را در بخش تنظیمات بررسی کنید، بعد صفحه را تازه کنید.'
             }
             action={
-              <button
-                type="button"
+              <Button
+                variant="default"
                 onClick={() => {
                   setState('loading');
                   void fetchLive();
                 }}
-                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control transition-colors hover:opacity-90"
               >
                 تلاش دوباره
-              </button>
+              </Button>
             }
           />
         )}
@@ -437,7 +431,7 @@ export default function LivePage() {
                 ستون‌های پایه خوانده می‌شود.
               </section>
             )}
-            <section className="mb-8 rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6">
+            <Card className="mb-8 p-4 shadow-surface sm:p-6">
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                 <span className="inline-flex items-center gap-2 text-sm font-bold text-card-foreground">
                   <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
@@ -454,17 +448,17 @@ export default function LivePage() {
                 </span>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-border bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
-                  در حال کار: <strong className="text-card-foreground">{faNum(running)}</strong>
-                </span>
-                <span className="rounded-full border border-border bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
-                  بیکار: <strong className="text-card-foreground">{faNum(idle)}</strong>
-                </span>
-                <span className="rounded-full border border-border bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
-                  منتظر نوبت: <strong className="text-card-foreground">{faNum(waiting)}</strong>
-                </span>
+                <Badge variant="secondary">
+                  در حال کار: <strong>{faNum(running)}</strong>
+                </Badge>
+                <Badge variant="secondary">
+                  بیکار: <strong>{faNum(idle)}</strong>
+                </Badge>
+                <Badge variant="secondary">
+                  منتظر نوبت: <strong>{faNum(waiting)}</strong>
+                </Badge>
               </div>
-            </section>
+            </Card>
 
             <div className="tg-stagger grid gap-4 sm:grid-cols-2 md:gap-5 lg:grid-cols-3">
               {TEAMS.map((team) => {

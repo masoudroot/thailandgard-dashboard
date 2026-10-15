@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleAlert,
   History,
+  Loader2,
   RefreshCw,
   RotateCcw,
   ShieldAlert,
@@ -15,6 +16,8 @@ import EmptyState from '../../../components/EmptyState';
 import StatusBadge from '../../../components/dataviz/StatusBadge';
 import { Button } from '../../../components/ui/Button';
 import { Select } from '../../../components/ui/Select';
+import { Badge } from '../../../components/ui/Badge';
+import { Field } from '../../../components/ui/Input';
 import { Skeleton } from '../../../components/Skeleton';
 import { faNum } from '../../../lib/format';
 import { TEAMS, type TeamName } from '../../../lib/types';
@@ -78,9 +81,7 @@ function SectionTitle({ icon: Icon, title, count }: { icon: typeof TriangleAlert
       </span>
       <h2 className="text-base font-bold text-foreground sm:text-lg">{title}</h2>
       {typeof count === 'number' && count > 0 && (
-        <span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-bold text-destructive">
-          {faNum(count)}
-        </span>
+        <Badge variant="destructive">{faNum(count)}</Badge>
       )}
     </div>
   );
@@ -254,10 +255,14 @@ export default function ErrorsPage() {
                               size="sm"
                               className="w-full"
                               disabled={retryingId === item.id}
-                              loading={retryingId === item.id}
+                              aria-busy={retryingId === item.id || undefined}
                               onClick={() => void handleRetry(item.id)}
                             >
-                              <RotateCcw size={15} strokeWidth={2} aria-hidden="true" />
+                              {retryingId === item.id ? (
+                                <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+                              ) : (
+                                <RotateCcw size={15} strokeWidth={2} aria-hidden="true" />
+                              )}
                               تلاش مجدد
                             </Button>
                           </div>
@@ -307,10 +312,14 @@ export default function ErrorsPage() {
                             size="sm"
                             className="shrink-0"
                             disabled={retryingId === alert.run_id}
-                            loading={retryingId === alert.run_id}
+                            aria-busy={retryingId === alert.run_id || undefined}
                             onClick={() => void handleRetry(alert.run_id)}
                           >
-                            <RotateCcw size={15} strokeWidth={2} aria-hidden="true" />
+                            {retryingId === alert.run_id ? (
+                              <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+                            ) : (
+                              <RotateCcw size={15} strokeWidth={2} aria-hidden="true" />
+                            )}
                             تلاش مجدد
                           </Button>
                         )}
@@ -325,18 +334,19 @@ export default function ErrorsPage() {
             <section aria-label="تاریخچه خطاهای امروز">
               <SectionTitle icon={History} title="تاریخچه خطاهای امروز" count={history!.length} />
               <div className="mb-4 max-w-xs">
-                <Select
-                  label="فیلتر تیم"
-                  value={teamFilter}
-                  onChange={(e) => setTeamFilter(e.target.value as 'all' | TeamName)}
-                >
-                  <option value="all">همهٔ تیم‌ها</option>
-                  {TEAMS.map((team) => (
-                    <option key={team} value={team}>
-                      {TEAM_META[team].faName}
-                    </option>
-                  ))}
-                </Select>
+                <Field label="فیلتر تیم">
+                  <Select
+                    value={teamFilter}
+                    onChange={(e) => setTeamFilter(e.target.value as 'all' | TeamName)}
+                    options={[
+                      { value: "all", label: "همهٔ تیم‌ها" },
+                      ...TEAMS.map((team) => ({
+                        value: team,
+                        label: TEAM_META[team].faName,
+                      })),
+                    ]}
+                  />
+                </Field>
               </div>
               {history!.length === 0 ? (
                 <EmptyState
@@ -372,11 +382,15 @@ export default function ErrorsPage() {
                         size="sm"
                         className="shrink-0"
                         disabled={retryingId === item.id}
-                        loading={retryingId === item.id}
+                        aria-busy={retryingId === item.id || undefined}
                         onClick={() => void handleRetry(item.id)}
                         aria-label={`تلاش مجدد تیم ${teamFaName(item.team)}`}
                       >
-                        <RotateCcw size={15} strokeWidth={2} aria-hidden="true" />
+                        {retryingId === item.id ? (
+                          <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+                        ) : (
+                          <RotateCcw size={15} strokeWidth={2} aria-hidden="true" />
+                        )}
                         <span className="hidden sm:inline">تلاش مجدد</span>
                       </Button>
                     </li>

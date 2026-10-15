@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, FolderPlus, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronDown, FolderPlus, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
+import { Input, Field } from "../ui/Input";
 import { Modal } from "../ui/Modal";
 import { cx } from "../ui/cx";
 import { faNum } from "../../lib/format";
@@ -177,7 +177,14 @@ export function CategoryManager({ team }: CategoryManagerProps) {
         description="نام فارسی دسته و محل قرارگیری‌اش در درخت را مشخص کنید."
         footer={
           <div className="flex gap-2">
-            <Button onClick={() => void saveCategory()} loading={saving}>
+            <Button
+              onClick={() => void saveCategory()}
+              disabled={saving}
+              aria-busy={saving || undefined}
+            >
+              {saving && (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              )}
               افزودن دسته
             </Button>
             <Button variant="outline" onClick={() => setShowAdd(false)} disabled={saving}>
@@ -187,18 +194,19 @@ export function CategoryManager({ team }: CategoryManagerProps) {
         }
       >
         <div className="space-y-4">
-          <Input
-            label="نام دسته"
-            placeholder="مثلاً بازارشناسی"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              setNameError(undefined);
-            }}
-            error={nameError}
-            maxLength={80}
-            autoFocus
-          />
+          <Field label="نام دسته">
+            <Input
+              placeholder="مثلاً بازارشناسی"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setNameError(undefined);
+              }}
+              error={nameError}
+              maxLength={80}
+              autoFocus
+            />
+          </Field>
           <CategoryPicker
             team={team}
             label="والد (اختیاری)"
@@ -218,7 +226,15 @@ export function CategoryManager({ team }: CategoryManagerProps) {
         size="sm"
         footer={
           <div className="flex gap-2">
-            <Button variant="danger" onClick={() => void runDelete()} loading={deleting}>
+            <Button
+              variant="destructive"
+              onClick={() => void runDelete()}
+              disabled={deleting}
+              aria-busy={deleting || undefined}
+            >
+              {deleting && (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              )}
               حذف دسته
             </Button>
             <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>

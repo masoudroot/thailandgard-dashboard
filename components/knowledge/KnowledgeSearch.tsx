@@ -1,11 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Search, SearchX, AlertTriangle, Loader2 } from "lucide-react";
+import { SearchX, AlertTriangle } from "lucide-react";
 import type { TeamName } from "@/lib/types";
 import { TEAM_META } from "@/lib/team-meta";
 import { faNum } from "@/lib/format";
-import { cx } from "@/components/ui/cx";
+import { SearchInput } from "@/components/ui/search-input";
 
 /** یک نتیجه از POST /api/knowledge/search (طبق قرارداد). */
 export interface KnowledgeSearchResult {
@@ -105,32 +105,13 @@ export default function KnowledgeSearch({ team, placeholder }: KnowledgeSearchPr
 
   return (
     <div className="w-full">
-      <div className="relative">
-        <Search
-          aria-hidden="true"
-          size={18}
-          className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-        />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={placeholder ?? "در دانش تیم‌ها جست‌وجو کنید…"}
-          aria-label="جست‌وجوی دانش"
-          className={cx(
-            "min-h-11 w-full rounded-md border border-input bg-background py-2.5 pe-3 ps-10 text-base text-foreground transition-soft sm:text-sm",
-            "placeholder:text-muted-foreground",
-            "focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
-          )}
-        />
-        {state.status === "loading" && (
-          <Loader2
-            aria-hidden="true"
-            size={18}
-            className="absolute end-3 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground"
-          />
-        )}
-      </div>
+      <SearchInput
+        value={query}
+        onChange={setQuery}
+        loading={state.status === "loading"}
+        placeholder={placeholder ?? "در دانش تیم‌ها جست‌وجو کنید…"}
+        aria-label="جست‌وجوی دانش"
+      />
 
       <div className="mt-3">
         {state.status === "done" && state.results.length > 0 && (

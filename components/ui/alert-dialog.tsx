@@ -29,7 +29,7 @@ export function AlertDialog({ open, onOpenChange, title, description, confirmTex
       footer={
         <>
           <Button
-            variant={destructive ? "danger" : "primary"}
+            variant={destructive ? "destructive" : "default"}
             disabled={busy}
             onClick={async () => {
               setBusy(true);

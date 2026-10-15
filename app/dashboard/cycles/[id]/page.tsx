@@ -22,6 +22,8 @@ import NotConnected from '@/components/NotConnected';
 import StatusBadge from '@/components/dataviz/StatusBadge';
 import ProgressBar from '@/components/dataviz/ProgressBar';
 import { SkeletonPanel } from '@/components/Skeleton';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { faNum } from '@/lib/format';
 
 /** تاریخ و ساعت شمسی با ارقام فارسی */
@@ -208,7 +210,7 @@ export default function CycleDetailPage() {
           />
         ) : (
           <>
-            <section className="mb-6 rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6">
+            <Card className="mb-6 p-4 shadow-surface sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground">شناسه اجرا</p>
@@ -223,48 +225,52 @@ export default function CycleDetailPage() {
               {/* دکمه‌های کنترل واقعی چرخه */}
               {isActive && (
                 <div className="mt-5 flex flex-wrap items-center gap-2.5 border-t border-border pt-5">
+                  {/* توقفِ هشداررنگ می‌ماند: رجیستری Button واریانت warning ندارد؛ فقط با توکن‌های تم. */}
                   <button
                     onClick={() => sendAction('pause')}
                     disabled={!isRunning || acting !== null}
                     title={pauseHint}
-                    className="tg-btn inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-warning/40 bg-warning/10 px-5 py-2 text-sm font-medium text-warning transition-colors hover:bg-warning/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-warning/40 bg-warning/10 px-5 py-2 text-sm font-semibold text-warning transition-soft hover:bg-warning/20 disabled:pointer-events-none disabled:opacity-40"
                   >
                     <Pause size={16} strokeWidth={2} aria-hidden="true" />
                     {acting === 'pause' ? 'در حال توقف…' : 'توقف چرخه'}
                   </button>
-                  <button
+                  <Button
+                    variant="default"
                     onClick={() => sendAction('resume')}
                     disabled={!isPaused || acting !== null}
+                    aria-busy={acting === 'resume' || undefined}
                     title="ادامه از همان موجی که متوقف شده است"
-                    className="tg-btn inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Play size={16} strokeWidth={2} aria-hidden="true" />
                     {acting === 'resume' ? 'در حال ادامه…' : 'ادامه'}
-                  </button>
+                  </Button>
                   {confirmCancel ? (
                     <>
-                      <button
+                      <Button
+                        variant="destructive"
                         onClick={() => sendAction('cancel')}
                         disabled={acting !== null}
-                        className="tg-btn inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-destructive px-5 py-2 text-sm font-bold text-destructive-foreground shadow-control hover:opacity-90 disabled:opacity-40"
+                        aria-busy={acting === 'cancel' || undefined}
                       >
                         <XCircle size={16} strokeWidth={2} aria-hidden="true" />
                         {acting === 'cancel' ? 'در حال لغو…' : 'لغو چرخه'}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="outline"
                         onClick={() => setConfirmCancel(false)}
                         disabled={acting !== null}
-                        className="tg-btn inline-flex min-h-11 items-center justify-center rounded-xl border border-border px-5 py-2 text-sm font-medium text-card-foreground hover:bg-muted disabled:opacity-40"
                       >
                         انصراف
-                      </button>
+                      </Button>
                     </>
                   ) : (
+                    /* لغوِ کم‌رنگِ مرحلهٔ اول هم می‌ماند تا تشدید مرحلهٔ دوم معنا داشته باشد. */
                     <button
                       onClick={() => setConfirmCancel(true)}
                       disabled={!isActive || acting !== null}
                       title="لغو چرخه؛ دیگر ادامه نمی‌یابد"
-                      className="tg-btn inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-5 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/20 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-destructive/40 bg-destructive/10 px-5 py-2 text-sm font-semibold text-destructive transition-soft hover:bg-destructive/20 disabled:pointer-events-none disabled:opacity-40"
                     >
                       <XCircle size={16} strokeWidth={2} aria-hidden="true" />
                       لغو چرخه
@@ -324,7 +330,7 @@ export default function CycleDetailPage() {
                 {lastRefresh &&
                   ` آخرین به‌روزرسانی: ${new Intl.DateTimeFormat('fa-IR', { timeStyle: 'medium' }).format(lastRefresh)}`}
               </p>
-            </section>
+            </Card>
 
             {failedRuns.length > 0 && (
               <section className="mb-6 rounded-xl border border-destructive/30 bg-destructive/5 p-4 sm:p-6">
@@ -355,9 +361,9 @@ export default function CycleDetailPage() {
                     ? (doneRuns.length / waveRuns.length) * 100
                     : 0;
                 return (
-                  <section
+                  <Card
                     key={wave}
-                    className="overflow-hidden rounded-xl border border-border bg-card shadow-surface"
+                    className="overflow-hidden p-0 shadow-surface"
                   >
                     <header className="border-b border-border bg-muted/40 px-4 py-3 sm:px-5">
                       <h2 className="text-sm font-bold">موج {faNum(wave)}</h2>
@@ -391,7 +397,7 @@ export default function CycleDetailPage() {
                         </li>
                       ))}
                     </ul>
-                  </section>
+                  </Card>
                 );
               })}
             </div>

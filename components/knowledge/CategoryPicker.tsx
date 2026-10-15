@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Select } from "../ui/Select";
+import { Field } from "../ui/Input";
 import { fetchCategories, type KnowledgeCategory } from "./categories";
 
 export type CategoryPickerProps = {
@@ -129,20 +130,25 @@ export function CategoryPicker({
   const effectiveError = error ?? loadError ?? undefined;
 
   return (
-    <Select
-      label={label}
-      hint={hint}
-      error={effectiveError}
-      disabled={disabled || loading}
-      value={value ?? ""}
-      onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
-    >
-      <option value="">{emptyLabel}</option>
-      {ordered.map((c) => (
-        <option key={c.id} value={c.id}>
-          {indentedName(c.name, depthOf.get(c.id) ?? 0)}
-        </option>
-      ))}
-    </Select>
+    <Field label={label} hint={effectiveError ? undefined : hint}>
+      <Select
+        disabled={disabled || loading}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+        aria-invalid={effectiveError ? true : undefined}
+        options={[
+          { value: "", label: emptyLabel },
+          ...ordered.map((c) => ({
+            value: c.id,
+            label: indentedName(c.name, depthOf.get(c.id) ?? 0),
+          })),
+        ]}
+      />
+      {effectiveError && (
+        <p role="alert" className="text-xs leading-5 text-destructive">
+          {effectiveError}
+        </p>
+      )}
+    </Field>
   );
 }
