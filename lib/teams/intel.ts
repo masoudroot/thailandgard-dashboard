@@ -215,7 +215,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     const market = await fetchMarketData();
     const marketContext =
       market.ok && market.data
-        ? `\n\nداده‌ی تازه‌ی بازار (منبع: ${market.source === 'live' ? 'زنده' : 'کش'}):\n${market.data.slice(0, 3000)}`
+        ? `\n\nداده‌ی تازه‌ی بازار (منبع: ${market.source === 'live' ? 'زنده' : 'کش'}):\n${market.data.slice(0, 3000)}\n\nنکته: این منابع را کاربر پیشنهاد داده است؛ اگر برای مأموریت لازم دیدی، می‌توانی فراتر از آن‌ها هم جست‌وجو کنی.`
         : '';
     const marketNote = market.ok
       ? market.source === 'off'

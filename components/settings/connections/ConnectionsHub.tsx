@@ -5,6 +5,7 @@ import { SupabasePanel } from "./SupabasePanel";
 import { TelegramPanel } from "./TelegramPanel";
 import { GithubPanel } from "./GithubPanel";
 import { LlmPanel } from "./LlmPanel";
+import { MarketPanel } from "./MarketPanel";
 import { AdminPasswordPanel } from "./AdminPasswordPanel";
 
 /**
@@ -29,6 +30,7 @@ export function ConnectionsHub() {
         <TelegramPanel />
         <GithubPanel />
         <LlmPanel />
+        <MarketPanel />
         <AdminPasswordPanel />
       </div>
     </section>
