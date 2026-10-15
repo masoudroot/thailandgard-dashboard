@@ -10,7 +10,7 @@
 import { getSupabase } from '../lib/api';
 import { WAVES, type TeamName } from '../lib/types';
 import { findActiveCycle, finishCycle, runSingleTeam, beginCycle } from '../lib/orchestrator';
-import { claimTeam, startHeartbeat, type LockOwner } from '../lib/lock';
+import { claimTeam, type LockOwner } from '../lib/lock';
 
 const STUCK_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -154,8 +154,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  // heartbeat در حین اجرای تیم تا قفل stale نشود
-  const stopHeartbeat = startHeartbeat(owner);
+  // نکته: heartbeat سطح تیم داخل runSingleTeam انجام می‌شود (ردیف team_runs را
+  // تازه نگه می‌دارد تا تایم‌اوت اشتباه نخورد). heartbeat قفل چرخه در lib/lock
+  // برای این ورکر کاربرد ندارد چون قفل چرخه را beginCycle (سبک قدیمی، بدون owner)
+  // گرفته و touchLock مالکیت owner را می‌خواهد؛ صدا زدنش فقط لاگ خطا تولید می‌کرد.
 
   try {
     // چک پیش‌دستانه: مدل تیم سالم است؟ اگر نه، قبل از شروع عوضش کن
@@ -184,8 +186,6 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error(`team ${nextTeam} crashed:`, err instanceof Error ? err.message : String(err));
     process.exitCode = 1;
-  } finally {
-    stopHeartbeat();
   }
 }
 

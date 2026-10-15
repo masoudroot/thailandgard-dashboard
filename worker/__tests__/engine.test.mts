@@ -298,3 +298,73 @@ describe('تست ۵: ورکر مرده → قفل stale آزاد می‌شود',
     assert.notEqual(lock.state.status, 'running');
   });
 });
+
+describe('تست ۶: ترتیب موج‌ها و عدم اجرای تکراری (باگ‌هانتی ۱۴۰۵/۰۷/۲۳)', () => {
+  it('موج اول نیمه‌تمام → تیم بعدی همان موج اول انتخاب می‌شود، نه موج دوم', async () => {
+    await seed({
+      cycles: [activeCycleSeed()],
+      team_runs: [teamRun('artdir', 'success'), teamRun('branding', 'rejected')],
+      agent_state: [],
+    });
+    const r = await runWorker([]);
+    const lines = runningTeamLines(r.stdout);
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /running team content \(wave 1\)/, 'نباید به موج ۲ بپرد');
+  });
+
+  it('تیم ردشده دوباره انتخاب نمی‌شود', async () => {
+    await seed({
+      cycles: [activeCycleSeed()],
+      team_runs: [teamRun('artdir', 'success'), teamRun('branding', 'rejected')],
+      agent_state: [],
+    });
+    const r = await runWorker([]);
+    // content انتخاب و اجرا شد؛ branding نباید ردیف تازه‌ای بگیرد
+    const brandingRows = r.tables.team_runs.filter((x: any) => x.team === 'branding');
+    assert.equal(brandingRows.length, 1, 'تیم ردشده نباید دوباره اجرا شود');
+  });
+
+  it('تیم running با ضربان تازه → تایم‌اوت نمی‌شود و ورکر دوم صبر می‌کند', async () => {
+    await seed({
+      cycles: [activeCycleSeed()],
+      team_runs: [
+        {
+          id: 'tr-artdir',
+          cycle_id: 'cycle-1',
+          team: 'artdir',
+          wave: 1,
+          status: 'running',
+          started_at: minAgoIso(20),
+          updated_at: minAgoIso(1), // ضربان تازه
+          finished_at: null,
+        },
+      ],
+      agent_state: [],
+    });
+    const r = await runWorker([]);
+    assert.doesNotMatch(r.stdout, /timing out stuck team/, 'تیم سالم نباید تایم‌اوت شود');
+    assert.match(r.stdout, /has a running team; waiting/);
+    const row = r.tables.team_runs.find((x: any) => x.team === 'artdir');
+    assert.equal(row.status, 'running');
+  });
+
+  it('ورکر خطای heartbeat قفل چرخه تولید نمی‌کند (رگرسیون باگ ۱۴۰۵/۰۷/۲۳)', async () => {
+    await seed({
+      cycles: [activeCycleSeed()],
+      team_runs: [],
+      agent_state: [
+        {
+          agent: 'orchestrator:lock',
+          state: { status: 'running', run_id: 'run-test-1', cycle_id: 'cycle-1' },
+          updated_at: minAgoIso(30),
+        },
+      ],
+    });
+    const r = await runWorker([]);
+    assert.doesNotMatch(
+      r.stdout + r.stderr,
+      /heartbeat failed/,
+      'نباید خطای heartbeat قفل دیده شود؛ heartbeat خراب حذف شده است',
+    );
+  });
+});
