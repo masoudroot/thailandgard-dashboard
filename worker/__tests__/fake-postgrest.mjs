@@ -187,7 +187,10 @@ export function startFakePostgrest() {
             r.created_at = new Date().toISOString();
           }
           if (isUpsert) {
-            const key = name === 'agent_state' ? 'agent' : 'id';
+            // کلید تطبیق upsert به‌ازای هر جدول (مثل onConflict واقعی):
+            // agent_state روی agent، settings روی key، بقیه روی id
+            const key =
+              name === 'agent_state' ? 'agent' : name === 'settings' ? 'key' : 'id';
             const ix = table.findIndex((x) => x[key] === r[key]);
             if (ix >= 0) {
               table[ix] = { ...table[ix], ...r };

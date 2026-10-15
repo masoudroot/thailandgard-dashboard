@@ -308,6 +308,11 @@ async function buildChatRouteGroups(opts: LLMCallOptions): Promise<ChatRoutePlan
   // و هنوز در استراحت‌اند، از چرخه‌ی کاندیداها حذف می‌شوند. (fail-soft)
   const dbCooldowns = await getCooldownKeys(ordered.map((e) => e.id));
 
+  // مدل صریح کاربر روی درگاه اصلی می‌نشیند؛ اگر درگاه اصلی مشخص نیست
+  // (نه team، نه default)، روی اولین درگاه فعال تا مدل صریح هرگز
+  // بی‌صدا نادیده گرفته نشود.
+  const explicitTargetId = primaryEntry?.endpointId ?? ordered[0]?.id ?? null;
+
   const groups: RouteGroup[] = [];
   for (const ep of ordered) {
     if (!ep.apiKey) continue;
@@ -322,8 +327,8 @@ async function buildChatRouteGroups(opts: LLMCallOptions): Promise<ChatRoutePlan
       seen.add(key);
       models.push({ model, isPrimary });
     };
-    // ۱. مدل صریح کاربر (اگر هست) روی درگاه اصلی
-    if (isPrimaryEp && explicitModel) push(explicitModel, true, true);
+    // ۱. مدل صریح کاربر (اگر هست): روی درگاه اصلی، یا اولین درگاه اگر اصلی مشخص نیست
+    if (explicitModel && ep.id === explicitTargetId) push(explicitModel, true, true);
     // ۲. مدل پیکربندی‌شده‌ی تیم
     if (isPrimaryEp && primaryEntry) push(primaryEntry.model, true, true);
     // ۳. مدل‌های تأییدشده‌ی همان درگاه (به ترتیب کیفیت)
