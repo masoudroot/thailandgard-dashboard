@@ -25,6 +25,8 @@ const fontBody = localFont({
 export const metadata: Metadata = {
   title: "داشبورد ایجنتیک تایلندگرد",
   description: "مدیریت و پایش تیم‌های هوش مصنوعی تایلندگرد",
+  // دستور مسعود: داشبورد داخلی است و نباید در گوگل ایندکس شود.
+  robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {
