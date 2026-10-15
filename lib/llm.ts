@@ -183,13 +183,19 @@ async function findWorkingModel(
     ];
     for (const epId of orderedEndpoints) {
       const ep = endpoints.find((e) => e.id === epId);
-      if (!ep?.apiKey) continue;
+      if (!ep?.apiKey) {
+        console.log(`[findWorkingModel] skipping ${epId}: no apiKey`);
+        continue;
+      }
+      console.log(`[findWorkingModel] trying endpoint ${ep.name} (${epId})`);
       // فهرست مدل‌ها را بگیر و چندتای اول را مستقیم تست کن
       let models: string[] = [];
       try {
         const fetched = await fetchEndpointModels(epId, 15000);
         models = fetched.models.filter((id) => id !== failedModel).slice(0, 5);
-      } catch {
+        console.log(`[findWorkingModel] ${ep.name}: ${models.length} models fetched`);
+      } catch (fetchErr) {
+        console.log(`[findWorkingModel] ${ep.name}: fetch models failed: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`);
         continue;
       }
       for (const m of models) {
