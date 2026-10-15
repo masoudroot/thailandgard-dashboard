@@ -18,6 +18,7 @@
 import { callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
+import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'content';
@@ -189,9 +190,17 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     });
   }
 
+  // استخراج دانش از حکم منتقد (چرخه نقد←دانش)
+  const knowledgeResult = await extractCriticKnowledge(
+    TEAM,
+    { approved: verdict.approved, reason: verdict.reason, domain: 'تولید محتوا' },
+    input.runId,
+  );
+  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+
   return {
     team: TEAM,
-    summary: verdict.reason,
+    summary: `${verdict.reason} ${knowledgeLog}`,
     blockers,
     tasks: tasks.slice(0, 3),
     approved: true,

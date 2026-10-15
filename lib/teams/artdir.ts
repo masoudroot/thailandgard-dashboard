@@ -12,6 +12,7 @@
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
+import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
 import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'artdir';
@@ -154,9 +155,17 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     : `رد منتقد: ${verdict.reason}`;
   await writeMemory(TEAM, `learned:${input.runId}`, lesson);
 
+  // استخراج دانش از حکم منتقد (چرخه نقد←دانش)
+  const knowledgeResult = await extractCriticKnowledge(
+    TEAM,
+    { approved: verdict.approved, reason: verdict.reason, domain: 'آرت‌دایرکشن و تصمیم‌های بصری' },
+    input.runId,
+  );
+  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+
   const summary = verdict.approved
-    ? `تیم آرت‌دایرکشن این چرخه سه خروجی داد: نقد بصری مشخص با راه‌حل، تصمیم‌های آرت‌دایرکشن با دلیل مستند و بریف اجرایی کامل برای تیم طراحی. ${verdict.reason} هر سه کار بعدی (ثبت تصمیم‌ها، تحویل بریف و پیگیری ایرادها) در صف گذاشته شد.`
-    : `تیم آرت‌دایرکشن این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${verdict.reason} «چرا»ی تصمیم‌ها یا کامل شدن بریف باید در چرخهٔ بعد جبران شود و بلوکر در گزارش درج شد.`;
+    ? `تیم آرت‌دایرکشن این چرخه سه خروجی داد: نقد بصری مشخص با راه‌حل، تصمیم‌های آرت‌دایرکشن با دلیل مستند و بریف اجرایی کامل برای تیم طراحی. ${verdict.reason} هر سه کار بعدی (ثبت تصمیم‌ها، تحویل بریف و پیگیری ایرادها) در صف گذاشته شد. ${knowledgeLog}`
+    : `تیم آرت‌دایرکشن این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${verdict.reason} «چرا»ی تصمیم‌ها یا کامل شدن بریف باید در چرخهٔ بعد جبران شود و بلوکر در گزارش درج شد. ${knowledgeLog}`;
 
   return {
     team: TEAM,

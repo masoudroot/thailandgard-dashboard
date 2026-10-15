@@ -9,6 +9,7 @@
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
+import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'vibefarsi';
@@ -172,9 +173,17 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
   ].join('\n');
   await writeMemory(TEAM, `learned:${runId}`, learned);
 
+  // استخراج دانش از حکم منتقد (نقد←دانش)
+  const knowledgeResult = await extractCriticKnowledge(
+    TEAM,
+    { approved: verdict.approved, reason: verdict.reason, domain: 'استاندارد وایب‌فارسی' },
+    runId,
+  );
+  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+
   const summary = verdict.approved
-    ? `ممیزی وایب‌فارسی پاس شد: ${verdict.reason}`
-    : `ممیزی وایب‌فارسی رد شد و کار اصلاح در صف نشست: ${verdict.reason}`;
+    ? `ممیزی وایب‌فارسی پاس شد: ${verdict.reason} ${knowledgeLog}`
+    : `ممیزی وایب‌فارسی رد شد و کار اصلاح در صف نشست: ${verdict.reason} ${knowledgeLog}`;
 
   return {
     team: TEAM,

@@ -11,6 +11,7 @@
 import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
+import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
 import type { ProgressReporter,
   QueuedTask,
   TeamName,
@@ -236,6 +237,14 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
 
   const tasks = tasksFromPayload(verdict.payload);
 
+  // استخراج دانش از حکم منتقد
+  const knowledgeResult = await extractCriticKnowledge(
+    TEAM,
+    { approved: verdict.approved, reason: verdict.reason, domain: 'کنترل کیفیت' },
+    runId,
+  );
+  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+
   if (!verdict.approved) {
     const blocker = `بلوکر تیم qa: ${verdict.reason || 'تیک انتشار صادر نشد.'}`;
     tasks.push({
@@ -246,7 +255,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     });
     return {
       team: TEAM,
-      summary,
+      summary: `${summary} ${knowledgeLog}`,
       blockers: [blocker],
       tasks,
       approved: false,
@@ -255,7 +264,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
 
   return {
     team: TEAM,
-    summary,
+    summary: `${summary} ${knowledgeLog}`,
     blockers: [],
     tasks,
     approved: true,

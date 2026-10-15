@@ -9,6 +9,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { buildKnowledgePromptSection } from '../rag';
+import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
 import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'design';
@@ -178,9 +179,17 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     : `رد منتقد: ${verdict.reason}`;
   await remember(input.runId, lesson);
 
+  // استخراج دانش حرفه‌ای از حکم منتقد و ایندکس در RAG
+  const knowledgeResult = await extractCriticKnowledge(
+    TEAM,
+    { approved: verdict.approved, reason: verdict.reason, domain: 'طراحی رابط' },
+    input.runId,
+  );
+  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+
   const summary = verdict.approved
-    ? `تیم design این چرخه بریف artdir را با نزدیک‌ترین آیتم‌های رجیستری وایب‌فارسی اجرا کرد؛ نقد سه‌چشمی انجام شد و منتقد تأیید کرد که همهٔ تصمیم‌ها slug رجیستری دارند و توکن‌محور‌اند. دیف اجرایی برای dev در صف است و خروجی نهایی برای ممیزی vibefarsi و farsiui آماده است.`
-    : `تیم design این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${verdict.reason} نقد سه‌چشمی در بستهٔ بلوکر ثبت شده تا رفع شود.`;
+    ? `تیم design این چرخه بریف artdir را با نزدیک‌ترین آیتم‌های رجیستری وایب‌فارسی اجرا کرد؛ نقد سه‌چشمی انجام شد و منتقد تأیید کرد که همهٔ تصمیم‌ها slug رجیستری دارند و توکن‌محور‌اند. دیف اجرایی برای dev در صف است و خروجی نهایی برای ممیزی vibefarsi و farsiui آماده است. ${knowledgeLog}`
+    : `تیم design این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${verdict.reason} نقد سه‌چشمی در بستهٔ بلوکر ثبت شده تا رفع شود. ${knowledgeLog}`;
 
   return {
     team: TEAM,

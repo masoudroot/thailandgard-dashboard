@@ -12,6 +12,7 @@
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
+import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'design-ir';
@@ -200,9 +201,17 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     ? `چشم ایرانی تأیید شد: ${verdict.reason} مجری‌ها ۵ نقطهٔ سایت را با سه لنز نقد کردند، یافته‌های unslop را سنجیدند و حکم‌های لازم‌الاجرا را در قالب VERDICTS.md نوشتند.`
     : `چشم ایرانی رد شد: ${verdict.reason} مجری‌ها خروجی تولید کردند ولی منتقد آن را ناکافی دانست؛ کار پیگیری در صف قرار گرفت.`;
 
+  // استخراج دانش از حکم منتقد
+  const knowledgeResult = await extractCriticKnowledge(
+    TEAM,
+    { approved, reason: verdict.reason, domain: 'دیزاین ایرانی' },
+    input.runId,
+  );
+  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+
   return {
     team: TEAM,
-    summary,
+    summary: `${summary} ${knowledgeLog}`,
     blockers: approved ? [] : [verdict.reason],
     tasks,
     approved,

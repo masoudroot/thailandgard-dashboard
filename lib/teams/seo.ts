@@ -14,6 +14,7 @@ import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../type
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
+import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
 
 export const TEAM: TeamName = 'seo';
 
@@ -226,6 +227,14 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     const reason = typeof verdict.reason === 'string' ? verdict.reason : '';
     const payload = verdict.payload ?? {};
 
+    // استخراج دانش حرفه‌ای از حکم منتقد و ایندکس در RAG
+    const knowledgeResult = await extractCriticKnowledge(
+      TEAM,
+      { approved, reason, domain: 'سئوی تکنیکال' },
+      runId,
+    );
+    const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+
     const tasks = approved ? coerceTasks(payload) : [];
     const blockers: string[] = Array.isArray(payload.blockers)
       ? payload.blockers.filter((b): b is string => typeof b === 'string' && b.length > 0)
@@ -235,17 +244,18 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     const summary =
       (typeof payload.summary === 'string' && payload.summary.trim()) ||
       (approved ? 'خروجی تیم سئو تأیید شد.' : `خروجی تیم سئو تأیید نشد: ${reason}`);
+    const summaryWithKnowledge = `${summary} ${knowledgeLog}`;
 
     // ۴. ثبت حافظه با کلید learned:<runId>
     const memoryValue = JSON.stringify({
-      content: summary.slice(0, 2000),
+      content: summaryWithKnowledge.slice(0, 2000),
       reason: reason.slice(0, 500),
       approved,
       run_id: runId,
     });
     await writeMemory(TEAM, `learned:${runId}`, memoryValue);
 
-    return { team: TEAM, summary, blockers, tasks, approved };
+    return { team: TEAM, summary: summaryWithKnowledge, blockers, tasks, approved };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return {

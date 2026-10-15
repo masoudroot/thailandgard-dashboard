@@ -8,6 +8,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { buildKnowledgePromptSection } from '../rag';
+import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
 import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'lead';
@@ -206,9 +207,17 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     : `رد منتقد: ${safeReason} | هشدار SLA: ${payload.alerts.length} مورد`;
   await remember(input.runId, sanitizePII(lesson));
 
+  // استخراج دانش حرفه‌ای از حکم منتقد و ایندکس در RAG
+  const knowledgeResult = await extractCriticKnowledge(
+    TEAM,
+    { approved: verdict.approved, reason: verdict.reason, domain: 'جذب لید' },
+    input.runId,
+  );
+  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+
   const summary = verdict.approved
-    ? `تیم لید این چرخه لیدهای تازه و وضعیت‌ها را پایش کرد، SLA را کنترل کرد و ${payload.alerts.length} هشدار ثبت شد؛ منتقد تأیید کرد. دلیل: ${safeReason}`
-    : `تیم لید این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${safeReason}`;
+    ? `تیم لید این چرخه لیدهای تازه و وضعیت‌ها را پایش کرد، SLA را کنترل کرد و ${payload.alerts.length} هشدار ثبت شد؛ منتقد تأیید کرد. دلیل: ${safeReason} ${knowledgeLog}`
+    : `تیم لید این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${safeReason} ${knowledgeLog}`;
 
   return {
     team: TEAM,

@@ -13,6 +13,7 @@ import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
 import { fetchMarketData } from '../market';
 import { buildKnowledgePromptSection } from '../rag';
+import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
 import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 /** نام تیم در رجیستری تیم‌ها. */
@@ -279,9 +280,16 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     // ۴. رد منتقد ← بلوکر (معادل شاخهٔ دوم «تأیید شد؟» در n8n)
     if (!verdict.approved) {
       const reason = verdict.reason || 'منتقد خروجی را تأیید نکرد.';
+      // استخراج دانش از حکم منتقد (چرخه نقد←دانش)
+      const knowledgeResult = await extractCriticKnowledge(
+        TEAM,
+        { approved: false, reason, domain: 'اطلاعات بازار و رقیب' },
+        runId,
+      );
+      const knowledgeLog = criticKnowledgeLog(knowledgeResult);
       return {
         team: TEAM,
-        summary: `تیم intel در چرخهٔ ${runId} متوقف شد: ${reason} ${marketNote}`,
+        summary: `تیم intel در چرخهٔ ${runId} متوقف شد: ${reason} ${marketNote} ${knowledgeLog}`,
         blockers: [`بلوکر تیم intel: ${reason}`],
         tasks: [],
         approved: false,
@@ -308,9 +316,17 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         ? 'کاندیدای بلاگی استخراج نشد.'
         : `${tasks.length} کاندیدای بلاگ با زاویهٔ مشخص تحویل تیم محتوا شد.`;
 
+    // استخراج دانش از حکم منتقد (چرخه نقد←دانش)
+    const knowledgeResult = await extractCriticKnowledge(
+      TEAM,
+      { approved: true, reason: verdict.reason, domain: 'اطلاعات بازار و رقیب' },
+      runId,
+    );
+    const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+
     return {
       team: TEAM,
-      summary: `تیم intel چرخهٔ ${runId} را با تأیید منتقد بست (${verdict.reason}). ${itemsClause} ${tasksClause} ${marketNote}`,
+      summary: `تیم intel چرخهٔ ${runId} را با تأیید منتقد بست (${verdict.reason}). ${itemsClause} ${tasksClause} ${marketNote} ${knowledgeLog}`,
       blockers: [],
       tasks,
       approved: true,

@@ -15,6 +15,7 @@
 import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
+import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 import { faDigits as faNum } from '../format';
 
@@ -333,9 +334,16 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
   });
 
   // ۵. خروجی استاندارد تیم
+  const knowledgeResult = await extractCriticKnowledge(
+    TEAM,
+    { approved: verdict.approved, reason: verdict.reason, domain: 'رابط فارسی' },
+    runId,
+  );
+  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+
   return {
     team: TEAM,
-    summary,
+    summary: `${summary} ${knowledgeLog}`,
     blockers: buildBlockers(verdict),
     tasks: buildTasks(verdict),
     approved: verdict.approved,

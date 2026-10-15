@@ -12,6 +12,7 @@
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
+import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'seocontent';
@@ -206,6 +207,14 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     const verdict = await runCritic([out1, out2, out3]);
     const payload = coercePayload(verdict.payload);
 
+    // استخراج دانش حرفه‌ای از حکم منتقد و ایندکس در RAG
+    const knowledgeResult = await extractCriticKnowledge(
+      TEAM,
+      { approved: verdict.approved, reason: verdict.reason, domain: 'محتوای سئو' },
+      input.runId,
+    );
+    const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+
     if (verdict.approved) {
       await writeMemory(TEAM, `learned:${input.runId}`, payload);
 
@@ -216,7 +225,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
 
       return {
         team: TEAM,
-        summary,
+        summary: `${summary} ${knowledgeLog}`,
         blockers: [],
         tasks: coerceTasks(payload.tasks),
         approved: true,
@@ -226,7 +235,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     // بسته‌بندی بلوکر: دلیل منتقد + یک کار رفع برای چرخهٔ بعد
     return {
       team: TEAM,
-      summary: `منتقد خروجی تیم seocontent را رد کرد: ${verdict.reason}`,
+      summary: `منتقد خروجی تیم seocontent را رد کرد: ${verdict.reason} ${knowledgeLog}`,
       blockers: [verdict.reason],
       tasks: [
         {
