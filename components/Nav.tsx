@@ -15,7 +15,6 @@ import {
   Settings,
   LogOut,
   Plane,
-  Wrench,
   Activity,
   ChevronDown,
   type LucideIcon,
@@ -47,7 +46,6 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Settings,
     children: [{ href: "/dashboard/settings/models", label: "مدل‌های هوش مصنوعی" }],
   },
-  { href: "/dashboard/debug", label: "دستیار فنی", icon: Wrench },
 ];
 
 /** آیتم فعال بر اساس مسیر جاری؛ صفحهٔ خانه فقط روی مسیر دقیق. */
