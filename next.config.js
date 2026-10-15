@@ -2,6 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
 
+  // استقرار روی Prisma Compute: خروجی standalone اجباری است
+  // (بدون آن دپلوی موفق می‌شود ولی URL خطا می‌دهد).
+  output: "standalone",
+
   // فشرده‌سازی gzip پاسخ‌ها (پیش‌فرض نکست روشن است؛ این‌جا صریح ثبت می‌شود)
   compress: true,
 

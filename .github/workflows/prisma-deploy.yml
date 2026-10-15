@@ -1,0 +1,74 @@
+# Deploy dashboard to Prisma Cloud (Prisma Compute).
+#
+# چه می‌کند: روی هر push، وابستگی‌ها را نصب می‌کند، `npm run build` را در
+# ریشه‌ی ریپو اجرا می‌کند و خروجی را با `prisma deploy` روی Prisma Compute می‌نشاند.
+# - push روی برنچ پیش‌فرض (master) ← پروداکشن
+# - push روی هر برنچ دیگر ← پریویو جدا (با URL خودش)
+#
+# احراز هویت (به ترتیب اولویت):
+#   ۱. اگر ریپو در کنسول پریزما به پروژه وصل شده باشد: هیچ سکرتی لازم نیست.
+#      اکشن با OIDC گیت‌هاب توکن کوتاه‌مدت (۳۰ دقیقه) می‌گیرد. فقط
+#      `id-token: write` لازم است.
+#   ۲. وگرنه: در کنسول پریزما یک service token بسازید، در گیت‌هاب به اسم
+#      PRISMA_SERVICE_TOKEN به‌عنوان Actions secret اضافه کنید و خط
+#      PRISMA_SERVICE_TOKEN پایین را از کامنت دربیاورید.
+#
+# نکته‌ها:
+# - بیلد داخل GitHub Actions اجرا می‌شود. داشبورد در بیلد از سوپابیس
+#   نمی‌خواند (NEXT_PUBLIC_SUPABASE_ANON_KEY فقط نام متغیر است و در کد
+#   خوانده نمی‌شود)، پس متغیر بیلدتایم لازم نیست.
+# - متغیرهای ران‌تایم (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+#   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, SITE_GITHUB_TOKEN,
+#   SITE_GITHUB_REPO, ADMIN_PASSWORD, ...) باید در کنسول پریزما
+#   (Project → Environment → Add variable) برای هر دو محیط PRODUCTION و
+#   PREVIEW ست شوند تا موقع اجرا به سرویس تزریق شوند.
+# - این اکشن به Bun نسخه ۱.۳.۱۰+ روی رانر نیاز دارد (قدم setup-bun).
+
+name: prisma-deploy
+
+on:
+  push:
+  delete:
+
+concurrency:
+  group: prisma-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref_name == github.event.repository.default_branch && 'production' || format('preview/{0}', github.ref_name) }}
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+
+      - id: deploy
+        uses: prisma/cloud-deploy-action@v1
+        with:
+          working-directory: .
+          module: prisma-compute/module.ts
+          build-command: npm run build
+        env:
+          # اگر ریپو در کنسول پریزما وصل نیست، این خط را فعال کنید و
+          # PRISMA_SERVICE_TOKEN را در Actions secrets بسازید:
+          # PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
+
+  teardown:
+    # حذف پریویو وقتی برنچ پاک می‌شود.
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "preview teardown placeholder"
