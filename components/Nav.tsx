@@ -174,7 +174,7 @@ function NavRow({
           open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
         ].join(" ")}
       >
-        <ul className="overflow-hidden">
+        <ul className="mt-1 space-y-1 overflow-hidden">
           {children.map((c) => {
             const cActive = isNavActive(pathname, c.href);
             // «اتصال‌ها» دقیقاً روی همان مسیر والد است؛ هایلایت جدا می‌خواهد
