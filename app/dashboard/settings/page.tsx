@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Settings, Timer } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import { Button } from "@/components/ui/Button";
+import { Input, Field } from "@/components/ui/Input";
 import { ConnectionsHub } from "@/components/settings/connections/ConnectionsHub";
 import { SettingsBackup } from "@/components/settings/SettingsBackup";
 
@@ -10,9 +12,6 @@ import { SettingsBackup } from "@/components/settings/SettingsBackup";
 function faDigits(value: string | number): string {
   return String(value).replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
 }
-
-const inputClass =
-  "w-full min-h-11 rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-control placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30";
 
 /** تاریخ شمسی کوتاه با ارقام فارسی */
 function faDateTime(iso: string | null): string {
@@ -78,11 +77,12 @@ export default function SettingsPage() {
             چرخه و محدودیت‌ها
           </h2>
           <div className="grid gap-4 sm:grid-cols-3">
-            <div>
-              <label htmlFor="cycle-minutes" className="mb-1.5 block text-sm font-medium text-foreground">
-                زمان‌بندی چرخه (دقیقه)
-              </label>
-              <input
+            <Field
+              label="زمان‌بندی چرخه (دقیقه)"
+              htmlFor="cycle-minutes"
+              hint={`فاصله بین شروع خودکار چرخه‌ها: ${faDigits(cycleMinutes)} دقیقه`}
+            >
+              <Input
                 id="cycle-minutes"
                 type="number"
                 dir="ltr"
@@ -90,34 +90,28 @@ export default function SettingsPage() {
                 step={15}
                 value={cycleMinutes}
                 onChange={(e) => setCycleMinutes(e.target.value)}
-                className={inputClass}
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                فاصله بین شروع خودکار چرخه‌ها: {faDigits(cycleMinutes)} دقیقه
-              </p>
-            </div>
-            <div>
-              <label htmlFor="llm-call-cap" className="mb-1.5 block text-sm font-medium text-foreground">
-                سقف فراخوانی LLM در هر چرخه
-              </label>
-              <input
+            </Field>
+            <Field
+              label="سقف فراخوانی LLM در هر چرخه"
+              htmlFor="llm-call-cap"
+              hint={`حداکثر ${faDigits(llmCallCap)} فراخوانی در هر چرخه`}
+            >
+              <Input
                 id="llm-call-cap"
                 type="number"
                 dir="ltr"
                 min={1}
                 value={llmCallCap}
                 onChange={(e) => setLlmCallCap(e.target.value)}
-                className={inputClass}
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                حداکثر {faDigits(llmCallCap)} فراخوانی در هر چرخه
-              </p>
-            </div>
-            <div>
-              <label htmlFor="max-parallelism" className="mb-1.5 block text-sm font-medium text-foreground">
-                حداکثر موازی‌سازی در هر موج
-              </label>
-              <input
+            </Field>
+            <Field
+              label="حداکثر موازی‌سازی در هر موج"
+              htmlFor="max-parallelism"
+              hint={`حداکثر ${faDigits(maxParallelism)} تیم هم‌زمان در یک موج`}
+            >
+              <Input
                 id="max-parallelism"
                 type="number"
                 dir="ltr"
@@ -125,12 +119,8 @@ export default function SettingsPage() {
                 max={15}
                 value={maxParallelism}
                 onChange={(e) => setMaxParallelism(e.target.value)}
-                className={inputClass}
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                حداکثر {faDigits(maxParallelism)} تیم هم‌زمان در یک موج
-              </p>
-            </div>
+            </Field>
           </div>
         </section>
 
@@ -139,13 +129,15 @@ export default function SettingsPage() {
         {/* دکمه ذخیره: چسبان پایین در موبایل، تمام‌عرض؛ با فاصله از ناوبری پایینی */}
         <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-4 bg-background px-4 pb-1 pt-3 sm:static sm:mx-0 sm:bg-transparent sm:p-0">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <button
+            <Button
               type="submit"
+              variant="default"
+              size="lg"
               disabled={saving}
-              className="min-h-12 w-full rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50 sm:w-auto"
+              className="w-full sm:w-auto"
             >
               {saving ? "در حال ذخیره…" : "ذخیره تنظیمات"}
-            </button>
+            </Button>
             {saved && (
               <p role="status" className="text-sm font-medium text-success">
                 تنظیمات ذخیره شد.

@@ -3,10 +3,13 @@
 import { useEffect, useState } from "react";
 import { GitBranch, RefreshCw } from "lucide-react";
 import { SkeletonLines } from "@/components/Skeleton";
+import { Button } from "@/components/ui/Button";
+import { Input, Field } from "@/components/ui/Input";
+import { Badge } from "@/components/ui/Badge";
 import {
   ConnectionRow,
   WhereGuide,
-  inputClass,
+  ResultNote,
   type ConnState,
 } from "./ConnectionRow";
 
@@ -105,25 +108,18 @@ export function GithubPanel() {
                     : "هنوز توکن معتبری ذخیره نشده است."}
               </p>
             </div>
-            <span
-              className={
-                connected
-                  ? "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success"
-                  : "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive"
-              }
-            >
-              <span
-                className={connected ? "h-2 w-2 rounded-full bg-success" : "h-2 w-2 rounded-full bg-destructive"}
-              />
+            <Badge variant={connected ? "success" : "destructive"} className="shrink-0 gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-current" aria-hidden="true" />
               {connected ? "متصل" : "متصل نیست"}
-            </span>
+            </Badge>
           </div>
 
-          <div>
-            <label htmlFor="github-token" className="mb-1.5 block text-sm font-medium text-foreground">
-              توکن شخصی گیت‌هاب
-            </label>
-            <input
+          <Field
+            label="توکن شخصی گیت‌هاب"
+            htmlFor="github-token"
+            hint="اول اتصال با همین توکن تست می‌شود و فقط در صورت موفق بودن ذخیره می‌شود."
+          >
+            <Input
               id="github-token"
               type="password"
               dir="ltr"
@@ -131,35 +127,18 @@ export function GithubPanel() {
               placeholder="ghp_..."
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              className={inputClass}
             />
-            <p className="mt-1 text-xs text-muted-foreground">
-              اول اتصال با همین توکن تست می‌شود و فقط در صورت موفق بودن ذخیره می‌شود.
-            </p>
-          </div>
+          </Field>
 
-          {message && (
-            <p
-              role={message.ok ? "status" : "alert"}
-              className={`rounded-lg px-3 py-2.5 text-sm ${
-                message.ok ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
-              }`}
-            >
-              {message.text}
-            </p>
-          )}
+          {message && <ResultNote ok={message.ok} text={message.text} />}
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="min-h-12 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
+            <Button variant="default" size="lg" onClick={handleSave} disabled={saving}>
               {saving ? "در حال بررسی…" : "ذخیره و اتصال"}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
               onClick={async () => {
                 setLoading(true);
                 setMessage(null);
@@ -167,10 +146,9 @@ export function GithubPanel() {
                 setLoading(false);
               }}
               disabled={loading}
-              className="min-h-12 rounded-lg border border-input bg-background px-6 py-2.5 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-50"
             >
               بررسی دوباره وضعیت
-            </button>
+            </Button>
           </div>
         </div>
       )}

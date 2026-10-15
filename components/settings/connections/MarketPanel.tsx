@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import { Plus, RefreshCw, Trash2, TrendingUp } from "lucide-react";
 import { SkeletonLines } from "@/components/Skeleton";
+import { Button } from "@/components/ui/Button";
+import { Input, Field, Label } from "@/components/ui/Input";
+import { Switch } from "@/components/ui/Switch";
+import { AlertDialog } from "@/components/ui/alert-dialog";
 import {
   ConnectionRow,
   WhereGuide,
-  GhostButton,
   ResultNote,
-  inputClass,
   type ConnState,
 } from "./ConnectionRow";
 
@@ -232,7 +234,6 @@ export function MarketPanel() {
             <ul className="space-y-3">
               {sources.map((s) => {
                 const r = testResults[s.id];
-                const confirming = confirmDeleteId === s.id;
                 return (
                   <li key={s.id} className="rounded-lg border border-border bg-background px-3 py-3">
                     <div className="flex items-start justify-between gap-3">
@@ -249,58 +250,31 @@ export function MarketPanel() {
                           </p>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={s.enabled}
+                      <Switch
+                        checked={s.enabled}
+                        onCheckedChange={() => handleToggle(s.id)}
                         aria-label={`روشن/خاموش: ${s.name}`}
-                        onClick={() => handleToggle(s.id)}
-                        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${s.enabled ? "bg-success" : "bg-muted"}`}
-                      >
-                        <span
-                          className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${s.enabled ? "start-6" : "start-1"}`}
-                        />
-                      </button>
+                      />
                     </div>
                     {r && <ResultNote ok={r.ok} text={r.text} />}
-                    {confirming ? (
-                      <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3">
-                        <p className="text-sm font-medium text-foreground">
-                          منبع «{s.name}» حذف شود؟
-                        </p>
-                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(s.id)}
-                            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-destructive px-5 py-2 text-sm font-bold text-white hover:opacity-90"
-                          >
-                            حذف منبع
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteId(null)}
-                            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-input bg-card px-5 py-2 text-sm font-medium text-foreground hover:opacity-80"
-                          >
-                            انصراف
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                        <GhostButton onClick={() => handleTest(s.id)} disabled={!!testing[s.id]}>
-                          <RefreshCw size={15} strokeWidth={1.75} aria-hidden="true" />
-                          {testing[s.id] ? "در حال تست…" : "تست اتصال"}
-                        </GhostButton>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteId(s.id)}
-                          className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-destructive/30 bg-card px-4 py-2 text-sm font-medium text-destructive transition-opacity hover:opacity-80"
-                        >
-                          <Trash2 size={15} strokeWidth={1.75} aria-hidden="true" />
-                          حذف
-                        </button>
-                      </div>
-                    )}
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <Button variant="outline" onClick={() => handleTest(s.id)} disabled={!!testing[s.id]}>
+                        <RefreshCw strokeWidth={1.75} aria-hidden="true" />
+                        {testing[s.id] ? "در حال تست…" : "تست اتصال"}
+                      </Button>
+                      <Button variant="destructive" onClick={() => setConfirmDeleteId(s.id)}>
+                        <Trash2 strokeWidth={1.75} aria-hidden="true" />
+                        حذف
+                      </Button>
+                    </div>
+                    <AlertDialog
+                      open={confirmDeleteId === s.id}
+                      onOpenChange={(o) => { if (!o) setConfirmDeleteId(null); }}
+                      title={`منبع «${s.name}» حذف شود؟`}
+                      confirmText="حذف منبع"
+                      destructive
+                      onConfirm={() => handleDelete(s.id)}
+                    />
                   </li>
                 );
               })}
@@ -313,61 +287,50 @@ export function MarketPanel() {
               افزودن منبع
             </h3>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label htmlFor="market-src-name" className="mb-1.5 block text-sm font-medium text-foreground">
-                  نام
-                </label>
-                <input
+              <Field label="نام" htmlFor="market-src-name">
+                <Input
                   id="market-src-name"
                   type="text"
                   placeholder="مثلاً نرخ ارز"
                   value={addName}
                   onChange={(e) => setAddName(e.target.value)}
-                  className={inputClass}
                 />
-              </div>
-              <div>
-                <label htmlFor="market-src-url" className="mb-1.5 block text-sm font-medium text-foreground">
-                  آدرس
-                </label>
-                <input
+              </Field>
+              <Field label="آدرس" htmlFor="market-src-url">
+                <Input
                   id="market-src-url"
                   type="url"
                   dir="ltr"
                   placeholder="https://…"
                   value={addUrl}
                   onChange={(e) => setAddUrl(e.target.value)}
-                  className={inputClass}
                 />
-              </div>
+              </Field>
             </div>
             <div className="mt-3">
-              <button
-                type="button"
-                onClick={handleAdd}
-                disabled={adding}
-                className="min-h-11 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
+              <Button variant="default" onClick={handleAdd} disabled={adding}>
                 {adding ? "در حال ذخیره…" : "افزودن منبع"}
-              </button>
+              </Button>
             </div>
           </div>
 
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <label htmlFor="market-timeout" className="text-sm text-muted-foreground">
+              <Label htmlFor="market-timeout" className="text-muted-foreground">
                 تایم‌اوت (ثانیه)
-              </label>
-              <input
-                id="market-timeout"
-                type="number"
-                min={5}
-                max={300}
-                value={timeoutSec}
-                onChange={(e) => handleTimeout(e.target.value)}
-                onBlur={handleTimeoutBlur}
-                className="w-20 min-h-11 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground"
-              />
+              </Label>
+              <div className="w-24">
+                <Input
+                  id="market-timeout"
+                  type="number"
+                  dir="ltr"
+                  min={5}
+                  max={300}
+                  value={timeoutSec}
+                  onChange={(e) => handleTimeout(e.target.value)}
+                  onBlur={handleTimeoutBlur}
+                />
+              </div>
             </div>
             <SaveNote state={saveState} />
           </div>

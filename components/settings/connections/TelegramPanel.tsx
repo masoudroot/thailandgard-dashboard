@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { RefreshCw, Send, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { Input, Field } from "@/components/ui/Input";
+import { Switch } from "@/components/ui/Switch";
+import { AlertDialog } from "@/components/ui/alert-dialog";
 import {
   ConnectionRow,
   WhereGuide,
-  PrimaryButton,
-  GhostButton,
   ResultNote,
-  inputClass,
   type ConnState,
 } from "./ConnectionRow";
 
@@ -30,6 +31,7 @@ export function TelegramPanel() {
   const [sendTest, setSendTest] = useState(true);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function refresh() {
     try {
@@ -79,7 +81,6 @@ export function TelegramPanel() {
   }
 
   async function handleDelete() {
-    if (!window.confirm("پیکربندی تلگرام از داشبورد حذف شود؟")) return;
     setResult(null);
     try {
       const res = await fetch("/api/settings/telegram", { method: "DELETE" });
@@ -122,11 +123,8 @@ export function TelegramPanel() {
           </div>
         )}
 
-        <div>
-          <label htmlFor="tg-token" className="mb-1.5 block text-sm font-medium text-foreground">
-            توکن بات
-          </label>
-          <input
+        <Field label="توکن بات" htmlFor="tg-token">
+          <Input
             id="tg-token"
             type="password"
             dir="ltr"
@@ -134,15 +132,15 @@ export function TelegramPanel() {
             placeholder="123456:ABC-DEF..."
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            className={inputClass}
           />
-        </div>
+        </Field>
 
-        <div>
-          <label htmlFor="tg-chat" className="mb-1.5 block text-sm font-medium text-foreground">
-            آیدی چت
-          </label>
-          <input
+        <Field
+          label="آیدی چت"
+          htmlFor="tg-chat"
+          hint="آیدی عددی چت یا کانالی که بات باید در آن پیام بفرستد."
+        >
+          <Input
             id="tg-chat"
             type="text"
             dir="ltr"
@@ -150,40 +148,41 @@ export function TelegramPanel() {
             placeholder="مثلاً 123456789"
             value={chatId}
             onChange={(e) => setChatId(e.target.value)}
-            className={inputClass}
           />
-          <p className="mt-1 text-xs text-muted-foreground">
-            آیدی عددی چت یا کانالی که بات باید در آن پیام بفرستد.
-          </p>
-        </div>
+        </Field>
 
         <label className="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm text-foreground">
-          <input
-            type="checkbox"
-            checked={sendTest}
-            onChange={(e) => setSendTest(e.target.checked)}
-            className="h-5 w-5 shrink-0 accent-[var(--brand)]"
-          />
+          <Switch checked={sendTest} onCheckedChange={setSendTest} />
           بعد از ذخیره، یک پیام آزمایشی بفرست
         </label>
 
         {result && <ResultNote ok={result.ok} text={result.text} />}
 
         <div className="flex flex-col gap-2 sm:flex-row">
-          <PrimaryButton onClick={handleSave} disabled={saving}>
+          <Button variant="default" onClick={handleSave} disabled={saving}>
             {saving ? "در حال بررسی…" : "ذخیره و اتصال"}
-          </PrimaryButton>
-          <GhostButton onClick={() => void refresh()} disabled={state === "loading"}>
-            <RefreshCw size={15} strokeWidth={1.75} aria-hidden="true" />
+          </Button>
+          <Button variant="outline" onClick={() => void refresh()} disabled={state === "loading"}>
+            <RefreshCw strokeWidth={1.75} aria-hidden="true" />
             بررسی دوباره
-          </GhostButton>
+          </Button>
           {status?.source === "settings" && (
-            <GhostButton onClick={() => void handleDelete()}>
-              <Trash2 size={15} strokeWidth={1.75} aria-hidden="true" />
+            <Button variant="outline" onClick={() => setConfirmDelete(true)}>
+              <Trash2 strokeWidth={1.75} aria-hidden="true" />
               حذف
-            </GhostButton>
+            </Button>
           )}
         </div>
+
+        <AlertDialog
+          open={confirmDelete}
+          onOpenChange={setConfirmDelete}
+          title="پیکربندی تلگرام حذف شود؟"
+          description="اتصال تلگرام از داشبورد حذف می‌شود و اعلان‌ها دیگر ارسال نمی‌شوند."
+          confirmText="حذف"
+          destructive
+          onConfirm={handleDelete}
+        />
 
         <WhereGuide
           steps={[

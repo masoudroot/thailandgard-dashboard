@@ -2,6 +2,9 @@
 
 import { useRef, useState } from "react";
 import { DatabaseBackup, Download, Upload } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { Switch } from "@/components/ui/Switch";
+import { AlertDialog } from "@/components/ui/alert-dialog";
 
 /**
  * بخش کوچک «پشتیبان‌گیری تنظیمات»: خروجی (دانلود JSON) و ورودی (آپلود و بازگردانی).
@@ -10,7 +13,6 @@ import { DatabaseBackup, Download, Upload } from "lucide-react";
 export function SettingsBackup() {
   const [includeSecrets, setIncludeSecrets] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [confirmFile, setConfirmFile] = useState<{ name: string; text: string } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -66,7 +68,6 @@ export function SettingsBackup() {
 
   async function handleConfirmImport() {
     if (!confirmFile) return;
-    setImporting(true);
     setMsg(null);
     try {
       const parsed = JSON.parse(confirmFile.text);
@@ -80,9 +81,7 @@ export function SettingsBackup() {
       setMsg({ ok: true, text: `بازگردانی انجام شد (${body?.data?.restored ?? 0} تنظیم).` });
       setConfirmFile(null);
     } catch (err) {
-      setMsg({ ok: false, text: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setImporting(false);
+      setMsg({ ok: false, text: err instanceof Error ? err.message : "بازگردانی ناموفق بود." });
     }
   }
 
@@ -97,34 +96,19 @@ export function SettingsBackup() {
       </p>
 
       <label className="mb-3 flex cursor-pointer items-center gap-2 text-sm text-foreground">
-        <input
-          type="checkbox"
-          checked={includeSecrets}
-          onChange={(e) => setIncludeSecrets(e.target.checked)}
-          className="h-4 w-4 accent-primary"
-        />
+        <Switch checked={includeSecrets} onCheckedChange={setIncludeSecrets} />
         شامل کلیدها و توکن‌ها هم باشد
       </label>
 
       <div className="flex flex-col gap-2 sm:flex-row">
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={exporting}
-          className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-input bg-background px-5 py-2 text-sm font-medium text-foreground hover:opacity-80 disabled:opacity-50"
-        >
-          <Download size={15} strokeWidth={1.75} aria-hidden="true" />
+        <Button variant="outline" onClick={handleExport} disabled={exporting}>
+          <Download strokeWidth={1.75} aria-hidden="true" />
           {exporting ? "در حال تهیه…" : "خروجی (دانلود)"}
-        </button>
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          disabled={importing}
-          className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-input bg-background px-5 py-2 text-sm font-medium text-foreground hover:opacity-80 disabled:opacity-50"
-        >
-          <Upload size={15} strokeWidth={1.75} aria-hidden="true" />
+        </Button>
+        <Button variant="outline" onClick={() => fileRef.current?.click()}>
+          <Upload strokeWidth={1.75} aria-hidden="true" />
           ورودی (انتخاب فایل)
-        </button>
+        </Button>
         <input
           ref={fileRef}
           type="file"
@@ -135,31 +119,14 @@ export function SettingsBackup() {
         />
       </div>
 
-      {confirmFile && (
-        <div className="mt-3 rounded-lg border border-warning/40 bg-warning/5 px-3 py-3">
-          <p className="text-sm font-medium text-foreground">
-            فایل «{confirmFile.name}» بازگردانده شود؟ تنظیمات فعلی بازنویسی می‌شوند.
-          </p>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              onClick={handleConfirmImport}
-              disabled={importing}
-              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
-            >
-              {importing ? "در حال بازگردانی…" : "بله، بازگردانی شود"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmFile(null)}
-              disabled={importing}
-              className="inline-flex min-h-11 items-center justify-center rounded-lg border border-input bg-background px-5 py-2 text-sm font-medium text-foreground hover:opacity-80"
-            >
-              انصراف
-            </button>
-          </div>
-        </div>
-      )}
+      <AlertDialog
+        open={confirmFile !== null}
+        onOpenChange={(o) => { if (!o) setConfirmFile(null); }}
+        title={`فایل «${confirmFile?.name ?? ""}» بازگردانده شود؟`}
+        description="تنظیمات فعلی بازنویسی می‌شوند."
+        confirmText="بله، بازگردانی شود"
+        onConfirm={handleConfirmImport}
+      />
 
       {msg && (
         <p role="status" className={`mt-3 text-sm ${msg.ok ? "text-success" : "text-destructive"}`}>

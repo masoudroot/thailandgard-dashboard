@@ -3,12 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import { Bot, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
 import { SkeletonLines } from "@/components/Skeleton";
+import { Button } from "@/components/ui/Button";
+import { Input, Field } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Badge } from "@/components/ui/Badge";
+import { AlertDialog } from "@/components/ui/alert-dialog";
 import { TEAMS } from "@/lib/types";
 import { TEAM_META } from "@/lib/team-meta";
 import {
   ConnectionRow,
   WhereGuide,
-  inputClass,
+  ResultNote,
   type ConnState,
 } from "./ConnectionRow";
 
@@ -60,6 +65,10 @@ function SaveNote({ state }: { state: SaveState }) {
   );
 }
 
+/** استایل textarea (در رجیستری هنوز Textarea نیست؛ هم‌خانوادهٔ Input) */
+const textareaClass =
+  "min-h-11 w-full rounded-field border border-input bg-field px-3 py-2.5 text-sm text-foreground shadow-field placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60";
+
 /**
  * کارت «مدل‌های هوش مصنوعی»: درگاه‌های OpenAI + مدل پیش‌فرض سامانه +
  * مدل امبدینگ + مدل هر یک از ۱۵ تیم + تست واقعی پرامپت. کلیدها فقط ماسک‌شده نمایش داده می‌شوند.
@@ -80,7 +89,6 @@ export function LlmPanel() {
   const [addKey, setAddKey] = useState("");
   const [adding, setAdding] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [defaultSave, setDefaultSave] = useState<SaveState>("idle");
   const [embeddingSave, setEmbeddingSave] = useState<SaveState>("idle");
@@ -219,7 +227,6 @@ export function LlmPanel() {
   }
 
   async function handleDelete(id: string) {
-    setDeleting(true);
     setErrorMsg(null);
     try {
       const res = await fetch(`/api/settings/llm/${encodeURIComponent(id)}`, {
@@ -251,8 +258,6 @@ export function LlmPanel() {
       setConfirmDeleteId(null);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "حذف انجام نشد؛ دوباره تلاش کنید.");
-    } finally {
-      setDeleting(false);
     }
   }
 
@@ -477,6 +482,12 @@ export function LlmPanel() {
   const epName = (id: string): string =>
     endpoints.find((e) => e.id === id)?.name ?? "-";
 
+  /** گزینه‌های درگاه برای سلکت‌ها؛ گزینه خالی همیشه قابل انتخاب است (پاک کردن) */
+  const endpointOptions = (emptyLabel: string) => [
+    { value: "", label: emptyLabel },
+    ...endpoints.map((ep) => ({ value: ep.id, label: ep.name })),
+  ];
+
   return (
     <ConnectionRow
       icon={Bot}
@@ -512,13 +523,9 @@ export function LlmPanel() {
           <p className="mx-auto mt-1 max-w-md text-sm leading-7 text-muted-foreground">
             برای مدیریت مدل‌ها باید پایگاه داده وصل باشد. اتصال را بررسی کنید و دوباره تلاش کنید.
           </p>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="mt-4 inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground hover:opacity-90"
-          >
+          <Button variant="default" size="lg" onClick={() => window.location.reload()} className="mt-4">
             تلاش دوباره
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="space-y-6">
@@ -533,7 +540,6 @@ export function LlmPanel() {
               <ul className="space-y-3">
                 {endpoints.map((ep) => {
                   const r = testResults[ep.id];
-                  const confirming = confirmDeleteId === ep.id;
                   return (
                     <li
                       key={ep.id}
@@ -549,83 +555,48 @@ export function LlmPanel() {
                             {ep.apiKeyMasked}
                           </p>
                         </div>
-                        <span
-                          className={
-                            r
-                              ? r.ok
-                                ? "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success"
-                                : "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive"
-                              : "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground"
-                          }
+                        <Badge
+                          variant={r ? (r.ok ? "success" : "destructive") : "secondary"}
+                          className="shrink-0 gap-1.5"
                         >
-                          <span
-                            className={
-                              r
-                                ? r.ok
-                                  ? "h-2 w-2 rounded-full bg-success"
-                                  : "h-2 w-2 rounded-full bg-destructive"
-                                : "h-2 w-2 rounded-full bg-muted-foreground"
-                            }
-                          />
+                          <span className="h-2 w-2 rounded-full bg-current" aria-hidden="true" />
                           {r ? (r.ok ? "سالم" : "خطا") : "تست نشده"}
-                        </span>
+                        </Badge>
                       </div>
                       {r && (
-                        <p
-                          role="status"
-                          className={`mt-2 rounded-lg px-3 py-2 text-xs ${
-                            r.ok ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
-                          }`}
+                        <div className="mt-2">
+                          <ResultNote
+                            ok={r.ok}
+                            text={r.message + (r.latencyMs != null ? ` (${faDigits(r.latencyMs)} میلی‌ثانیه)` : "")}
+                          />
+                        </div>
+                      )}
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          variant="outline"
+                          onClick={() => handleTest(ep.id)}
+                          disabled={!!testing[ep.id]}
                         >
-                          {r.message}
-                          {r.latencyMs != null ? ` (${faDigits(r.latencyMs)} میلی‌ثانیه)` : ""}
-                        </p>
-                      )}
-                      {confirming ? (
-                        <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3">
-                          <p className="text-sm font-medium text-foreground">
-                            درگاه «{ep.name}» حذف شود؟ تیم‌هایی که از آن استفاده می‌کنند به حالت پیش‌فرض برمی‌گردند.
-                          </p>
-                          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(ep.id)}
-                              disabled={deleting}
-                              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-destructive px-5 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
-                            >
-                              {deleting ? "در حال حذف…" : "حذف درگاه"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(null)}
-                              disabled={deleting}
-                              className="inline-flex min-h-11 items-center justify-center rounded-lg border border-input bg-card px-5 py-2 text-sm font-medium text-foreground hover:opacity-80"
-                            >
-                              انصراف
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                          <button
-                            type="button"
-                            onClick={() => handleTest(ep.id)}
-                            disabled={!!testing[ep.id]}
-                            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-4 py-2 text-sm font-medium text-foreground shadow-control transition-opacity hover:opacity-80 disabled:opacity-50"
-                          >
-                            <RefreshCw size={15} strokeWidth={1.75} aria-hidden="true" />
-                            {testing[ep.id] ? "در حال تست…" : "تست اتصال"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteId(ep.id)}
-                            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-destructive/30 bg-card px-4 py-2 text-sm font-medium text-destructive shadow-control transition-opacity hover:opacity-80"
-                          >
-                            <Trash2 size={15} strokeWidth={1.75} aria-hidden="true" />
-                            حذف درگاه
-                          </button>
-                        </div>
-                      )}
+                          <RefreshCw strokeWidth={1.75} aria-hidden="true" />
+                          {testing[ep.id] ? "در حال تست…" : "تست اتصال"}
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          onClick={() => setConfirmDeleteId(ep.id)}
+                        >
+                          <Trash2 strokeWidth={1.75} aria-hidden="true" />
+                          حذف درگاه
+                        </Button>
+                      </div>
+                      <AlertDialog
+                        open={confirmDeleteId === ep.id}
+                        onOpenChange={(o) => { if (!o) setConfirmDeleteId(null); }}
+                        title={`درگاه «${ep.name}» حذف شود؟`}
+                        description="تیم‌هایی که از آن استفاده می‌کنند به حالت پیش‌فرض برمی‌گردند."
+                        confirmText="حذف درگاه"
+                        destructive
+                        onConfirm={() => handleDelete(ep.id)}
+                      />
                     </li>
                   );
                 })}
@@ -640,38 +611,27 @@ export function LlmPanel() {
               افزودن درگاه
             </h3>
             <div className="grid gap-3 sm:grid-cols-3">
-              <div>
-                <label htmlFor="llm-ep-name" className="mb-1.5 block text-sm font-medium text-foreground">
-                  نام
-                </label>
-                <input
+              <Field label="نام" htmlFor="llm-ep-name">
+                <Input
                   id="llm-ep-name"
                   type="text"
                   placeholder="مثلاً reformboss"
                   value={addName}
                   onChange={(e) => setAddName(e.target.value)}
-                  className={inputClass}
                 />
-              </div>
-              <div>
-                <label htmlFor="llm-ep-base" className="mb-1.5 block text-sm font-medium text-foreground">
-                  آدرس base URL
-                </label>
-                <input
+              </Field>
+              <Field label="آدرس base URL" htmlFor="llm-ep-base">
+                <Input
                   id="llm-ep-base"
                   type="url"
                   dir="ltr"
                   placeholder="https://api.example.com/v1"
                   value={addBase}
                   onChange={(e) => setAddBase(e.target.value)}
-                  className={inputClass}
                 />
-              </div>
-              <div>
-                <label htmlFor="llm-ep-key" className="mb-1.5 block text-sm font-medium text-foreground">
-                  کلید API
-                </label>
-                <input
+              </Field>
+              <Field label="کلید API" htmlFor="llm-ep-key">
+                <Input
                   id="llm-ep-key"
                   type="password"
                   dir="ltr"
@@ -679,18 +639,12 @@ export function LlmPanel() {
                   placeholder="sk-..."
                   value={addKey}
                   onChange={(e) => setAddKey(e.target.value)}
-                  className={inputClass}
                 />
-              </div>
+              </Field>
             </div>
-            <button
-              type="button"
-              onClick={handleAdd}
-              disabled={adding}
-              className="mt-3 min-h-12 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
+            <Button variant="default" size="lg" onClick={handleAdd} disabled={adding} className="mt-3">
               {adding ? "در حال ذخیره…" : "افزودن درگاه"}
-            </button>
+            </Button>
           </div>
 
           {/* ── مدل پیش‌فرض سامانه ── */}
@@ -708,32 +662,26 @@ export function LlmPanel() {
               </p>
             )}
             <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label htmlFor="llm-default-ep" className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  درگاه
-                </label>
-                <select
+              <Field label="درگاه" htmlFor="llm-default-ep">
+                <Select
                   id="llm-default-ep"
                   value={defaultModel?.endpointId ?? ""}
                   onChange={(e) => handleDefaultEndpoint(e.target.value)}
-                  className={inputClass}
-                >
-                  <option value="">انتخاب نشده</option>
-                  {endpoints.map((ep) => (
-                    <option key={ep.id} value={ep.id}>
-                      {ep.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="llm-default-model" className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  مدل
-                  {defaultModel?.endpointId && defCached && (
-                    <span className="me-1">({faDigits(defCached.length)} مدل از درگاه)</span>
-                  )}
-                </label>
-                <input
+                  options={endpointOptions("انتخاب نشده")}
+                />
+              </Field>
+              <Field
+                label={
+                  <>
+                    مدل
+                    {defaultModel?.endpointId && defCached && (
+                      <span> ({faDigits(defCached.length)} مدل از درگاه)</span>
+                    )}
+                  </>
+                }
+                htmlFor="llm-default-model"
+              >
+                <Input
                   id="llm-default-model"
                   type="text"
                   dir="ltr"
@@ -743,7 +691,6 @@ export function LlmPanel() {
                   value={defaultModel?.model ?? ""}
                   onChange={(e) => handleDefaultModel(e.target.value)}
                   onBlur={handleDefaultModelBlur}
-                  className={inputClass}
                 />
                 {defCached && (
                   <datalist id="llm-default-model-list">
@@ -752,7 +699,7 @@ export function LlmPanel() {
                     ))}
                   </datalist>
                 )}
-              </div>
+              </Field>
             </div>
             <div className="mt-2">
               <SaveNote state={defaultSave} />
@@ -775,35 +722,29 @@ export function LlmPanel() {
               </p>
             )}
             <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label htmlFor="llm-emb-ep" className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  درگاه
-                </label>
-                <select
+              <Field label="درگاه" htmlFor="llm-emb-ep">
+                <Select
                   id="llm-emb-ep"
                   value={embeddingModel?.endpointId ?? ""}
                   onChange={(e) => handleEmbeddingEndpoint(e.target.value)}
-                  className={inputClass}
-                >
-                  <option value="">انتخاب نشده</option>
-                  {endpoints.map((ep) => (
-                    <option key={ep.id} value={ep.id}>
-                      {ep.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="llm-emb-model" className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  مدل امبدینگ
-                  {embeddingModel?.endpointId && embCached && (
-                    <span className="me-1">({faDigits(embOnly?.length ?? 0)} مدل امبدینگ از درگاه)</span>
-                  )}
-                  {embeddingModel?.endpointId && loadingModels[embeddingModel.endpointId] && (
-                    <span className="me-1">(در حال گرفتن فهرست…)</span>
-                  )}
-                </label>
-                <input
+                  options={endpointOptions("انتخاب نشده")}
+                />
+              </Field>
+              <Field
+                label={
+                  <>
+                    مدل امبدینگ
+                    {embeddingModel?.endpointId && embCached && (
+                      <span> ({faDigits(embOnly?.length ?? 0)} مدل امبدینگ از درگاه)</span>
+                    )}
+                    {embeddingModel?.endpointId && loadingModels[embeddingModel.endpointId] && (
+                      <span> (در حال گرفتن فهرست…)</span>
+                    )}
+                  </>
+                }
+                htmlFor="llm-emb-model"
+              >
+                <Input
                   id="llm-emb-model"
                   type="text"
                   dir="ltr"
@@ -813,7 +754,6 @@ export function LlmPanel() {
                   value={embeddingModel?.model ?? ""}
                   onChange={(e) => handleEmbeddingModel(e.target.value)}
                   onBlur={handleEmbeddingModelBlur}
-                  className={inputClass}
                 />
                 {embOnly && embOnly.length > 0 && (
                   <datalist id="llm-emb-model-list">
@@ -822,7 +762,7 @@ export function LlmPanel() {
                     ))}
                   </datalist>
                 )}
-              </div>
+              </Field>
             </div>
             {embeddingModel?.endpointId && embCached && (embOnly?.length ?? 0) === 0 && !loadingModels[embeddingModel.endpointId] && (
               <p className="mt-2 text-xs leading-6 text-muted-foreground">
@@ -861,43 +801,29 @@ export function LlmPanel() {
                       {meta?.faName ?? team}
                     </p>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <label
-                          htmlFor={`llm-team-ep-${team}`}
-                          className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                        >
-                          درگاه
-                        </label>
-                        <select
+                      <Field label="درگاه" htmlFor={`llm-team-ep-${team}`}>
+                        <Select
                           id={`llm-team-ep-${team}`}
                           value={epId}
                           onChange={(e) => handleTeamEndpoint(team, e.target.value)}
-                          className={inputClass}
-                        >
-                          <option value="">پیش‌فرض سامانه</option>
-                          {endpoints.map((ep) => (
-                            <option key={ep.id} value={ep.id}>
-                              {ep.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label
-                          htmlFor={`llm-team-model-${team}`}
-                          className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                        >
-                          مدل
-                          {epId && cached && (
-                            <span className="me-1">
-                              ({faDigits(cached.length)} مدل از درگاه)
-                            </span>
-                          )}
-                          {epId && loadingModels[epId] && (
-                            <span className="me-1">(در حال گرفتن فهرست…)</span>
-                          )}
-                        </label>
-                        <input
+                          options={endpointOptions("پیش‌فرض سامانه")}
+                        />
+                      </Field>
+                      <Field
+                        label={
+                          <>
+                            مدل
+                            {epId && cached && (
+                              <span> ({faDigits(cached.length)} مدل از درگاه)</span>
+                            )}
+                            {epId && loadingModels[epId] && (
+                              <span> (در حال گرفتن فهرست…)</span>
+                            )}
+                          </>
+                        }
+                        htmlFor={`llm-team-model-${team}`}
+                      >
+                        <Input
                           id={`llm-team-model-${team}`}
                           type="text"
                           dir="ltr"
@@ -906,7 +832,6 @@ export function LlmPanel() {
                           disabled={!epId}
                           value={entry?.model ?? ""}
                           onChange={(e) => handleTeamModel(team, e.target.value)}
-                          className={inputClass}
                         />
                         {cached && (
                           <datalist id={listId}>
@@ -915,7 +840,7 @@ export function LlmPanel() {
                             ))}
                           </datalist>
                         )}
-                      </div>
+                      </Field>
                     </div>
                   </li>
                 );
@@ -931,11 +856,8 @@ export function LlmPanel() {
               نشان می‌دهد.
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label htmlFor="llm-pt-ep" className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  درگاه
-                </label>
-                <select
+              <Field label="درگاه" htmlFor="llm-pt-ep">
+                <Select
                   id="llm-pt-ep"
                   value={ptEndpoint}
                   onChange={(e) => {
@@ -944,24 +866,21 @@ export function LlmPanel() {
                     setPtResult(null);
                     if (e.target.value) void ensureModels(e.target.value);
                   }}
-                  className={inputClass}
-                >
-                  <option value="">انتخاب کنید</option>
-                  {endpoints.map((ep) => (
-                    <option key={ep.id} value={ep.id}>
-                      {ep.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="llm-pt-model" className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  مدل
-                  {ptEndpoint && ptCached && (
-                    <span className="me-1">({faDigits(ptCached.length)} مدل از درگاه)</span>
-                  )}
-                </label>
-                <input
+                  options={endpointOptions("انتخاب کنید")}
+                />
+              </Field>
+              <Field
+                label={
+                  <>
+                    مدل
+                    {ptEndpoint && ptCached && (
+                      <span> ({faDigits(ptCached.length)} مدل از درگاه)</span>
+                    )}
+                  </>
+                }
+                htmlFor="llm-pt-model"
+              >
+                <Input
                   id="llm-pt-model"
                   type="text"
                   dir="ltr"
@@ -973,7 +892,6 @@ export function LlmPanel() {
                     setPtModel(e.target.value);
                     setPtResult(null);
                   }}
-                  className={inputClass}
                 />
                 {ptCached && (
                   <datalist id="llm-pt-model-list">
@@ -982,29 +900,27 @@ export function LlmPanel() {
                     ))}
                   </datalist>
                 )}
-              </div>
+              </Field>
             </div>
-            <div className="mt-3">
-              <label htmlFor="llm-pt-prompt" className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                پرامپت آزمایشی
-              </label>
+            <Field label="پرامپت آزمایشی" htmlFor="llm-pt-prompt" className="mt-3">
               <textarea
                 id="llm-pt-prompt"
                 rows={2}
                 value={ptPrompt}
                 onChange={(e) => setPtPrompt(e.target.value)}
-                className={inputClass}
+                className={textareaClass}
               />
-            </div>
-            <button
-              type="button"
+            </Field>
+            <Button
+              variant="default"
+              size="lg"
               onClick={handlePromptTest}
               disabled={ptSending || !ptEndpoint || !ptModel.trim() || !ptPrompt.trim()}
-              className="mt-3 inline-flex min-h-12 items-center justify-center gap-1.5 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="mt-3"
             >
-              <Send size={15} strokeWidth={2} aria-hidden="true" />
+              <Send strokeWidth={2} aria-hidden="true" />
               {ptSending ? "در حال ارسال…" : "ارسال تست"}
-            </button>
+            </Button>
             {ptResult && (
               <div
                 role="status"
@@ -1028,11 +944,7 @@ export function LlmPanel() {
             )}
           </div>
 
-          {errorMsg && (
-            <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-              {errorMsg}
-            </p>
-          )}
+          {errorMsg && <ResultNote ok={false} text={errorMsg} />}
         </div>
       )}
       <div className="mt-4">

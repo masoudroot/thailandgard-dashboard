@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { Check, ChevronDown, X, type LucideIcon } from "lucide-react";
+import { Badge } from "@/components/ui/Badge";
 
 export type ConnState = "loading" | "ok" | "fail" | "unknown";
 
@@ -52,27 +53,23 @@ export function ConnectionRow({
   );
 }
 
-/** بج وضعیت یکدست هاب */
+/** بج وضعیت یکدست هاب (رجیستری) */
 export function StatusBadge({ state, text }: { state: ConnState; text: string }) {
   if (state === "loading") {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-muted-foreground" />
+      <Badge variant="secondary" className="shrink-0 gap-1.5">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-current" aria-hidden="true" />
         در حال بررسی…
-      </span>
+      </Badge>
     );
   }
   const ok = state === "ok";
   return (
-    <span
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-        ok ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
-      }`}
-    >
-      <span className={`h-2 w-2 rounded-full ${ok ? "bg-success" : "bg-destructive"}`} aria-hidden="true" />
+    <Badge variant={ok ? "success" : "destructive"} className="shrink-0 gap-1.5">
+      <span className="h-2 w-2 rounded-full bg-current" aria-hidden="true" />
       {ok ? <Check size={12} aria-hidden="true" /> : <X size={12} aria-hidden="true" />}
       {text}
-    </span>
+    </Badge>
   );
 }
 
@@ -89,42 +86,6 @@ export function WhereGuide({ steps }: { steps: string[] }) {
         ))}
       </ol>
     </details>
-  );
-}
-
-/** استایل یکدست ورودی‌ها */
-export const inputClass =
-  "w-full min-h-11 rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30";
-
-/** دکمه اصلی */
-export function PrimaryButton({
-  children,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      type="button"
-      {...props}
-      className="min-h-11 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-    >
-      {children}
-    </button>
-  );
-}
-
-/** دکمه فرعی */
-export function GhostButton({
-  children,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      type="button"
-      {...props}
-      className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-opacity hover:opacity-80 disabled:opacity-50"
-    >
-      {children}
-    </button>
   );
 }
 

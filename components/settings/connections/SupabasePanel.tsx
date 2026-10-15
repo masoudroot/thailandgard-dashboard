@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { Check, Copy, Database, RefreshCw, Save } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { Input, Field } from "@/components/ui/Input";
 import {
   ConnectionRow,
   WhereGuide,
-  GhostButton,
-  PrimaryButton,
   ResultNote,
-  inputClass,
   type ConnState,
 } from "./ConnectionRow";
 
@@ -152,50 +151,38 @@ export function SupabasePanel() {
     >
       <div className="space-y-4">
         <div className="space-y-3">
-          <div>
-            <label htmlFor="sb-url" className="mb-1.5 block text-sm font-medium text-foreground">
-              آدرس پروژه
-            </label>
-            <input
+          <Field label="آدرس پروژه" htmlFor="sb-url">
+            <Input
               id="sb-url"
               dir="ltr"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://xyzcompany.supabase.co"
-              className={inputClass}
               autoComplete="off"
             />
-          </div>
-          <div>
-            <label htmlFor="sb-anon" className="mb-1.5 block text-sm font-medium text-foreground">
-              کلید anon
-            </label>
-            <input
+          </Field>
+          <Field label="کلید anon" htmlFor="sb-anon">
+            <Input
               id="sb-anon"
               dir="ltr"
               type="password"
               value={anonKey}
               onChange={(e) => setAnonKey(e.target.value)}
               placeholder="کلید عمومی anon"
-              className={inputClass}
               autoComplete="off"
             />
-          </div>
-          <div>
-            <label htmlFor="sb-service" className="mb-1.5 block text-sm font-medium text-foreground">
-              کلید service_role
-            </label>
-            <input
+          </Field>
+          <Field label="کلید service_role" htmlFor="sb-service">
+            <Input
               id="sb-service"
               dir="ltr"
               type="password"
               value={serviceKey}
               onChange={(e) => setServiceKey(e.target.value)}
               placeholder="کلید محرمانه service_role"
-              className={inputClass}
               autoComplete="off"
             />
-          </div>
+          </Field>
         </div>
 
         {result && <ResultNote ok={result.ok} text={result.text} />}
@@ -207,11 +194,11 @@ export function SupabasePanel() {
               {copyRows.map((r) => (
                 <div key={r.label} className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground">{r.label}</span>
-                  <GhostButton onClick={() => void copyValue(r.label, r.value)}>
-                    <Copy size={14} strokeWidth={1.75} aria-hidden="true" />
+                  <Button variant="outline" size="sm" onClick={() => void copyValue(r.label, r.value)}>
+                    <Copy strokeWidth={1.75} aria-hidden="true" />
                     {copied === r.label ? "کپی شد" : "کپی"}
-                    {copied === r.label && <Check size={14} aria-hidden="true" className="text-success" />}
-                  </GhostButton>
+                    {copied === r.label && <Check aria-hidden="true" className="text-success" />}
+                  </Button>
                 </div>
               ))}
             </div>
@@ -226,14 +213,14 @@ export function SupabasePanel() {
         )}
 
         <div className="flex flex-wrap gap-2">
-          <GhostButton onClick={handleTest} disabled={testing}>
-            <RefreshCw size={15} strokeWidth={1.75} aria-hidden="true" />
+          <Button variant="outline" onClick={handleTest} disabled={testing}>
+            <RefreshCw strokeWidth={1.75} aria-hidden="true" />
             {testing ? "در حال تست…" : "تست اتصال"}
-          </GhostButton>
-          <PrimaryButton onClick={handleSave} disabled={saving}>
-            <Save size={15} strokeWidth={1.75} aria-hidden="true" />
+          </Button>
+          <Button variant="default" onClick={handleSave} disabled={saving}>
+            <Save strokeWidth={1.75} aria-hidden="true" />
             {saving ? "در حال ذخیره…" : "ذخیره و اتصال"}
-          </PrimaryButton>
+          </Button>
         </div>
 
         <WhereGuide

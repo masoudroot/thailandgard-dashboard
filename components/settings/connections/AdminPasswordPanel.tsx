@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { KeyRound } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { Input, Field } from "@/components/ui/Input";
 import {
   ConnectionRow,
   WhereGuide,
-  PrimaryButton,
   ResultNote,
-  inputClass,
   type ConnState,
 } from "./ConnectionRow";
 
@@ -66,46 +66,34 @@ export function AdminPasswordPanel() {
       statusText="فعال"
     >
       <div className="space-y-4">
-        <div>
-          <label htmlFor="admin-cur" className="mb-1.5 block text-sm font-medium text-foreground">
-            رمز فعلی
-          </label>
-          <input
+        <Field label="رمز فعلی" htmlFor="admin-cur">
+          <Input
             id="admin-cur"
             type="password"
             autoComplete="current-password"
             value={current}
             onChange={(e) => setCurrent(e.target.value)}
-            className={inputClass}
           />
-        </div>
+        </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="admin-new" className="mb-1.5 block text-sm font-medium text-foreground">
-              رمز تازه
-            </label>
-            <input
+          <Field label="رمز تازه" htmlFor="admin-new">
+            <Input
               id="admin-new"
               type="password"
               autoComplete="new-password"
               value={next}
               onChange={(e) => setNext(e.target.value)}
-              className={inputClass}
             />
-          </div>
-          <div>
-            <label htmlFor="admin-repeat" className="mb-1.5 block text-sm font-medium text-foreground">
-              تکرار رمز تازه
-            </label>
-            <input
+          </Field>
+          <Field label="تکرار رمز تازه" htmlFor="admin-repeat">
+            <Input
               id="admin-repeat"
               type="password"
               autoComplete="new-password"
               value={repeat}
               onChange={(e) => setRepeat(e.target.value)}
-              className={inputClass}
             />
-          </div>
+          </Field>
         </div>
         <p className="text-xs text-muted-foreground">
           حداقل ۸ کاراکتر. بعد از تغییر، نشست‌های قبلی باطل می‌شوند.
@@ -114,12 +102,9 @@ export function AdminPasswordPanel() {
         {result && <ResultNote ok={result.ok} text={result.text} />}
 
         <div>
-          <PrimaryButton
-            onClick={handleChange}
-            disabled={saving}
-          >
+          <Button variant="default" onClick={handleChange} disabled={saving}>
             {saving ? "در حال تغییر…" : "تغییر رمز"}
-          </PrimaryButton>
+          </Button>
         </div>
 
         <WhereGuide
