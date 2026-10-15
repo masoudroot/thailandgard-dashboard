@@ -5,7 +5,8 @@ import { Bot, Plus, RefreshCw, Send, Sparkles, Trash2 } from "lucide-react";
 import { SkeletonLines } from "@/components/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { Input, Field } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
+import { ValueLabelCombobox } from "@/components/ui/value-label-combobox";
+import { ModelCombobox } from "@/components/ui/model-combobox";
 import { Badge } from "@/components/ui/Badge";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -85,6 +86,11 @@ export function LlmPanel() {
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, EndpointTestResult>>({});
   const [loadingModels, setLoadingModels] = useState<Record<string, boolean>>({});
+  /* سلامت مدل‌ها: endpointId -> model -> { ok, message } */
+  const [modelHealth, setModelHealth] = useState<
+    Record<string, Record<string, { ok: boolean; message: string }>>
+  >({});
+  const [healthLoading, setHealthLoading] = useState<Record<string, boolean>>({});
   const [addName, setAddName] = useState("");
   const [addBase, setAddBase] = useState("");
   const [addKey, setAddKey] = useState("");
@@ -152,12 +158,72 @@ export function LlmPanel() {
       const body = await res.json();
       const d = body?.data;
       if (res.ok && body?.ok !== false && d?.ok && Array.isArray(d.models)) {
-        setModelsCache((m) => ({ ...m, [endpointId]: d.models as string[] }));
+        const models = d.models as string[];
+        setModelsCache((m) => ({ ...m, [endpointId]: models }));
+        // بعد از گرفتن فهرست /models، سلامت مدل‌ها را هم بی‌صدا بگیر
+        void ensureModelHealth(endpointId, models);
       }
     } catch {
       // بی‌صدا؛ کاربر می‌تواند مدل را دستی تایپ کند
     } finally {
       setLoadingModels((m) => ({ ...m, [endpointId]: false }));
+    }
+  }
+
+  /**
+   * تست سلامت مدل‌های یک درگاه. force=true کش ۲۴ ساعته را نادیده می‌گیرد.
+   * فقط نتیجه‌ی { ok, message } در حافظه‌ی کلاینت نگه داشته می‌شود؛ کلیدی لو نمی‌رود.
+   */
+  async function ensureModelHealth(
+    endpointId: string,
+    models: string[],
+    force = false,
+  ) {
+    if (!endpointId || models.length === 0 || healthLoading[endpointId]) return;
+    setHealthLoading((m) => ({ ...m, [endpointId]: true }));
+    try {
+      const res = await fetch(
+        `/api/settings/llm/${encodeURIComponent(endpointId)}/models-health`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ models, force }),
+        },
+      );
+      const body = await res.json();
+      const d = body?.data;
+      if (res.ok && body?.ok !== false && d?.health && typeof d.health === "object") {
+        setModelHealth((m) => ({ ...m, [endpointId]: d.health }));
+      }
+    } catch {
+      // بی‌صدا؛ فهرست مدل‌ها همچنان کامل نشان داده می‌شود
+    } finally {
+      setHealthLoading((m) => ({ ...m, [endpointId]: false }));
+    }
+  }
+
+  /** «تست دوباره»: فهرست مدل‌های درگاه را می‌گیرد و همه را دوباره تست می‌کند */
+  async function handleRetestModels(endpointId: string) {
+    let models = modelsCache[endpointId];
+    if (!models) {
+      try {
+        const res = await fetch(
+          `/api/settings/llm/${encodeURIComponent(endpointId)}/test`,
+          { method: "POST" },
+        );
+        const body = await res.json();
+        const d = body?.data;
+        if (res.ok && body?.ok !== false && d?.ok && Array.isArray(d.models)) {
+          models = d.models as string[];
+          setModelsCache((m) => ({ ...m, [endpointId]: models as string[] }));
+        }
+      } catch {
+        // اگر فهرست گرفته نشد، تست سلامت معنایی ندارد
+        return;
+      }
+    }
+    if (models && models.length > 0) {
+      await ensureModelHealth(endpointId, models, true);
     }
   }
 
@@ -250,6 +316,11 @@ export function LlmPanel() {
         delete next[id];
         return next;
       });
+      setModelHealth((m) => {
+        const next = { ...m };
+        delete next[id];
+        return next;
+      });
       if (defaultModel?.endpointId === id) setDefaultModel(null);
       if (embeddingModel?.endpointId === id) setEmbeddingModel(null);
       if (ptEndpoint === id) {
@@ -287,7 +358,10 @@ export function LlmPanel() {
             },
           }));
           if (Array.isArray(d.models)) {
-            setModelsCache((m) => ({ ...m, [id]: d.models as string[] }));
+            const models = d.models as string[];
+            setModelsCache((m) => ({ ...m, [id]: models }));
+            // سلامت مدل‌ها را هم تازه کن (از کش ۲۴ ساعته استفاده می‌کند)
+            void ensureModelHealth(id, models);
           }
         } else {
           setTestResults((m) => ({
@@ -525,6 +599,73 @@ export function LlmPanel() {
     ...endpoints.map((ep) => ({ value: ep.id, label: ep.name })),
   ];
 
+  /**
+   * فقط مدل‌های سالم یک درگاه برای فهرست انتخاب. تا وقتی نتیجه‌ی تست سلامت
+   * نیامده، فهرست کامل /models نشان داده می‌شود تا کاربر گیر نکند.
+   */
+  const healthyModelsFor = (endpointId: string): string[] | undefined => {
+    const cached = modelsCache[endpointId];
+    if (!cached) return undefined;
+    const h = modelHealth[endpointId];
+    if (!h) return cached;
+    const healthy = cached.filter((m) => h[m]?.ok);
+    return healthy.length > 0 ? healthy : cached;
+  };
+
+  /** شمار «X از Y مدل پاسخ دادند» با ارقام فارسی، کنار لیبل انتخاب مدل */
+  function HealthSummary({ endpointId }: { endpointId: string }) {
+    const cached = modelsCache[endpointId];
+    const h = modelHealth[endpointId];
+    if (!endpointId || !cached || cached.length === 0) return null;
+    if (!h) {
+      return healthLoading[endpointId] ? (
+        <span> (در حال تست سلامت مدل‌ها…)</span>
+      ) : null;
+    }
+    const healthy = cached.filter((m) => h[m]?.ok).length;
+    return (
+      <span>
+        {" "}
+        ({faDigits(healthy)} از {faDigits(cached.length)} مدل پاسخ دادند)
+        {healthLoading[endpointId] && "؛ در حال تست دوباره…"}
+      </span>
+    );
+  }
+
+  /**
+   * هشدار وقتی مدلِ ست‌شده (پیش‌فرض/امبدینگ/تیم) در آخرین تست سلامت ناسالم بود.
+   * تنظیم فعلی خودکار پاک نمی‌شود؛ فقط هشدار داده می‌شود.
+   */
+  function UnhealthySavedWarning({
+    endpointId,
+    model,
+  }: {
+    endpointId: string;
+    model: string;
+  }) {
+    const trimmed = model.trim();
+    const h = trimmed ? modelHealth[endpointId]?.[trimmed] : undefined;
+    if (!h || h.ok) return null;
+    return (
+      <p className="mt-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-6 text-foreground">
+        هشدار: این مدل در آخرین تست سلامت «{faDigits(h.message)}» بود؛ تنظیم
+        فعلی شما دست‌نخورده باقی مانده است. با «تست دوباره» می‌توانید دوباره
+        بررسی کنید.
+      </p>
+    );
+  }
+
+  /** فهرست انتخاب مدل‌ها: فقط مدل‌های سالم (تست‌شده) هر درگاه */
+  const defHealthy = defaultModel?.endpointId
+    ? healthyModelsFor(defaultModel.endpointId)
+    : undefined;
+  const ptHealthy = ptEndpoint ? healthyModelsFor(ptEndpoint) : undefined;
+  const embHealthy = embeddingModel?.endpointId
+    ? healthyModelsFor(embeddingModel.endpointId)?.filter((m) =>
+        m.toLowerCase().includes("embed"),
+      )
+    : undefined;
+
   return (
     <ConnectionRow
       icon={Bot}
@@ -544,10 +685,11 @@ export function LlmPanel() {
         </summary>
         <ol className="mt-2 list-decimal space-y-1.5 pe-4 ps-5 text-xs leading-6 text-muted-foreground marker:text-brand">
           <li>در بخش «افزودن درگاه»، نام، آدرس base URL و کلید API درگاه را وارد و «افزودن درگاه» را بزنید.</li>
-          <li>روی هر درگاه «تست اتصال» را بزنید؛ اگر سالم باشد، فهرست مدل‌های آن درگاه خودکار خوانده می‌شود.</li>
-          <li>در «مدل پیش‌فرض سامانه»، درگاه را انتخاب کنید؛ فهرست مدل‌های همان درگاه می‌آید و یکی را برگزینید.</li>
+          <li>روی هر درگاه «تست اتصال» را بزنید؛ اگر سالم باشد، فهرست مدل‌های آن درگاه خودکار خوانده می‌شود و سلامت تک‌تک مدل‌ها با یک فراخوان سبک آزمایشی بررسی می‌گردد.</li>
+          <li>در «مدل پیش‌فرض سامانه»، درگاه را انتخاب کنید؛ فهرست فقط مدل‌هایی را نشان می‌دهد که واقعاً پاسخ داده‌اند (شمار «X از Y مدل پاسخ دادند» کنار لیبل است).</li>
+          <li>با «تست دوباره» روی هر درگاه می‌توانید کش سلامت را نادیده بگیرید و همه‌ی مدل‌ها را دوباره تست کنید.</li>
           <li>در «مدل امبدینگ» هم همین کار را برای مدل امبدینگ انجام دهید.</li>
-          <li>اگر تیمی مدل خاصی می‌خواهد، در «مدل هر تیم» برای همان تیم درگاه و مدل جدا انتخاب کنید؛ بقیه تیم‌ها از پیش‌فرض استفاده می‌کنند.</li>
+          <li>اگر تیمی مدل خاصی می‌خواهد، در «مدل هر تیم» برای همان تیم درگاه و مدل جدا انتخاب کنید؛ بقیه تیم‌ها از پیش‌فرض استفاده می‌کنند. اگر مدل ست‌شده‌ای ناسالم شود، هشدار می‌بینید ولی تنظیم شما خودکار پاک نمی‌شود.</li>
           <li>با «تست واقعی» یک پرامپت کوتاه بفرستید و از سالم بودن مطمئن شوید.</li>
         </ol>
       </details>
@@ -616,6 +758,15 @@ export function LlmPanel() {
                         >
                           <RefreshCw strokeWidth={1.75} aria-hidden="true" />
                           {testing[ep.id] ? "در حال تست…" : "تست اتصال"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => handleRetestModels(ep.id)}
+                          disabled={!!healthLoading[ep.id]}
+                          title="کش سلامت مدل‌ها را نادیده می‌گیرد و همه‌ی مدل‌ها را دوباره تست می‌کند"
+                        >
+                          <RefreshCw strokeWidth={1.75} aria-hidden="true" />
+                          {healthLoading[ep.id] ? "در حال تست مدل‌ها…" : "تست دوباره"}
                         </Button>
                         <Button
                           variant="destructive"
@@ -698,10 +849,15 @@ export function LlmPanel() {
                 </span>
               </p>
             )}
+            {defaultModel?.endpointId && (
+              <UnhealthySavedWarning
+                endpointId={defaultModel.endpointId}
+                model={defaultModel.model}
+              />
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="درگاه" htmlFor="llm-default-ep">
-                <Select
-                  id="llm-default-ep"
+              <Field label="درگاه">
+                <ValueLabelCombobox
                   value={defaultModel?.endpointId ?? ""}
                   onChange={(e) => handleDefaultEndpoint(e.target.value)}
                   options={endpointOptions("انتخاب نشده")}
@@ -714,28 +870,21 @@ export function LlmPanel() {
                     {defaultModel?.endpointId && defCached && (
                       <span> ({faDigits(defCached.length)} مدل از درگاه)</span>
                     )}
+                    <HealthSummary endpointId={defaultModel?.endpointId ?? ""} />
                   </>
                 }
                 htmlFor="llm-default-model"
               >
-                <Input
+                <ModelCombobox
                   id="llm-default-model"
-                  type="text"
                   dir="ltr"
-                  list="llm-default-model-list"
                   placeholder={defaultModel?.endpointId ? "انتخاب یا تایپ مدل…" : "اول یک درگاه انتخاب کنید"}
                   disabled={!defaultModel?.endpointId}
                   value={defaultModel?.model ?? ""}
-                  onChange={(e) => handleDefaultModel(e.target.value)}
+                  onChange={handleDefaultModel}
                   onBlur={handleDefaultModelBlur}
+                  options={defHealthy ?? []}
                 />
-                {defCached && (
-                  <datalist id="llm-default-model-list">
-                    {defCached.map((m) => (
-                      <option key={m} value={m} />
-                    ))}
-                  </datalist>
-                )}
               </Field>
             </div>
             <div className="mt-2">
@@ -758,10 +907,15 @@ export function LlmPanel() {
                 </span>
               </p>
             )}
+            {embeddingModel?.endpointId && (
+              <UnhealthySavedWarning
+                endpointId={embeddingModel.endpointId}
+                model={embeddingModel.model}
+              />
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="درگاه" htmlFor="llm-emb-ep">
-                <Select
-                  id="llm-emb-ep"
+              <Field label="درگاه">
+                <ValueLabelCombobox
                   value={embeddingModel?.endpointId ?? ""}
                   onChange={(e) => handleEmbeddingEndpoint(e.target.value)}
                   options={endpointOptions("انتخاب نشده")}
@@ -777,28 +931,21 @@ export function LlmPanel() {
                     {embeddingModel?.endpointId && loadingModels[embeddingModel.endpointId] && (
                       <span> (در حال گرفتن فهرست…)</span>
                     )}
+                    <HealthSummary endpointId={embeddingModel?.endpointId ?? ""} />
                   </>
                 }
                 htmlFor="llm-emb-model"
               >
-                <Input
+                <ModelCombobox
                   id="llm-emb-model"
-                  type="text"
                   dir="ltr"
-                  list="llm-emb-model-list"
                   placeholder={embeddingModel?.endpointId ? "انتخاب یا تایپ مدل…" : "اول یک درگاه انتخاب کنید"}
                   disabled={!embeddingModel?.endpointId}
                   value={embeddingModel?.model ?? ""}
-                  onChange={(e) => handleEmbeddingModel(e.target.value)}
+                  onChange={handleEmbeddingModel}
                   onBlur={handleEmbeddingModelBlur}
+                  options={embHealthy ?? []}
                 />
-                {embOnly && embOnly.length > 0 && (
-                  <datalist id="llm-emb-model-list">
-                    {embOnly.map((m) => (
-                      <option key={m} value={m} />
-                    ))}
-                  </datalist>
-                )}
               </Field>
             </div>
             {embeddingModel?.endpointId && embCached && (embOnly?.length ?? 0) === 0 && !loadingModels[embeddingModel.endpointId] && (
@@ -864,7 +1011,7 @@ export function LlmPanel() {
                 const entry = teamModels[team];
                 const epId = entry?.endpointId ?? "";
                 const cached = epId ? modelsCache[epId] : undefined;
-                const listId = `llm-model-list-${team}`;
+                const healthy = epId ? healthyModelsFor(epId) : undefined;
                 const meta = TEAM_META[team];
                 return (
                   <li
@@ -875,9 +1022,8 @@ export function LlmPanel() {
                       {meta?.faName ?? team}
                     </p>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label="درگاه" htmlFor={`llm-team-ep-${team}`}>
-                        <Select
-                          id={`llm-team-ep-${team}`}
+                      <Field label="درگاه">
+                        <ValueLabelCombobox
                           value={epId}
                           onChange={(e) => handleTeamEndpoint(team, e.target.value)}
                           options={endpointOptions("پیش‌فرض سامانه")}
@@ -893,29 +1039,25 @@ export function LlmPanel() {
                             {epId && loadingModels[epId] && (
                               <span> (در حال گرفتن فهرست…)</span>
                             )}
+                            <HealthSummary endpointId={epId} />
                           </>
                         }
                         htmlFor={`llm-team-model-${team}`}
                       >
-                        <Input
+                        <ModelCombobox
                           id={`llm-team-model-${team}`}
-                          type="text"
                           dir="ltr"
-                          list={listId}
                           placeholder={epId ? "انتخاب یا تایپ مدل…" : "اول یک درگاه انتخاب کنید"}
                           disabled={!epId}
                           value={entry?.model ?? ""}
-                          onChange={(e) => handleTeamModel(team, e.target.value)}
+                          onChange={(m) => handleTeamModel(team, m)}
+                          options={healthy ?? []}
                         />
-                        {cached && (
-                          <datalist id={listId}>
-                            {cached.map((m) => (
-                              <option key={m} value={m} />
-                            ))}
-                          </datalist>
-                        )}
                       </Field>
                     </div>
+                    {epId && (
+                      <UnhealthySavedWarning endpointId={epId} model={entry?.model ?? ""} />
+                    )}
                   </li>
                 );
               })}
@@ -930,9 +1072,8 @@ export function LlmPanel() {
               نشان می‌دهد.
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="درگاه" htmlFor="llm-pt-ep">
-                <Select
-                  id="llm-pt-ep"
+              <Field label="درگاه">
+                <ValueLabelCombobox
                   value={ptEndpoint}
                   onChange={(e) => {
                     setPtEndpoint(e.target.value);
@@ -950,30 +1091,23 @@ export function LlmPanel() {
                     {ptEndpoint && ptCached && (
                       <span> ({faDigits(ptCached.length)} مدل از درگاه)</span>
                     )}
+                    <HealthSummary endpointId={ptEndpoint} />
                   </>
                 }
                 htmlFor="llm-pt-model"
               >
-                <Input
+                <ModelCombobox
                   id="llm-pt-model"
-                  type="text"
                   dir="ltr"
-                  list="llm-pt-model-list"
                   placeholder={ptEndpoint ? "انتخاب یا تایپ مدل…" : "اول یک درگاه انتخاب کنید"}
                   disabled={!ptEndpoint}
                   value={ptModel}
-                  onChange={(e) => {
-                    setPtModel(e.target.value);
+                  onChange={(m) => {
+                    setPtModel(m);
                     setPtResult(null);
                   }}
+                  options={ptHealthy ?? []}
                 />
-                {ptCached && (
-                  <datalist id="llm-pt-model-list">
-                    {ptCached.map((m) => (
-                      <option key={m} value={m} />
-                    ))}
-                  </datalist>
-                )}
               </Field>
             </div>
             <Field label="پرامپت آزمایشی" htmlFor="llm-pt-prompt" className="mt-3">

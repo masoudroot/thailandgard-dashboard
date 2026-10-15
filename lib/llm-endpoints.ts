@@ -448,6 +448,25 @@ export interface ModelsFetchResult {
   latencyMs: number;
 }
 
+/** نتیجه‌ی تست سلامت یک مدل؛ فقط وضعیت و دلیل کوتاه، بدون هیچ کلیدی. */
+export interface ModelHealthResult {
+  ok: boolean;
+  message: string;
+  checkedAt: string;
+}
+
+/** نگاشت endpointId -> model -> نتیجه تست سلامت */
+export type ModelHealthMap = Record<string, Record<string, ModelHealthResult>>;
+
+/** کلید کش سلامت مدل‌ها در settings */
+export const SETTINGS_KEY_MODEL_HEALTH = 'llm_model_health';
+/** انقضای کش سلامت مدل: ۲۴ ساعت */
+export const MODEL_HEALTH_TTL_MS = 24 * 60 * 60 * 1000;
+/** تایم‌اوت هر تست تک‌مدل: ۱۵ ثانیه */
+export const MODEL_HEALTH_TIMEOUT_MS = 15_000;
+/** سقف هم‌زمانی تست‌ها روی یک درگاه */
+export const MODEL_HEALTH_CONCURRENCY = 3;
+
 /**
  * فراخوانی واقعی GET {baseUrl}/models با کلید endpoint (سازگار با OpenAI-style).
  * خروجی: لیست شناسه‌ی مدل‌ها + زمان پاسخ. خطا با پیام فارسی پرتاب می‌شود.
@@ -499,4 +518,146 @@ export async function fetchEndpointModels(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * تست سبک سلامت یک مدل: chat/completions با پرامپت «سلام» و max_tokens کم.
+ * خروجی فقط وضعیت + دلیل کوتاه فارسی است؛ کلید هرگز لو نمی‌رود.
+ */
+export async function testSingleModelHealth(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+  timeoutMs = MODEL_HEALTH_TIMEOUT_MS,
+): Promise<Omit<ModelHealthResult, 'checkedAt'>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: 'سلام' }],
+        max_tokens: 8,
+        temperature: 0,
+      }),
+      signal: controller.signal,
+    });
+    const body: unknown = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { ok: false, message: `خطای ${res.status}` };
+    }
+    const content =
+      typeof body === 'object' && body !== null
+        ? (body as { choices?: Array<{ message?: { content?: string } }> }).choices?.[0]?.message?.content
+        : undefined;
+    if (typeof content !== 'string' || content.trim().length === 0) {
+      return { ok: false, message: 'پاسخی برنگرداند' };
+    }
+    return { ok: true, message: 'تست‌شده' };
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return { ok: false, message: 'پاسخ نداد' };
+    }
+    return { ok: false, message: 'خطای اتصال' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** اجرای موازی محدودشده با سقف هم‌زمانی */
+async function mapPool<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const idx = cursor++;
+        results[idx] = await fn(items[idx]);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
+}
+
+/** خواندن کش سلامت مدل‌ها از settings (خروجی همیشه نرمال‌شده است). */
+async function readHealthCache(): Promise<ModelHealthMap> {
+  const raw = await getSetting<unknown>(SETTINGS_KEY_MODEL_HEALTH, {});
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const map: ModelHealthMap = {};
+  for (const [epId, models] of Object.entries(raw as Record<string, unknown>)) {
+    if (!models || typeof models !== 'object' || Array.isArray(models)) continue;
+    const entry: Record<string, ModelHealthResult> = {};
+    for (const [model, h] of Object.entries(models as Record<string, unknown>)) {
+      if (!h || typeof h !== 'object' || Array.isArray(h)) continue;
+      const r = h as Record<string, unknown>;
+      if (typeof r.ok !== 'boolean' || typeof r.message !== 'string') continue;
+      entry[model] = {
+        ok: r.ok,
+        message: r.message,
+        checkedAt:
+          typeof r.checkedAt === 'string' ? r.checkedAt : new Date(0).toISOString(),
+      };
+    }
+    map[epId] = entry;
+  }
+  return map;
+}
+
+/**
+ * تست سلامت مجموعه‌ی مدل‌های یک endpoint با کش ۲۴ ساعته.
+ * فقط مدل‌هایی تست می‌شوند که در کش نیستند، منقضی شده‌اند یا force=true است؛
+ * بقیه از کش برمی‌گردند. خروجی: نگاشت مدل -> { ok, message }.
+ */
+export async function getModelsHealth(
+  endpointId: string,
+  models: string[],
+  opts: { force?: boolean; timeoutMs?: number } = {},
+): Promise<Record<string, Omit<ModelHealthResult, 'checkedAt'>>> {
+  const ep = await getEndpoint(endpointId);
+  if (!ep) throw new InputError('این endpoint پیدا نشد.');
+  if (!ep.apiKey) throw new InputError('کلید API برای این endpoint ثبت نشده است.');
+
+  const clean = Array.from(new Set(models.map((m) => m.trim()).filter(Boolean))).slice(0, 100);
+  if (clean.length === 0) throw new InputError('فهرست مدل‌ها خالی است.');
+
+  const cache = await readHealthCache();
+  const epCache = cache[endpointId] ?? {};
+  const now = Date.now();
+  const toTest = clean.filter((m) => {
+    if (opts.force) return true;
+    const hit = epCache[m];
+    if (!hit) return true;
+    const age = now - Date.parse(hit.checkedAt);
+    return Number.isNaN(age) || age > MODEL_HEALTH_TTL_MS;
+  });
+
+  const timeoutMs = opts.timeoutMs ?? MODEL_HEALTH_TIMEOUT_MS;
+  const fresh = await mapPool(toTest, MODEL_HEALTH_CONCURRENCY, async (model) => {
+    const result = await testSingleModelHealth(ep.baseUrl, ep.apiKey, model, timeoutMs);
+    return { model, result: { ...result, checkedAt: new Date().toISOString() } };
+  });
+
+  const nextEpCache: Record<string, ModelHealthResult> = { ...epCache };
+  for (const { model, result } of fresh) {
+    nextEpCache[model] = result;
+  }
+  await setSetting(SETTINGS_KEY_MODEL_HEALTH, { ...cache, [endpointId]: nextEpCache });
+
+  const out: Record<string, Omit<ModelHealthResult, 'checkedAt'>> = {};
+  for (const m of clean) {
+    const hit = nextEpCache[m];
+    out[m] = hit ? { ok: hit.ok, message: hit.message } : { ok: false, message: 'تست نشد' };
+  }
+  return out;
 }
