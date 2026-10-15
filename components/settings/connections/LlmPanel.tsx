@@ -599,7 +599,7 @@ export function LlmPanel() {
           </div>
 
           {/* ── افزودن درگاه ── */}
-          <div className="rounded-lg border border-border bg-background px-3 py-4">
+          <div className="rounded-lg border border-border bg-card px-3 py-4">
             <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-foreground">
               <Plus size={15} strokeWidth={2} aria-hidden="true" />
               افزودن درگاه
@@ -642,7 +642,7 @@ export function LlmPanel() {
           </div>
 
           {/* ── مدل پیش‌فرض سامانه ── */}
-          <div className="rounded-lg border border-border bg-background px-3 py-4">
+          <div className="rounded-lg border border-border bg-card px-3 py-4">
             <h3 className="mb-1 text-sm font-bold text-foreground">مدل پیش‌فرض سامانه</h3>
             <p className="mb-3 text-xs leading-6 text-muted-foreground">
               تیم‌هایی که مدل اختصاصی ندارند از این درگاه و مدل استفاده می‌کنند.
@@ -701,7 +701,7 @@ export function LlmPanel() {
           </div>
 
           {/* ── مدل امبدینگ ── */}
-          <div className="rounded-lg border border-border bg-background px-3 py-4">
+          <div className="rounded-lg border border-border bg-card px-3 py-4">
             <h3 className="mb-1 text-sm font-bold text-foreground">مدل امبدینگ</h3>
             <p className="mb-3 text-xs leading-6 text-muted-foreground">
               برای جست‌وجوی معنایی در حافظه تیم‌ها. فهرست مدل‌ها فقط مدل‌های
@@ -843,7 +843,7 @@ export function LlmPanel() {
           </div>
 
           {/* ── تست واقعی ── */}
-          <div className="rounded-lg border border-border bg-background px-3 py-4">
+          <div className="rounded-lg border border-border bg-card px-3 py-4">
             <h3 className="mb-1 text-sm font-bold text-foreground">تست واقعی</h3>
             <p className="mb-3 text-xs leading-6 text-muted-foreground">
               یک پرامپت کوتاه به درگاه و مدل انتخاب‌شده می‌فرستد و پاسخ واقعی را
