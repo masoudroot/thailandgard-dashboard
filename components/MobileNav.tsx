@@ -16,8 +16,11 @@ import {
 /** ۴ تب اصلی ناوبری پایینی: خانه، چرخه‌ها، تیم‌ها، صف ساخت */
 const TABS: NavItem[] = [NAV_ITEMS[0], NAV_ITEMS[1], NAV_ITEMS[2], NAV_ITEMS[4]];
 
-/** آیتم‌هایی که فقط در دراور «بیشتر» دیده می‌شوند */
-const MORE_HREFS = [NAV_ITEMS[3].href, NAV_ITEMS[5].href, NAV_ITEMS[6].href, NAV_ITEMS[7].href];
+/** آیتم‌های دراور «بیشتر»: همهٔ آیتم‌ها به‌جز تب‌های ناوبری پایینی (پویا، تا با افزودن آیتم تازه نشکند) */
+const TAB_HREFS = new Set(TABS.map((t) => t.href));
+const MORE_HREFS = NAV_ITEMS.filter((item) => !TAB_HREFS.has(item.href)).map(
+  (item) => item.href,
+);
 
 type TabButtonProps = {
   label: string;

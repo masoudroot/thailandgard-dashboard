@@ -10,6 +10,7 @@ import {
   Brain,
   ListChecks,
   FileText,
+  GitCommitHorizontal,
   Settings,
   LogOut,
   Plane,
@@ -23,7 +24,7 @@ export type NavItem = {
   icon: LucideIcon;
 };
 
-/** هر ۷ آیتم ناوبری داشبورد؛ منبع مشترک سایدبار دسکتاپ و دراور موبایل. */
+/** همهٔ آیتم‌های ناوبری داشبورد؛ منبع مشترک سایدبار دسکتاپ و دراور موبایل. */
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "خانه", icon: LayoutDashboard },
   { href: "/dashboard/cycles", label: "چرخه‌ها", icon: Repeat2 },
@@ -31,6 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/memory", label: "حافظه", icon: Brain },
   { href: "/dashboard/queue", label: "صف ساخت", icon: ListChecks },
   { href: "/dashboard/reports", label: "گزارش‌ها", icon: FileText },
+  { href: "/dashboard/changes", label: "تغییرات سایت", icon: GitCommitHorizontal },
   { href: "/dashboard/settings", label: "تنظیمات", icon: Settings },
   { href: "/dashboard/debug", label: "دستیار فنی", icon: Wrench },
 ];
