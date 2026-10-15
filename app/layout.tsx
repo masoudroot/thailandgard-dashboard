@@ -3,24 +3,22 @@ import localFont from "next/font/local";
 import "./globals.css";
 import "./interactions.css";
 
-/* فونت نمایشی تیترها: پینار، نسخه FD با ارقام فارسی */
+/* فونت نمایشی تیترها: پینار، نسخه FD با ارقام فارسی (وریبل، wght از ۳۰۰ تا ۹۰۰) */
 const fontDisplay = localFont({
-  src: [
-    { path: "../public/fonts/pinar/Pinar-FD-Regular.woff2", weight: "400" },
-    { path: "../public/fonts/pinar/Pinar-FD-Medium.woff2", weight: "500" },
-    { path: "../public/fonts/pinar/Pinar-FD-SemiBold.woff2", weight: "600" },
-    { path: "../public/fonts/pinar/Pinar-FD-Bold.woff2", weight: "700" },
-    { path: "../public/fonts/pinar/Pinar-FD-ExtraBold.woff2", weight: "800" },
-  ],
+  src: "../public/fonts/pinar/Pinar-FD-VF[wght-KSHD-DSTY].woff2",
   variable: "--font-display",
+  weight: "300 900",
   display: "swap",
 });
 
-/* فونت بدنه: ایران‌یکان X وریبل، پوشش وزن ۱۰۰ تا ۹۰۰ */
+/* فونت بدنه: ایران‌سنس X (Regular بدنه، Medium تأکید، Bold دکمه و لیبل مهم) */
 const fontBody = localFont({
-  src: "../public/fonts/iranyekanx/IRANYekanXVF.woff2",
+  src: [
+    { path: "../public/fonts/iransansx/IRANSansX-Regular.woff2", weight: "400" },
+    { path: "../public/fonts/iransansx/IRANSansX-Medium.woff2", weight: "500" },
+    { path: "../public/fonts/iransansx/IRANSansX-Bold.woff2", weight: "700" },
+  ],
   variable: "--font-body",
-  weight: "100 900",
   display: "swap",
 });
 

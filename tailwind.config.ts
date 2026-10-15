@@ -16,7 +16,7 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        /* بدنه: ایران‌یکان X (متغیر --font-body از next/font/local در layout) */
+        /* بدنه: ایران‌سنس X (متغیر --font-body از next/font/local در layout) */
         sans: ["var(--font-body)", "Tahoma", "ui-sans-serif", "sans-serif"],
         /* تیترها: پینار (متغیر --font-display) */
         display: ["var(--font-display)", "Tahoma", "ui-sans-serif", "sans-serif"],

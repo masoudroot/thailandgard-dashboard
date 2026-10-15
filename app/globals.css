@@ -120,6 +120,7 @@
   h5,
   h6 {
     font-family: var(--font-display);
+    letter-spacing: 0;
     text-wrap: balance;
   }
   h1 {
