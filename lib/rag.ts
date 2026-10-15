@@ -282,6 +282,7 @@ interface KnowledgeChunkInsert {
   title: string | null;
   chunk: string;
   embedding: number[];
+  source: string;
 }
 
 /**
@@ -326,6 +327,7 @@ export async function indexKnowledge(
       title: cleanTitle || null,
       chunk: text,
       embedding,
+      source: 'team-lesson',
     });
   }
 
