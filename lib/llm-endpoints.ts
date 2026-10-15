@@ -533,6 +533,11 @@ export async function testSingleModelHealth(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    // درگاه OpenAI-سازگار گوگل پیشوند models/ را نمی‌خواهد
+    const normalizedModel =
+      baseUrl.includes("generativelanguage.googleapis.com") && model.startsWith("models/")
+        ? model.slice("models/".length)
+        : model;
     const res = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -540,7 +545,7 @@ export async function testSingleModelHealth(
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model,
+        model: normalizedModel,
         messages: [{ role: 'user', content: 'سلام' }],
         max_tokens: 8,
         temperature: 0,

@@ -167,6 +167,12 @@ async function postChatCompletions(
     if (opts.system) messages.push({ role: "system", content: opts.system });
     messages.push({ role: "user", content: prompt });
 
+    // درگاه OpenAI-سازگار گوگل پیشوند models/ را نمی‌خواهد
+    const normalizedModel =
+      base.includes("generativelanguage.googleapis.com") && model.startsWith("models/")
+        ? model.slice("models/".length)
+        : model;
+
     const res = await fetch(`${base.replace(/\/+$/, "")}/chat/completions`, {
       method: "POST",
       headers: {
@@ -174,7 +180,7 @@ async function postChatCompletions(
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model,
+        model: normalizedModel,
         messages,
         max_tokens: opts.maxTokens,
         temperature: opts.temperature,
