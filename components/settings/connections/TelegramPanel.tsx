@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { RefreshCw, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Field } from "@/components/ui/Input";
+import { FaNumberInput } from "@/components/ui/FaNumberInput";
 import { Switch } from "@/components/ui/Switch";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import {
@@ -140,14 +141,11 @@ export function TelegramPanel() {
           htmlFor="tg-chat"
           hint="آیدی عددی چت یا کانالی که بات باید در آن پیام بفرستد."
         >
-          <Input
+          <FaNumberInput
             id="tg-chat"
-            type="text"
-            dir="ltr"
-            inputMode="numeric"
-            placeholder="مثلاً 123456789"
+            placeholder="مثلاً ۱۲۳۴۵۶۷۸۹"
             value={chatId}
-            onChange={(e) => setChatId(e.target.value)}
+            onChange={setChatId}
           />
         </Field>
 

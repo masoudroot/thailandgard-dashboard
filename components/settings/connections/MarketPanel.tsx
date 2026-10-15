@@ -5,6 +5,7 @@ import { Plus, RefreshCw, Trash2, TrendingUp } from "lucide-react";
 import { SkeletonLines } from "@/components/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { Input, Field, Label } from "@/components/ui/Input";
+import { FaNumberInput } from "@/components/ui/FaNumberInput";
 import { Switch } from "@/components/ui/Switch";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { faDigits } from "@/lib/format";
@@ -317,14 +318,12 @@ export function MarketPanel() {
                 تایم‌اوت (ثانیه)
               </Label>
               <div className="w-24">
-                <Input
+                <FaNumberInput
                   id="market-timeout"
-                  type="number"
-                  dir="ltr"
                   min={5}
                   max={300}
-                  value={timeoutSec}
-                  onChange={(e) => handleTimeout(e.target.value)}
+                  value={String(timeoutSec)}
+                  onChange={(v) => handleTimeout(v)}
                   onBlur={handleTimeoutBlur}
                 />
               </div>

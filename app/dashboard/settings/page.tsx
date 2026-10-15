@@ -5,6 +5,7 @@ import { Settings, Timer } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Input, Field } from "@/components/ui/Input";
+import { FaNumberInput } from "@/components/ui/FaNumberInput";
 import { ConnectionsHub } from "@/components/settings/connections/ConnectionsHub";
 import { SettingsBackup } from "@/components/settings/SettingsBackup";
 import { faDigits } from "@/lib/format";
@@ -79,14 +80,12 @@ export default function SettingsPage() {
               htmlFor="cycle-minutes"
               hint={`فاصله بین شروع خودکار چرخه‌ها: ${faDigits(cycleMinutes)} دقیقه`}
             >
-              <Input
+              <FaNumberInput
                 id="cycle-minutes"
-                type="number"
-                dir="ltr"
                 min={15}
                 step={15}
                 value={cycleMinutes}
-                onChange={(e) => setCycleMinutes(e.target.value)}
+                onChange={setCycleMinutes}
               />
             </Field>
             <Field
@@ -94,13 +93,11 @@ export default function SettingsPage() {
               htmlFor="llm-call-cap"
               hint={`حداکثر ${faDigits(llmCallCap)} فراخوانی در هر چرخه`}
             >
-              <Input
+              <FaNumberInput
                 id="llm-call-cap"
-                type="number"
-                dir="ltr"
                 min={1}
                 value={llmCallCap}
-                onChange={(e) => setLlmCallCap(e.target.value)}
+                onChange={setLlmCallCap}
               />
             </Field>
             <Field
@@ -108,14 +105,12 @@ export default function SettingsPage() {
               htmlFor="max-parallelism"
               hint={`حداکثر ${faDigits(maxParallelism)} تیم هم‌زمان در یک موج`}
             >
-              <Input
+              <FaNumberInput
                 id="max-parallelism"
-                type="number"
-                dir="ltr"
                 min={1}
                 max={15}
                 value={maxParallelism}
-                onChange={(e) => setMaxParallelism(e.target.value)}
+                onChange={setMaxParallelism}
               />
             </Field>
           </div>
