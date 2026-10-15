@@ -7,7 +7,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
-import { buildKnowledgePromptSection } from '../rag';
+import { buildKnowledgePromptSection, indexKnowledge } from '../rag';
 import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'branding';
@@ -150,6 +150,29 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     ? `چرخهٔ موفق: ${verdict.reason}`
     : `رد منتقد: ${verdict.reason}`;
   await remember(input.runId, lesson);
+
+  // استخراج دانش حرفه‌ای از حکم منتقد و ایندکس در RAG
+  // تا چرخه‌های بعد از این درس استفاده کنند، نه اینکه دوباره همان خطا تکرار شود.
+  try {
+    const knowledgeTitle = verdict.approved
+      ? `درس موفق برندینگ (${input.runId.slice(0, 8)})`
+      : `رد منتقد برندینگ (${input.runId.slice(0, 8)})`;
+    const knowledgeContent = [
+      `حکم منتقد: ${verdict.approved ? 'تأیید شد' : 'رد شد'}.`,
+      `دلیل: ${verdict.reason}`,
+      verdict.approved
+        ? 'این الگو موفق بود؛ در چرخه‌های بعد تکرار شود.'
+        : 'این الگو مردود است؛ در چرخه‌های بعد از آن پرهیز شود.',
+    ].join('\n');
+    await indexKnowledge(
+      `branding-lesson-${input.runId}`,
+      TEAM,
+      knowledgeTitle,
+      knowledgeContent,
+    );
+  } catch {
+    // fail-soft: اگر ایندکس دانش شکست خورد، چرخه نباید بایستد
+  }
 
   const summary = verdict.approved
     ? `تیم برندینگ این چرخه شعار، واژه‌نامهٔ یوایکس‌رایتینگ و فیلتر لحن را بازبینی و تولید کرد و منتقد آن را تأیید کرد. ${verdict.reason} ۳ گزینهٔ شعار نهایی برای تأیید مسعود آماده است و دو کار بعدی (واژه‌نامه و اصلاح لحن متن‌ها) در صف گذاشته شد.`
