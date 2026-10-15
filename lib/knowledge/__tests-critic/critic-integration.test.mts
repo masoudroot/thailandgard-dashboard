@@ -1,6 +1,6 @@
 /**
  * تست یکپارچگی نقد←دانش (تیم ۱۸ از ۲۰).
- * اجرا: npx tsx --test lib/knowledge/__tests-critic/critic-integration.test.mts
+ * اجرا: node --test lib/knowledge/__tests-critic/critic-integration.test.mts
  * بدون شبکه و دیتابیس واقعی: test-hooks.mjs ایمپورت‌های '../rag' و '../api'
  * را به فیکسچرهای حافظه‌ای fixtures/ هدایت می‌کند.
  */
@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 register('./test-hooks.mjs', import.meta.url);
 
-const { extractCriticKnowledge, criticKnowledgeLog } = await import('../critic-knowledge');
+const { extractCriticKnowledge, criticKnowledgeLog } = await import('../critic-knowledge.ts');
 const rag = await import('./fixtures/fake-rag.mjs');
 const api = await import('./fixtures/fake-api.mjs');
 const { ragState, resetRag, retrieveKnowledge } = rag;
