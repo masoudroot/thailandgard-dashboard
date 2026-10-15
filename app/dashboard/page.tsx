@@ -244,7 +244,7 @@ export default function DashboardHomePage() {
           className="tg-reveal rounded-xl border border-border bg-card p-6 shadow-surface md:p-10"
         >
           <div className="relative">
-            <h1 className="text-3xl font-extrabold md:text-4xl">
+            <h1 className="text-3xl font-extrabold">
               داشبورد ایجنتیک تایلندگرد
             </h1>
             <p className="mt-3 max-w-2xl text-lg text-muted-foreground">
@@ -495,7 +495,7 @@ export default function DashboardHomePage() {
                       key={w.wave}
                       className={`rounded-xl border p-4 ${
                         state === "active"
-                          ? "border-brand/50 bg-brand/[0.04]"
+                          ? "border-brand/50 bg-brand/5"
                           : "border-border"
                       }`}
                     >

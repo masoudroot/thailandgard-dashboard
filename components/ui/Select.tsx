@@ -41,7 +41,7 @@ export function Select({
           aria-invalid={error ? true : undefined}
           aria-describedby={[hintId, errorId].filter(Boolean).join(" ") || undefined}
           className={cx(
-            "w-full appearance-none rounded-md border bg-background py-2.5 pe-10 ps-3 text-base text-foreground transition-soft sm:text-sm",
+            "min-h-11 w-full appearance-none rounded-md border bg-background py-2.5 pe-10 ps-3 text-base text-foreground transition-soft sm:text-sm",
             "focus:outline-none focus:ring-2",
             "disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60",
             error

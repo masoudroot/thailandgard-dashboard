@@ -256,7 +256,7 @@ export default function ReportsPage() {
             >
               {/* سربرگ گزارش: تیم، تاریخ شمسی، ساعت تهران */}
               <header className="border-b border-border pb-6">
-                <h2 className="text-xl font-bold md:text-2xl">گزارش چرخهٔ {selected.run_id}</h2>
+                <h2 className="text-xl font-bold">گزارش چرخهٔ {selected.run_id}</h2>
                 <div className="mt-4 grid gap-4 sm:grid-cols-3">
                   <div>
                     <p className="text-xs text-muted-foreground">تیم‌ها</p>

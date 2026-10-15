@@ -59,7 +59,7 @@ export function NavList({ onNavigate }: { onNavigate?: () => void }) {
               aria-current={active ? "page" : undefined}
               onClick={onNavigate}
               className={[
-                "flex items-center gap-3 rounded-lg px-4 py-2.5 text-[15px] leading-6 transition-colors duration-200 motion-reduce:transition-none",
+                "flex min-h-11 items-center gap-3 rounded-lg px-4 py-2.5 text-base leading-6 transition-colors duration-200 motion-reduce:transition-none",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 active
                   ? "bg-brand/10 font-semibold text-brand"
@@ -104,7 +104,7 @@ export function LogoutButton({ onNavigate }: { onNavigate?: () => void }) {
     <button
       type="button"
       onClick={handleLogout}
-      className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-[15px] leading-6 text-destructive transition-colors duration-200 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
+      className="flex min-h-11 w-full items-center gap-3 rounded-lg px-4 py-2.5 text-base leading-6 text-destructive transition-colors duration-200 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
     >
       <LogOut className="h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
       <span>خروج</span>

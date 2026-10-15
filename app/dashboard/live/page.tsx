@@ -98,7 +98,7 @@ function ControlButton({
         type="button"
         onClick={run}
         disabled={busy}
-        className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors disabled:opacity-50 ${tone}`}`
+        className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors disabled:opacity-50 ${tone}`}
       >
         <Icon size={14} strokeWidth={2} aria-hidden="true" />
         {busy ? '…' : label}

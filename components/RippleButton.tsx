@@ -33,7 +33,7 @@ export default function RippleButton({
     ink.style.left = `${e.clientX - rect.left - size / 2}px`;
     ink.style.top = `${e.clientY - rect.top - size / 2}px`;
     el.appendChild(ink);
-    window.setTimeout(() => ink.remove(), 600);
+    window.setTimeout(() => ink.remove(), 350);
   }
 
   return (

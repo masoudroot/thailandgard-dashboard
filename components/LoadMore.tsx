@@ -44,7 +44,7 @@ export default function LoadMore({ visible, total, onShowMore }: LoadMoreProps) 
       <button
         type="button"
         onClick={onShowMore}
-        className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-border bg-card px-5 py-2 text-sm font-medium text-card-foreground shadow-control transition-colors hover:bg-accent"
+        className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-card px-5 py-2 text-sm font-medium text-card-foreground shadow-control transition-colors hover:bg-accent"
       >
         <ChevronDown size={16} strokeWidth={2} aria-hidden="true" />
         نمایش بیشتر

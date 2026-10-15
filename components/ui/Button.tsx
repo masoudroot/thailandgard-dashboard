@@ -25,9 +25,9 @@ const VARIANTS: Record<ButtonVariant, string> = {
 };
 
 const SIZES: Record<ButtonSize, string> = {
-  sm: "min-h-11 px-3 text-[13px]",
+  sm: "min-h-11 px-3 text-sm",
   md: "min-h-11 px-5 text-sm",
-  lg: "min-h-[52px] px-7 text-base",
+  lg: "min-h-12 px-7 text-base",
 };
 
 export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {

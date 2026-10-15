@@ -35,7 +35,7 @@ export default function PageHeader({
             <Icon size={22} strokeWidth={1.75} />
           </span>
           <div className="min-w-0">
-            <h1 className="text-xl font-bold text-foreground sm:text-2xl">{title}</h1>
+            <h1 className="text-xl font-bold text-foreground">{title}</h1>
             {subtitle && (
               <p className="mt-1 text-sm leading-7 text-muted-foreground">{subtitle}</p>
             )}

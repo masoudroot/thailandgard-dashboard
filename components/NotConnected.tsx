@@ -26,7 +26,7 @@ export default function NotConnected({ onRetry, retrying = false }: NotConnected
             <button
               onClick={onRetry}
               disabled={retrying}
-              className="tg-btn inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90 disabled:opacity-50"
+              className="tg-btn inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90 disabled:opacity-50"
             >
               {retrying ? 'در حال تلاش…' : 'تلاش دوباره'}
             </button>
