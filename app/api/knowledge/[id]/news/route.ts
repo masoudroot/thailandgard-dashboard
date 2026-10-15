@@ -14,9 +14,9 @@ import { fetchTeamNews, teamHasNewsSource } from '@/lib/knowledge-news';
  */
 export async function GET(
   _request: Request,
-  { params }: { params: { team: string } },
+  { params }: { params: { id: string } },
 ): Promise<Response> {
-  const team = params.team as TeamName;
+  const team = params.id as TeamName;
   if (!TEAMS.includes(team)) {
     return fail('تیم نامعتبر است.', 404);
   }
