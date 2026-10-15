@@ -190,7 +190,7 @@ export default function MobileNav() {
         aria-modal="true"
         aria-label="منوی ناوبری"
         className={[
-          "fixed inset-y-0 start-0 z-50 flex w-72 max-w-[80vw] flex-col bg-card shadow-xl lg:hidden",
+          "fixed inset-y-0 start-0 z-50 flex w-72 max-w-[80vw] flex-col bg-card shadow-overlay lg:hidden",
           "transition-[transform,visibility] duration-200 ease-out motion-reduce:transition-none",
           open ? "visible translate-x-0" : "invisible translate-x-full",
         ].join(" ")}

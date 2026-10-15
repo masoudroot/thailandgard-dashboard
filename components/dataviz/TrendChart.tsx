@@ -188,7 +188,7 @@ export default function TrendChart({
         {hp && (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-xl border border-border bg-card px-3 py-1.5 text-center shadow-lg"
+            className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-xl border border-border bg-card px-3 py-1.5 text-center shadow-overlay"
             style={{
               left: `${(hx / W) * 100}%`,
               top: `${Math.max(0, ((hy - 64) / H) * 100)}%`,

@@ -1,9 +1,10 @@
 import type { Config } from "tailwindcss";
 
 /**
- * تم داشبورد تایلندگرد.
+ * تم داشبورد تایلندگرد: گرافیت (technical minimal).
  * رنگ‌ها از متغیرهای CSS در app/globals.css می‌آیند (:root برای روشن، .dark برای تیره).
  * در کامپوننت‌ها هرگز کد رنگ مستقیم ننویسید؛ فقط همین توکن‌ها.
+ * خط مویی border/input آلفای خود را از گرافیت می‌گیرند (۸٪ و ۱۱٪)؛ سایهٔ نمایشی نداریم.
  * چیدمان راست‌به‌چپ است؛ فقط کلاس‌های منطقی (ms- / me- / ps- / pe- / start- / end-) به کار برود.
  */
 const config: Config = {
@@ -34,8 +35,8 @@ const config: Config = {
         "muted-foreground": "rgb(var(--muted-foreground) / <alpha-value>)",
         accent: "rgb(var(--accent) / <alpha-value>)",
         "accent-foreground": "rgb(var(--accent-foreground) / <alpha-value>)",
-        border: "rgb(var(--border) / <alpha-value>)",
-        input: "rgb(var(--input) / <alpha-value>)",
+        border: "rgb(var(--border) / 0.08)",
+        input: "rgb(var(--input) / 0.11)",
         ring: "rgb(var(--ring) / <alpha-value>)",
         brand: "rgb(var(--brand) / <alpha-value>)",
         "brand-foreground": "rgb(var(--brand-foreground) / <alpha-value>)",
@@ -50,18 +51,19 @@ const config: Config = {
       },
       borderRadius: {
         DEFAULT: "var(--radius)",
-        sm: "var(--shape-sm)",
-        md: "var(--shape-md)",
-        lg: "var(--shape-lg)",
-        xl: "var(--shape-xl)",
+        sm: "var(--shape-control)",
+        md: "var(--radius)",
+        lg: "var(--shape-overlay)",
+        xl: "var(--shape-surface)",
       },
       boxShadow: {
-        control: "var(--shadow-control)",
-        surface: "var(--shadow-surface)",
-        sm: "var(--shadow-sm)",
-        md: "var(--shadow-md)",
-        lg: "var(--shadow-lg)",
-        xl: "var(--shadow-xl)",
+        control: "var(--depth-control)",
+        surface: "var(--depth-surface)",
+        overlay: "var(--depth-overlay)",
+        sm: "0 0 #0000",
+        md: "0 0 #0000",
+        lg: "0 0 #0000",
+        xl: "0 0 #0000",
       },
     },
   },

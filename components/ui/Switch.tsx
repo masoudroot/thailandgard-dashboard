@@ -57,7 +57,7 @@ export function Switch({
         <span
           aria-hidden="true"
           className={cx(
-            "absolute start-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 motion-reduce:transition-none",
+            "absolute start-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 motion-reduce:transition-none",
             checked && "translate-x-5 rtl:-translate-x-5",
           )}
         />

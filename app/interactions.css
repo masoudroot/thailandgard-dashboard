@@ -8,7 +8,7 @@
    ───────────────────────────────────────────────────────────── */
 
 :root {
-  --tg-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --tg-ease: var(--motion-ease);
   --tg-fast: 150ms;
   --tg-base: 200ms;
   --tg-enter: 280ms;
@@ -30,36 +30,25 @@
   }
 }
 .tg-btn:active {
-  transform: scale(0.97);
+  transform: var(--press);
 }
 .tg-btn:disabled {
   transform: none;
 }
 
-/* ── کارت‌ها: بالا آمدن ظریف و سایه عمیق‌تر ── */
+/* ── کارت‌ها: هاور فقط بوردر را کمی پررنگ می‌کند؛ بدون سایه و بدون جابه‌جایی ── */
 .tg-card {
   transition:
-    transform var(--tg-base) var(--tg-ease),
-    box-shadow var(--tg-base) var(--tg-ease),
     border-color var(--tg-base) var(--tg-ease),
     background-color var(--tg-base) var(--tg-ease);
 }
 @media (hover: hover) and (pointer: fine) {
   .tg-card:hover {
-    transform: translateY(-3px);
-    box-shadow:
-      0 14px 32px rgb(62 57 50 / 0.14),
-      0 2px 6px rgb(62 57 50 / 0.08);
     border-color: rgb(var(--brand) / 0.25);
   }
 }
 .tg-card:active {
-  transform: scale(0.99);
-}
-.dark .tg-card:hover {
-  box-shadow:
-    0 14px 32px rgb(0 0 0 / 0.45),
-    0 2px 6px rgb(0 0 0 / 0.25);
+  transform: var(--press);
 }
 
 /* ── فیدبک فشردن برای هر المان تعاملی ── */
@@ -67,7 +56,7 @@
   transition: transform var(--tg-fast) var(--tg-ease);
 }
 .tg-press:active {
-  transform: scale(0.97);
+  transform: var(--press);
 }
 
 /* ── لینک‌ها: زیرخط متحرک و تغییر رنگ ── */
@@ -125,44 +114,17 @@
   transition: transform var(--tg-base) var(--tg-ease);
 }
 .tg-icon-btn:active {
-  transform: scale(0.94);
+  transform: var(--press);
 }
 
-/* ── اسکلت لودینگ: برق زدن ملایم ── */
+/* ── اسکلت لودینگ: پالس ملایم بدون گرادیان (زبان گرافیت) ── */
 .tg-shimmer {
-  position: relative;
-  overflow: hidden;
   background-color: rgb(var(--muted));
-  isolation: isolate;
+  animation: tg-shimmer-pulse 1.6s var(--motion-ease) infinite;
 }
-.tg-shimmer::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  background: linear-gradient(
-    100deg,
-    transparent 20%,
-    rgb(255 255 255 / 0.55) 50%,
-    transparent 80%
-  );
-  animation: tg-shimmer-sweep 1.6s ease-in-out infinite;
-}
-.dark .tg-shimmer::after {
-  background: linear-gradient(
-    100deg,
-    transparent 20%,
-    rgb(255 255 255 / 0.08) 50%,
-    transparent 80%
-  );
-}
-@keyframes tg-shimmer-sweep {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(-100%);
-  }
+@keyframes tg-shimmer-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 
 /* ── ورود صفحه: محو و لغزش کوتاه ── */
@@ -182,7 +144,7 @@
 
 /* ── ورود تکی المان ── */
 .tg-reveal {
-  animation: tg-reveal-item 320ms var(--tg-ease) both;
+  animation: tg-reveal-item 300ms var(--tg-ease) both;
 }
 @keyframes tg-reveal-item {
   from {
@@ -196,9 +158,9 @@
 }
 
 /* ── ورود پلکانی: فرزندهای مستقیم با تأخیر پشت سر هم ──
-   سقف ۱۶ آیتم با گام ۵۰ میلی‌ثانیه؛ بیشتر از آن هم‌زمان می‌آیند. */
+   گام ۵۰ میلی‌ثانیه با سقف ۴۰۰ میلی‌ثانیه؛ آیتم نهم به بعد هم‌زمان می‌آیند. */
 .tg-stagger > * {
-  animation: tg-reveal-item 320ms var(--tg-ease) both;
+  animation: tg-reveal-item 300ms var(--tg-ease) both;
 }
 .tg-stagger > *:nth-child(1) { animation-delay: 0ms; }
 .tg-stagger > *:nth-child(2) { animation-delay: 50ms; }
@@ -209,13 +171,13 @@
 .tg-stagger > *:nth-child(7) { animation-delay: 300ms; }
 .tg-stagger > *:nth-child(8) { animation-delay: 350ms; }
 .tg-stagger > *:nth-child(9) { animation-delay: 400ms; }
-.tg-stagger > *:nth-child(10) { animation-delay: 450ms; }
-.tg-stagger > *:nth-child(11) { animation-delay: 500ms; }
-.tg-stagger > *:nth-child(12) { animation-delay: 550ms; }
-.tg-stagger > *:nth-child(13) { animation-delay: 600ms; }
-.tg-stagger > *:nth-child(14) { animation-delay: 650ms; }
-.tg-stagger > *:nth-child(15) { animation-delay: 700ms; }
-.tg-stagger > *:nth-child(16) { animation-delay: 750ms; }
+.tg-stagger > *:nth-child(10) { animation-delay: 400ms; }
+.tg-stagger > *:nth-child(11) { animation-delay: 400ms; }
+.tg-stagger > *:nth-child(12) { animation-delay: 400ms; }
+.tg-stagger > *:nth-child(13) { animation-delay: 400ms; }
+.tg-stagger > *:nth-child(14) { animation-delay: 400ms; }
+.tg-stagger > *:nth-child(15) { animation-delay: 400ms; }
+.tg-stagger > *:nth-child(16) { animation-delay: 400ms; }
 
 /* ── موج ریپل روی دکمه ── */
 .tg-ripple {
@@ -229,7 +191,7 @@
   background: currentColor;
   opacity: 0.22;
   transform: scale(0);
-  animation: tg-ripple-spread 550ms var(--tg-ease) forwards;
+  animation: tg-ripple-spread 300ms var(--tg-ease) forwards;
   pointer-events: none;
 }
 @keyframes tg-ripple-spread {
@@ -241,7 +203,7 @@
 
 /* ── فیدبک موفقیت: جهش نرم ── */
 .tg-pop {
-  animation: tg-pop 380ms var(--tg-ease) both;
+  animation: tg-pop 300ms var(--tg-ease) both;
 }
 @keyframes tg-pop {
   0% {
@@ -260,7 +222,7 @@
 
 /* ── فیدبک خطا: لرزش کوتاه ── */
 .tg-shake {
-  animation: tg-shake 400ms var(--tg-ease) both;
+  animation: tg-shake 300ms var(--tg-ease) both;
 }
 @keyframes tg-shake {
   0%, 100% { transform: translateX(0); }
@@ -281,7 +243,7 @@
 
 /* ── نگهبان کاهش حرکت برای همین فایل ── */
 @media (prefers-reduced-motion: reduce) {
-  .tg-shimmer::after,
+  .tg-shimmer,
   .tg-page-enter,
   .tg-reveal,
   .tg-stagger > *,

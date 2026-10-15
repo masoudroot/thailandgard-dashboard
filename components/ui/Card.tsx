@@ -8,7 +8,7 @@ export type CardProps = React.HTMLAttributes<HTMLElement> & {
   interactive?: boolean;
 };
 
-/** کارت پایه: بوردر ۱px ظریف، بدون سایه، گوشهٔ ۱۲px، پدینگ سخاوتمندانه. */
+/** کارت پایه: بوردر ۱px ظریف، بدون سایه، گوشهٔ سطح گرافیت (۲۲px)، پدینگ سخاوتمندانه. */
 export function Card({
   interactive = false,
   className,
@@ -18,7 +18,7 @@ export function Card({
   return (
     <section
       className={cx(
-        "rounded-md border border-border bg-card text-card-foreground",
+        "rounded-xl border border-border bg-card text-card-foreground",
         interactive &&
           "cursor-pointer transition-soft hover:border-muted-foreground/60",
         className,

@@ -2,96 +2,141 @@
 @tailwind components;
 @tailwind utilities;
 
-/* توکن‌های طراحی: روشن (پیش‌فرض) و تیره (کلاس dark روی html)
-   قانون: همهٔ رنگ‌ها فقط از همین توکن‌ها می‌آیند؛ hex مستقیم در کد ممنوع. */
+/* توکن‌های طراحی گرافیت: روشن (پیش‌فرض) و تیره (کلاس dark روی html)
+   منبع مرجع: registry/r/themes/graphite.json
+   قانون: همهٔ رنگ‌ها فقط از همین توکن‌ها می‌آیند؛ hex مستقیم در کد ممنوع.
+   قالب ذخیره سه‌تایی RGB است تا rgb(var(--x) / alpha) و ماد آلفای تیلویند کار کنند؛
+   آلفای خط مویی border/input در نگاشت تیلویند پخته شده است. */
 :root {
-  /* پس‌زمینهٔ گرم و استخوانی؛ هرگز سفید سرد */
-  --background: 251 250 247;
-  --foreground: 62 57 50;
-  /* کارت: سفیدِ گرمِ مایل به کرم، نه سفید خالص */
-  --card: 255 254 250;
-  --card-foreground: 62 57 50;
-  --primary: 62 57 50;
-  --primary-foreground: 251 250 247;
-  --secondary: 240 238 232;
-  --secondary-foreground: 62 57 50;
-  --muted: 243 241 236;
-  --muted-foreground: 118 111 100;
-  --accent: 240 238 232;
-  --accent-foreground: 62 57 50;
-  --border: 228 224 214;
-  --input: 228 224 214;
-  --ring: 193 74 14;
-  --brand: 193 74 14;
-  --brand-foreground: 255 255 255;
-  --destructive: 190 40 40;
+  color-scheme: light;
+
+  /* رنگ: گرافیت روشن */
+  --background: 248 248 248; /* oklch(0.98 0 0) */
+  --foreground: 13 13 13; /* oklch(0.16 0 0) */
+  --card: 255 255 255; /* oklch(1 0 0) */
+  --card-foreground: 13 13 13;
+  --popover: 255 255 255;
+  --popover-foreground: 13 13 13;
+  --primary: 13 13 13; /* دکمهٔ تیره با متن روشن */
+  --primary-foreground: 250 250 250;
+  --secondary: 232 232 232; /* oklch(0.93 0 0) */
+  --secondary-foreground: 13 13 13;
+  --muted: 232 232 232;
+  --muted-foreground: 93 93 93; /* oklch(0.48 0 0) */
+  --accent: 232 232 232;
+  --accent-foreground: 13 13 13;
+  --destructive: 241 77 76; /* oklch(0.65 0.2 25) */
   --destructive-foreground: 255 255 255;
-  --success: 46 125 70;
+  --success: 42 204 138; /* oklch(0.75 0.16 160) */
   --success-foreground: 255 255 255;
-  --warning: 178 116 18;
-  --warning-foreground: 255 255 255;
+  --warning: 250 183 42; /* oklch(0.82 0.16 80) */
+  --warning-foreground: 46 18 0;
   --info: 13 148 136;
   --info-foreground: 255 255 255;
-  /* گوشه‌ها: یکدست ۸/۱۲px. --radius همان md است.
-     shape-lg و shape-xl فقط نامِ سازگاری‌اند و هم‌ارز md نگه داشته شده‌اند. */
-  --radius: 12px;
-  --shape-sm: 8px;
-  --shape-md: 12px;
-  --shape-lg: 12px;
-  --shape-xl: 12px;
-  /* سایه‌ها: حداکثر ۰.۰۴ opacity یا هیچ. سایه‌های سنگین حذف شدند؛
-     تفکیک لایه‌ها با بوردر ۱px و رنگ پس‌زمینه انجام می‌شود، نه با سایه.
-     shadow-lg و shadow-xl نامِ سازگاری‌اند و هم‌ارز md نگه داشته شده‌اند. */
-  --shadow-sm: 0 1px 2px rgb(62 57 50 / 0.04);
-  --shadow-md:
-    0 1px 2px rgb(62 57 50 / 0.03),
-    0 4px 12px rgb(62 57 50 / 0.04);
-  --shadow-lg: var(--shadow-md);
-  --shadow-xl: var(--shadow-md);
-  /* نام‌های قدیمی: نگهداری برای سازگاری */
-  --shadow-control: var(--shadow-sm);
-  --shadow-surface: var(--shadow-md);
-  color-scheme: light;
+  --border: 0 0 0; /* خط مویی مشکی ۸٪ */
+  --input: 0 0 0; /* خط مویی مشکی ۱۱٪ */
+  --ring: 158 158 158; /* oklch(0.7 0 0) */
+  --brand: 255 164 48; /* oklch(0.8 0.165 65)؛ لهجهٔ کهربایی فقط برای هایلایت کوچک */
+  --brand-foreground: 46 18 0; /* oklch(0.22 0.06 60) */
+
+  /* زبان طراحی گرافیت: فرم، خط، عمق، حرکت و تراکم */
+  --radius: 0.625rem;
+  --type-display-weight: 700;
+  --shape-control: calc(var(--radius) - 2px);
+  --shape-field: calc(var(--radius) - 2px);
+  --shape-surface: calc(var(--radius) + 12px);
+  --shape-overlay: calc(var(--radius) + 4px);
+  --line: 1px;
+  --line-field: 1px;
+  --line-style: solid;
+  --field: color-mix(in srgb, rgb(var(--background)) 60%, transparent);
+  --depth-control: 0 0 #0000;
+  --depth-press: 0 0 #0000;
+  --depth-field: 0 0 #0000;
+  --depth-surface: 0 1px 0 0 rgb(0 0 0 / 6%) inset;
+  --depth-overlay: 0 20px 50px -20px rgb(0 0 0 / 80%);
+  --surface-filter: none;
+  --press: scale(0.98);
+  --motion: 200ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --backdrop: none;
+  --spacing: 0.25rem;
+
+  /* نام‌های سازگاری قدیمی */
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
+  --shadow-lg: 0 0 #0000;
+  --shadow-xl: 0 0 #0000;
+  --shadow-control: var(--depth-control);
+  --shadow-surface: var(--depth-surface);
+  --shadow-overlay: var(--depth-overlay);
 }
 
 .dark {
-  /* زغالیِ گرم؛ هرگز مشکی خالص یا خاکستری سرد */
-  --background: 26 24 21;
-  --foreground: 245 243 239;
-  --card: 38 36 32;
-  --card-foreground: 245 243 239;
-  --primary: 245 243 239;
-  --primary-foreground: 26 24 21;
-  --secondary: 46 44 40;
-  --secondary-foreground: 245 243 239;
-  --muted: 40 38 34;
-  --muted-foreground: 172 164 152;
-  --accent: 46 44 40;
-  --accent-foreground: 245 243 239;
-  --border: 62 58 52;
-  --input: 62 58 52;
-  --ring: 240 176 60;
-  --brand: 240 176 60;
-  --brand-foreground: 26 24 21;
-  --destructive: 239 100 100;
-  --destructive-foreground: 26 24 21;
-  --success: 74 200 120;
-  --success-foreground: 26 24 21;
-  --warning: 245 178 60;
-  --warning-foreground: 26 24 21;
-  --info: 45 212 191;
-  --info-foreground: 26 24 21;
-  /* سایه‌ها: حداکثر ۰.۰۴ opacity؛ سایه‌های سنگین حذف شدند */
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04);
-  --shadow-md:
-    0 1px 2px rgb(0 0 0 / 0.03),
-    0 4px 12px rgb(0 0 0 / 0.04);
-  --shadow-lg: var(--shadow-md);
-  --shadow-xl: var(--shadow-md);
-  --shadow-control: var(--shadow-sm);
-  --shadow-surface: var(--shadow-md);
   color-scheme: dark;
+
+  /* رنگ: گرافیت تیره؛ بلوک مرجع graphite.json */
+  --background: 5 5 6; /* oklch(0.115 0.002 285) */
+  --foreground: 247 247 247; /* oklch(0.975 0 0) */
+  --card: 9 9 10; /* oklch(0.14 0.002 285) */
+  --card-foreground: 247 247 247;
+  --popover: 13 13 14; /* oklch(0.16 0.002 285) */
+  --popover-foreground: 247 247 247;
+  --primary: 247 247 247; /* دکمهٔ سفید با متن تیره */
+  --primary-foreground: 7 7 7; /* oklch(0.13 0 0) */
+  --secondary: 22 22 23; /* oklch(0.2 0.002 285) */
+  --secondary-foreground: 247 247 247;
+  --muted: 16 16 17; /* oklch(0.175 0.002 285) */
+  --muted-foreground: 137 137 139; /* oklch(0.63 0.004 285) */
+  --accent: 22 22 23;
+  --accent-foreground: 247 247 247;
+  --destructive: 241 77 76; /* oklch(0.65 0.2 25) */
+  --destructive-foreground: 7 7 7;
+  --success: 42 204 138; /* oklch(0.75 0.16 160) */
+  --success-foreground: 7 7 7;
+  --warning: 250 183 42; /* oklch(0.82 0.16 80) */
+  --warning-foreground: 7 7 7;
+  --info: 45 212 191;
+  --info-foreground: 7 7 7;
+  --border: 255 255 255; /* خط مویی سفید ۸٪ */
+  --input: 255 255 255; /* خط مویی سفید ۱۱٪ */
+  --ring: 158 158 158; /* oklch(0.7 0 0) */
+  --brand: 255 164 48; /* oklch(0.8 0.165 65)؛ لهجهٔ کهربایی فقط برای هایلایت کوچک */
+  --brand-foreground: 46 18 0; /* oklch(0.22 0.06 60) */
+
+  /* زبان طراحی گرافیت: فرم، خط، عمق، حرکت و تراکم */
+  --radius: 0.625rem;
+  --type-display-weight: 700;
+  --shape-control: calc(var(--radius) - 2px);
+  --shape-field: calc(var(--radius) - 2px);
+  --shape-surface: calc(var(--radius) + 12px);
+  --shape-overlay: calc(var(--radius) + 4px);
+  --line: 1px;
+  --line-field: 1px;
+  --line-style: solid;
+  --field: color-mix(in srgb, rgb(var(--background)) 60%, transparent);
+  --depth-control: 0 0 #0000;
+  --depth-press: 0 0 #0000;
+  --depth-field: 0 0 #0000;
+  --depth-surface: 0 1px 0 0 rgb(255 255 255 / 6%) inset;
+  --depth-overlay: 0 20px 50px -20px rgb(0 0 0 / 80%);
+  --surface-filter: none;
+  --press: scale(0.98);
+  --motion: 200ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --backdrop: none;
+  --spacing: 0.25rem;
+
+  /* نام‌های سازگاری قدیمی */
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
+  --shadow-lg: 0 0 #0000;
+  --shadow-xl: 0 0 #0000;
+  --shadow-control: var(--depth-control);
+  --shadow-surface: var(--depth-surface);
+  --shadow-overlay: var(--depth-overlay);
 }
+
 
 @layer base {
   html {
@@ -222,9 +267,9 @@
   .animate-slide-in {
     animation: tg-slide-in 220ms ease-out both;
   }
-  /* ورود مودال: fade به همراه translateY دوازده پیکسل در ۶۰۰ میلی‌ثانیه */
+  /* ورود مودال: fade به همراه translateY دوازده پیکسل در ۲۸۰ میلی‌ثانیه */
   .tg-modal-in {
-    animation: tg-modal-in 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: tg-modal-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
   .transition-soft {
     transition:
@@ -235,24 +280,6 @@
       transform 200ms ease,
       opacity 200ms ease;
   }
-}
-
-/* برق ملایم متحرک نوار پیشرفت */
-@keyframes tg-progress-shine {
-  0% {
-    transform: translateX(160%);
-    opacity: 0;
-  }
-  25% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateX(-420%);
-    opacity: 0;
-  }
-}
-.tg-progress-shine {
-  animation: tg-progress-shine 2.4s ease-in-out infinite;
 }
 
 /* کی‌فریم‌ها */

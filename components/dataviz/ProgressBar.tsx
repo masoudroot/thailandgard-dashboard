@@ -43,13 +43,8 @@ export default function ProgressBar({
         className="relative h-3 overflow-hidden rounded-full bg-muted"
       >
         <div
-          className="absolute inset-y-0 start-0 h-full rounded-full bg-brand transition-[width] duration-700 ease-out"
+          className="absolute inset-y-0 start-0 h-full rounded-full bg-brand transition-[width] duration-200 ease-out"
           style={{ width: `${pct}%` }}
-        />
-        {/* برق ملایم متحرک برای حس زنده بودن */}
-        <div
-          aria-hidden="true"
-          className="tg-progress-shine absolute inset-y-0 start-0 h-full w-1/3 rounded-full bg-white/25 blur-[6px]"
         />
       </div>
       {caption && (

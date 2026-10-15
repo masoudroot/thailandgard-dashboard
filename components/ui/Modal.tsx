@@ -75,7 +75,7 @@ export function Modal({
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
         className={cx(
-          "tg-modal-in max-h-[92dvh] w-full overflow-y-auto rounded-md border border-border bg-card p-5 text-card-foreground shadow-[0_8px_24px_rgb(var(--foreground)/0.08)] sm:p-6",
+          "tg-modal-in max-h-[92dvh] w-full overflow-y-auto rounded-lg border border-border bg-card p-5 text-card-foreground shadow-overlay sm:p-6",
           SIZES[size],
         )}
         onClick={(e) => e.stopPropagation()}
