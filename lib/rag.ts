@@ -10,6 +10,9 @@
  *   به یک رشته‌ی فارسی آماده‌ی تزریق در پرامپت تبدیل می‌کند.
  * - مسیر بازیابی fail-soft است: هر خطایی رشته‌ی خالی برمی‌گرداند تا
  *   فراخواننده هیچ‌وقت مسدود نشود.
+ * - `indexKnowledge` دانش تازه را چانک‌بندی و امبد می‌کند و در
+ *   `knowledge_chunks` می‌نویسد؛ `deleteKnowledgeIndex` چانک‌های یک دانش
+ *   را پاک می‌کند (قرارداد KNOWLEDGE_CONTRACT.md).
  */
 
 import { getSupabase } from './api';
@@ -171,6 +174,124 @@ export async function getTeamKnowledgeContext(
   task: string,
 ): Promise<string> {
   return retrieveKnowledge(task, team, DEFAULT_LIMIT);
+}
+
+/**
+ * بخش آمادهٔ پرامپت از دانش یک تیم (تیم ۱۳: اتصال تیم‌ها به دانش).
+ *
+ * خروجی `getTeamKnowledgeContext` را با سربرگ فارسی قالب‌بندی می‌کند تا
+ * تیم‌ها آن را در ابتدای بخش «زمینه»ی پرامپت سرپرست تزریق کنند.
+ * اگر دانشی نبود (جدول خالی، امبدینگ تنظیم نشده، خطای درگاه یا هر خطای
+ * دیگر) رشتهٔ خالی برمی‌گرداند تا پرامپت تیم دقیقاً مثل قبل بماند.
+ * هرگز خطا پرتاب نمی‌کند (best-effort).
+ */
+export async function buildKnowledgePromptSection(
+  team: string,
+  task: string,
+): Promise<string> {
+  try {
+    const context = await getTeamKnowledgeContext(team, task);
+    const trimmed = context.trim();
+    if (!trimmed) return '';
+    return [
+      `دانش ثبت‌شدهٔ تیم «${team}» (مرجع: هنگام تصمیم‌گیری و اجرا از آن استفاده کن):`,
+      trimmed,
+    ].join('\n');
+  } catch {
+    // fail-soft عمدی: نداشتن دانش بهتر از مسدود شدن تیم است.
+    return '';
+  }
+}
+
+/** سقف کاراکتر هر چانک در ایندکس دانش. */
+const INDEX_CHUNK_SIZE = 1200;
+/** هم‌پوشانی بین چانک‌های پشت سر هم تا جمله‌های مرزی گم نشوند. */
+const INDEX_CHUNK_OVERLAP = 150;
+/** اندازه‌ی دسته در فراخوانی هم‌زمان امبدینگ. */
+const INDEX_BATCH_SIZE = 5;
+
+/**
+ * برش متن به چانک‌های حدود ۱۲۰۰ کاراکتری روی مرز جمله‌ها، با هم‌پوشانی.
+ */
+function splitIntoChunks(text: string): string[] {
+  const sentences = text.match(/[^.!؟!\n]+[.!؟!\n]*/g) ?? [text];
+  const chunks: string[] = [];
+  let current = '';
+  for (const s of sentences) {
+    const piece = s.trim();
+    if (!piece) continue;
+    const joined = current ? `${current} ${piece}` : piece;
+    if (joined.length > INDEX_CHUNK_SIZE && current) {
+      chunks.push(current.trim());
+      const tail = current.slice(-INDEX_CHUNK_OVERLAP);
+      current = `${tail} ${piece}`;
+    } else {
+      current = joined;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.length > 0 ? chunks : [text.slice(0, INDEX_CHUNK_SIZE)];
+}
+
+interface ChunkInsert {
+  knowledge_id: string;
+  team: string;
+  title: string;
+  chunk: string;
+  embedding: string;
+}
+
+/**
+ * ایندکس کردن یک دانش تازه: چانک‌بندی + امبدینگ هر چانک + درج در
+ * جدول `knowledge_chunks` (ستون‌های team و knowledge_id از قرارداد مایگریشن).
+ *
+ * خطا (تنظیم نبودن امبدینگ، خطای درگاه، خطای دیتابیس) را به‌صورت RAGError
+ * با پیام فارسی پرتاب می‌کند؛ فراخواننده تصمیم می‌گیرد درخواست اصلی را
+ * موفق نگه دارد یا نه.
+ */
+export async function indexKnowledge(
+  knowledgeId: string,
+  team: string,
+  title: string,
+  content: string,
+): Promise<void> {
+  const text = content.trim();
+  if (!text) {
+    throw new RAGError('متن دانش خالی است؛ ایندکس ممکن نیست.');
+  }
+  const chunks = splitIntoChunks(text);
+  const supabase = getSupabase();
+
+  for (let i = 0; i < chunks.length; i += INDEX_BATCH_SIZE) {
+    const batch = chunks.slice(i, i + INDEX_BATCH_SIZE);
+    const embeddings = await Promise.all(batch.map((c) => getEmbedding(c)));
+    const rows: ChunkInsert[] = batch.map((chunkText, j) => ({
+      knowledge_id: knowledgeId,
+      team,
+      title,
+      chunk: chunkText,
+      // pgvector قالب متنی [..] را می‌پذیرد.
+      embedding: `[${embeddings[j].join(',')}]`,
+    }));
+    const { error } = await withTimeout(supabase.from('knowledge_chunks').insert(rows));
+    if (error) {
+      throw new RAGError(`درج چانک‌ها در ایندکس دانش ناموفق بود: ${error.message}`);
+    }
+  }
+}
+
+/**
+ * حذف ایندکس یک دانش: پاک کردن همه‌ی چانک‌های knowledge_chunks
+ * با آن knowledge_id.
+ */
+export async function deleteKnowledgeIndex(knowledgeId: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await withTimeout(
+    supabase.from('knowledge_chunks').delete().eq('knowledge_id', knowledgeId),
+  );
+  if (error) {
+    throw new RAGError(`حذف ایندکس دانش ناموفق بود: ${error.message}`);
+  }
 }
 /* ------------------------------------------------------------------ */
 /* تیم ۳: ایندکس دانش (مسیر نوشتن)                                     */
