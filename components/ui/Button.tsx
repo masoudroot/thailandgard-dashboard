@@ -36,7 +36,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
       type={type}
       className={cn(
         // Shape, depth, press and motion come from the design-system tokens.
-        "inline-flex items-center justify-center whitespace-nowrap rounded-control font-semibold transition-all duration-(--motion) ease-motion",
+        "inline-flex items-center justify-center whitespace-nowrap rounded-sm font-semibold transition-all duration-(--motion) ease-motion",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         "disabled:pointer-events-none disabled:opacity-50 active:[transform:var(--press)]",
         "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
