@@ -18,6 +18,7 @@ import { SkeletonPanel } from '@/components/Skeleton';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Pagination } from '@/components/ui/pagination';
 
 type RegistryBadgeVariant =
   | 'default'
@@ -438,29 +439,14 @@ export default function ChangesPage() {
             })}
           </ol>
 
-          {/* صفحه‌بندی واقعی روی دادهٔ گیت‌هاب */}
-          <nav
-            aria-label="صفحه‌بندی تغییرات"
-            className="mt-6 flex items-center justify-between gap-3"
-          >
-            <Button
-              variant="outline"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-            >
-              قبلی
-            </Button>
-            <p className="text-sm text-muted-foreground">
-              صفحهٔ {faNum(page)}
-            </p>
-            <Button
-              variant="outline"
-              onClick={() => setPage((p) => p + 1)}
-              disabled={!hasMore}
-            >
-              بعدی
-            </Button>
-          </nav>
+          {/* صفحه‌بندی واقعی روی دادهٔ گیت‌هاب؛ total معلوم نیست پس صفحهٔ آخرِ شناخته‌شده: صفحهٔ بعد فقط وقتی هست که hasMore باشد */}
+          <div className="mt-6 flex justify-center">
+            <Pagination
+              page={page}
+              total={hasMore ? page + 1 : page}
+              onChange={setPage}
+            />
+          </div>
         </>
       )}
     </div>
