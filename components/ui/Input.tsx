@@ -41,7 +41,7 @@ export function Input({
         aria-invalid={error ? true : undefined}
         aria-describedby={[hintId, errorId].filter(Boolean).join(" ") || undefined}
         className={cx(
-          "w-full rounded-md border bg-background px-3 py-2.5 text-base text-foreground shadow-sm transition-soft sm:text-sm",
+          "w-full rounded-md border bg-background px-3 py-2.5 text-base text-foreground transition-soft sm:text-sm",
           "placeholder:text-muted-foreground",
           "focus:outline-none focus:ring-2",
           "disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60",

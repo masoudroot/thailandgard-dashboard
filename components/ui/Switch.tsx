@@ -42,6 +42,8 @@ export function Switch({
         onClick={() => onCheckedChange(!checked)}
         className={cx(
           "relative h-6 w-11 shrink-0 rounded-full transition-soft",
+          /* ناحیهٔ کلیک نامرئی: تاچ‌تارگت ۴۴px بدون تغییر ظاهر سوییچ */
+          "before:absolute before:-inset-2.5 before:content-['']",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           "disabled:cursor-not-allowed",
           checked ? "bg-brand" : "bg-input",

@@ -4,11 +4,11 @@ import * as React from "react";
 import { cx } from "./cx";
 
 export type CardProps = React.HTMLAttributes<HTMLElement> & {
-  /** کارت تعاملی: هاور، سایهٔ عمیق‌تر و بالا‌آمدن ظریف می‌گیرد. */
+  /** کارت تعاملی: هاور فقط بوردر را کمی پررنگ می‌کند؛ بدون سایه و بدون جابه‌جایی. */
   interactive?: boolean;
 };
 
-/** کارت پایه: سطح card، گوشهٔ xl، سایهٔ md. */
+/** کارت پایه: بوردر ۱px ظریف، بدون سایه، گوشهٔ ۱۲px، پدینگ سخاوتمندانه. */
 export function Card({
   interactive = false,
   className,
@@ -18,9 +18,9 @@ export function Card({
   return (
     <section
       className={cx(
-        "rounded-xl border border-border bg-card text-card-foreground shadow-md",
+        "rounded-md border border-border bg-card text-card-foreground",
         interactive &&
-          "transition-soft hover:-translate-y-0.5 hover:shadow-lg",
+          "cursor-pointer transition-soft hover:border-muted-foreground/60",
         className,
       )}
       {...rest}

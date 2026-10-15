@@ -14,18 +14,18 @@ export type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    "bg-brand text-brand-foreground shadow-sm hover:shadow-md hover:brightness-105 active:brightness-95",
+    "bg-brand text-brand-foreground hover:brightness-105 active:brightness-95",
   secondary:
-    "border border-border bg-secondary text-secondary-foreground shadow-sm hover:bg-accent",
+    "border border-border bg-secondary text-secondary-foreground hover:bg-accent",
   outline:
-    "border border-input bg-card text-foreground shadow-sm hover:bg-accent",
+    "border border-input bg-card text-foreground hover:bg-accent",
   ghost: "text-foreground hover:bg-accent",
   danger:
-    "bg-destructive text-destructive-foreground shadow-sm hover:shadow-md hover:brightness-105 active:brightness-95",
+    "bg-destructive text-destructive-foreground hover:brightness-105 active:brightness-95",
 };
 
 const SIZES: Record<ButtonSize, string> = {
-  sm: "min-h-9 px-3 text-[13px]",
+  sm: "min-h-11 px-3 text-[13px]",
   md: "min-h-11 px-5 text-sm",
   lg: "min-h-[52px] px-7 text-base",
 };
