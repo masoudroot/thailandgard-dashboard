@@ -10,6 +10,7 @@
  */
 
 import { getSupabase } from './api';
+import { getSetting } from './settings';
 
 const TIME_ZONE = 'Asia/Tehran';
 const LOCALE = 'fa-IR-u-nu-latn';
@@ -40,14 +41,38 @@ function buildHeader(team: string): string {
 }
 
 /**
+ * خواندن پیکربندی تلگرام: اول از جدول settings (هاب اتصال‌ها)، بعد از متغیر محیطی.
+ * توکن هرگز لاگ یا به کلاینت برگردانده نمی‌شود.
+ */
+export async function getTelegramConfig(): Promise<{ token: string | null; chatId: string | null; source: 'settings' | 'env' | null }> {
+  try {
+    const token = await getSetting<string | null>('telegram_bot_token', null);
+    const chatId = await getSetting<string | null>('telegram_chat_id', null);
+    if (token && chatId) return { token, chatId, source: 'settings' };
+  } catch {
+    // ادامه به env
+  }
+  const token = process.env.TELEGRAM_BOT_TOKEN ?? null;
+  const chatId = process.env.TELEGRAM_CHAT_ID ?? null;
+  if (token && chatId) return { token, chatId, source: 'env' };
+  return { token: null, chatId: null, source: null };
+}
+
+/** ماسک توکن برای نمایش: ۶ کاراکتر اول + … */
+export function maskTelegramToken(token: string): string {
+  if (token.length <= 10) return '••••••';
+  return `${token.slice(0, 6)}…${token.slice(-4)}`;
+}
+
+/**
  * ارسال پیام به تلگرام.
- * اگر TELEGRAM_BOT_TOKEN یا TELEGRAM_CHAT_ID تنظیم نشده باشد، فقط لاگ می‌کند و رد می‌شود.
+ * پیکربندی از جدول settings (هاب اتصال‌ها) خوانده می‌شود و در نبودش از متغیر محیطی.
+ * اگر هیچ‌کدام تنظیم نشده باشد، فقط لاگ می‌کند و رد می‌شود.
  * در صورت موفقیت، شناسه‌ی پیام تلگرام را برمی‌گرداند؛ وگرنه null.
  */
 export async function sendTelegram(team: string, message: string): Promise<string | null> {
   const text = `${buildHeader(team)}\n\n${message}`;
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const { token, chatId } = await getTelegramConfig();
 
   if (!token || !chatId) {
     console.warn('[notify] تلگرام پیکربندی نشده؛ پیام فقط لاگ شد.', { team, text });

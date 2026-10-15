@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SESSION_COOKIE, sessionCookieOptions, sha256 } from '@/lib/auth';
+import { SESSION_COOKIE, sessionCookieOptions } from '@/lib/auth';
+import { getExpectedPasswordHash, sha256Hex } from '@/lib/admin-auth';
 
 export async function POST(request: NextRequest) {
   let body: { password?: unknown };
@@ -14,8 +15,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'رمز عبور را وارد کنید.' }, { status: 400 });
   }
 
-  const expected = sha256(process.env.ADMIN_PASSWORD ?? 'changeme');
-  const provided = sha256(password);
+  const expected = await getExpectedPasswordHash();
+  const provided = await sha256Hex(password);
 
   if (provided !== expected) {
     // Small delay to blunt rapid brute-force retries.
