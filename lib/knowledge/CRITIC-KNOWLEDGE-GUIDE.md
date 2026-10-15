@@ -47,3 +47,52 @@ const knowledgeLog = criticKnowledgeLog(knowledgeResult);
 4. **ساختار دانش ذخیره‌شده** (در `team_knowledge.content`):
    - الگوی مردود / دلیل / دامنه / قاعده آینده / شاهد
 5. **source** رکورد: `critic-verdict` (قابل فیلتر در داشبورد)
+
+## حلقه نقد سه‌مرحله‌ای ← دانش
+
+وقتی تیم از حلقه نقد سه‌مرحله‌ای استفاده می‌کند (دور ۱ و ۲: رد ← دستور دقیق ← اجرا؛
+دور ۳: فقط نظارت و نظر نهایی)، بعد از **هر دور** خلاصه‌اش را ثبت کن:
+
+```typescript
+import {
+  recordFeedbackRound,
+  feedbackRoundLog,
+  type CriticRoundRecord,
+} from '../knowledge/critic-knowledge';
+
+const round: CriticRoundRecord = {
+  round: 1, // ۱، ۲ یا ۳
+  approved: verdict.approved,
+  reason: verdict.reason,        // شرح کامل با جزئیات
+  instruction: verdict.instruction, // دستور دقیق منتقد (مثل پرامپت)
+  outcome: 'خلاصه نتیجه اجرای دستور توسط تیم',
+};
+const roundResult = await recordFeedbackRound(TEAM, input.runId, round, { domain: 'لحن برند' });
+// feedbackRoundLog(roundResult, 1) را به لاگ اضافه کن
+```
+
+**source** رکورد هر دور: `critic-feedback-round`.
+
+بعد از **نظر نهایی منتقد (دور ۳)**، ساب‌ایجنت دانش آن را با تاریخچه کامل ثبت می‌کند:
+
+```typescript
+import { storeCriticFinalVerdict } from '../knowledge-subagent';
+
+await storeCriticFinalVerdict(
+  TEAM,
+  input.runId,
+  rounds,      // CriticRoundRecord[] هر سه دور
+  finalNote,   // نظر نهایی منتقد
+  'لحن برند',  // domain اختیاری
+);
+```
+
+**source** نظر نهایی: `knowledge-subagent` (طبق قرارداد ساب‌ایجنت دانش).
+
+**ورودی غنی‌شده `extractCriticKnowledge`:** فیلدهای اختیاری `instruction` (دستور دقیق منتقد)،
+`round` (شماره دور)، `rounds` (تاریخچه دورها) و `isFinal` (نظر نهایی دور ۳) هم در محتوا
+می‌آیند؛ فراخوانی‌های قدیمی بدون این فیلدها مثل قبل کار می‌کنند.
+
+**خوانده‌شدن در چرخه بعد:** هر سه نوع رکورد در RAG ایندکس می‌شوند و تیم در شروع نوبت بعد،
+از طریق `buildKnowledgePromptSection` (همان مسیر همیشگی دانش) آن‌ها را می‌خواند؛
+نیازی به تغییر مسیر خواندن نیست.

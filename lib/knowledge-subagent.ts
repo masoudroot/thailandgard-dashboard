@@ -24,6 +24,11 @@ import { getSupabase } from './api';
 import { TEAM_META } from './team-meta';
 import { indexKnowledge, retrieveKnowledgeChunks } from './rag';
 import { extractKnowledgePoints } from './knowledge-pipeline';
+import {
+  recordCriticFinalVerdict,
+  type CriticKnowledgeResult,
+  type CriticRoundRecord,
+} from './knowledge/critic-knowledge';
 
 /** آیتم دانش تازه استخراج‌شده از یک منبع. */
 export interface NewKnowledgeItem {
@@ -512,5 +517,30 @@ export async function runKnowledgeSubagent(
       `ساب‌ایجنت دانش تیم ${faName}: خطای غیرمنتظره؛ با دانش قبلی ادامه می‌دهیم.`,
       'خطای غیرمنتظره در ساب‌ایجنت دانش',
     );
+  }
+}
+
+/**
+ * ثبت نظر نهایی منتقد (دور ۳ حلقه نقد) در دانش تیم، به نام ساب‌ایجنت دانش.
+ *
+ * حلقه نقد سه‌مرحله‌ای: دور ۱ و ۲ (رد ← دستور دقیق ← اجرای تیم) و
+ * دور ۳ (فقط نظارت، بدون رد). این تابع بعد از نظر نهایی منتقد صدا زده
+ * می‌شود و تاریخچه کامل دورها + نظر نهایی را در team_knowledge با منبع
+ * 'knowledge-subagent' ثبت و در RAG ایندکس می‌کند تا چرخه‌های بعد
+ * پیش از شروع، از طریق buildKnowledgePromptSection آن را بخوانند.
+ *
+ * fail-soft: هرگز throw نمی‌کند.
+ */
+export async function storeCriticFinalVerdict(
+  team: TeamName,
+  runId: string,
+  rounds: CriticRoundRecord[],
+  finalNote: string,
+  domain?: string,
+): Promise<CriticKnowledgeResult> {
+  try {
+    return await recordCriticFinalVerdict(team, runId, rounds, finalNote, { domain });
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

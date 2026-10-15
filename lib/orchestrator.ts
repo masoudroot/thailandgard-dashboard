@@ -732,39 +732,54 @@ export async function runSingleTeam(
     await finish({
       status: teamStatus,
       progress: 100,
-      current_task: teamStatus === 'rejected' ? 'رد شد توسط منتقد' : 'پایان کار',
+      current_task:
+        teamStatus === 'rejected'
+          ? `رد شد توسط منتقد (بعد از ${roundLog.length} دور بازبینی)`
+          : roundLog.length > 1
+            ? `پایان کار (تأیید در دور ${roundLog.length})`
+            : 'پایان کار',
       output_summary: result.summary?.slice(0, 4000) ?? null,
       error: teamStatus === 'rejected' ? (result.summary?.slice(0, 4000) ?? null) : null,
       llm_calls: llmCalls,
+      // لاگ همهٔ دورهای حلقهٔ بازبینی (دستور مسعود): دور، تأیید/رد، دلیل، دستور
+      review_rounds: roundLog,
     });
-    // پچ پیشنهادی تیم → جدول bridge_patches (وضعیت proposed)؛
-    // بعد خودکار: دروازه کیفیت ← کامیت ← مرج به dev (بدون تأیید دستی، دستور مسعود).
-    // best-effort: هرگز نتیجهٔ تیم را خراب نمی‌کند.
-    try {
-      // تیم‌ها دو فیلد جدا دارند (patch در dev، patches در content/design/seo)؛ هر دو را می‌گیریم
-      const seen = new Set<string>();
-      const mergedPatches: PatchFile[] = [];
-      for (const p of [...(result.patch ?? []), ...(result.patches ?? [])]) {
-        const key = (p?.path ?? '').trim().toLowerCase();
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        mergedPatches.push(p);
-      }
-      const patchId = await registerProposedPatches(sb, {
-        team,
-        cycleId,
-        runId: ctx.runId,
-        summary: result.summary ?? '',
-        patches: mergedPatches,
-      });
-      if (patchId) {
-        await autoProcessBridgePatch(patchId, team);
-      }
-    } catch (err) {
-      console.error(
-        `[orchestrator] خطای غیرمنتظره در پل خودکار تیم ${team}:`,
-        err instanceof Error ? err.message : err,
+    // دروازه ثبت پچ (دستور مسعود): فقط پچ تیم موفقِ تأییدشده وارد پل می‌شود.
+    // تیم ردشده (approved=false → rejected) یا ناموفق (failed) اصلاً در bridge_patches ثبت نمی‌شود.
+    if (teamStatus !== 'success') {
+      console.log(
+        `[orchestrator] پچ تیم ${team} ثبت نشد چون منتقد رد کرد (وضعیت: ${teamStatus}).`,
       );
+    } else {
+      // پچ پیشنهادی تیم → جدول bridge_patches (وضعیت proposed)؛
+      // بعد خودکار: دروازه کیفیت ← کامیت ← مرج به dev (بدون تأیید دستی، دستور مسعود).
+      // best-effort: هرگز نتیجهٔ تیم را خراب نمی‌کند.
+      try {
+        // تیم‌ها دو فیلد جدا دارند (patch در dev، patches در content/design/seo)؛ هر دو را می‌گیریم
+        const seen = new Set<string>();
+        const mergedPatches: PatchFile[] = [];
+        for (const p of [...(result.patch ?? []), ...(result.patches ?? [])]) {
+          const key = (p?.path ?? '').trim().toLowerCase();
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          mergedPatches.push(p);
+        }
+        const patchId = await registerProposedPatches(sb, {
+          team,
+          cycleId,
+          runId: ctx.runId,
+          summary: result.summary ?? '',
+          patches: mergedPatches,
+        });
+        if (patchId) {
+          await autoProcessBridgePatch(patchId, team);
+        }
+      } catch (err) {
+        console.error(
+          `[orchestrator] خطای غیرمنتظره در پل خودکار تیم ${team}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
     // گزارش دوگانه: ثبت در پنل + ارسال به تلگرام (best-effort، مسدودکننده نیست).
     await notifyTeamReport({
