@@ -1,5 +1,5 @@
 /**
- * Jalali (شمسی) calendar conversion — Borkowski algorithm as used by jalaali-js.
+ * Jalali (شمسی) calendar conversion: Borkowski algorithm as used by jalaali-js.
  * Valid for Jalali years 1 … 3177. Dependency-free.
  */
 
