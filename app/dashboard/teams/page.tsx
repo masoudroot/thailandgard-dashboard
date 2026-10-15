@@ -12,33 +12,7 @@ import {
   type TeamRun,
   type TeamRunStatus,
 } from '../../../lib/types';
-
-const TEAM_META: Record<TeamName, { faName: string; mission: string }> = {
-  artdir: { faName: 'طراحی ارشد', mission: 'نگاه کلی و هدایت هنری کل پروژه' },
-  branding: { faName: 'برند', mission: 'هویت برند، لحن و شخصیت تایلندگرد' },
-  content: { faName: 'محتوا', mission: 'متن‌ها و پیام‌های اصلی صفحه‌ها' },
-  seo: { faName: 'سئو', mission: 'بهینه‌سازی فنی و ساختار برای گوگل' },
-  analytics: { faName: 'تحلیل', mission: 'داده‌ها، معیارها و سنجش عملکرد' },
-  intel: { faName: 'اطلاعات', mission: 'رصد بازار، رقبا و روندها' },
-  lead: { faName: 'لید', mission: 'ایده‌های تبدیل بازدیدکننده به درخواست' },
-  design: { faName: 'دیزاین', mission: 'چیدمان، ظاهر و تجربه صفحه‌ها' },
-  seocontent: { faName: 'محتوای سئو', mission: 'محتوای هدفمند برای رتبه گوگل' },
-  vibefarsi: { faName: 'وایب‌فارسی', mission: 'کامپوننت‌های فارسی استاندارد' },
-  farsiui: { faName: 'فارسی UI', mission: 'راست‌چین و جزئیات رابط فارسی' },
-  'design-ir': { faName: 'دیزاین ایرانی', mission: 'بومی‌سازی طرح برای سلیقه ایرانی' },
-  dev: { faName: 'توسعه', mission: 'پیاده‌سازی فنی و کد تمیز' },
-  qa: { faName: 'کیفیت', mission: 'آزمون، کنترل کیفیت و رفع ایراد' },
-  inspector: { faName: 'بازرس', mission: 'بازبینی نهایی و گزارش سلامت چرخه' },
-};
-
-const WAVE_TITLES: Record<number, string> = {
-  1: 'موج ۱',
-  2: 'موج ۲',
-  3: 'موج ۳',
-  4: 'موج ۴',
-  5: 'موج ۵',
-  6: 'موج ۶',
-};
+import { TEAM_META, WAVE_TITLES } from '../../../lib/team-meta';
 
 const STATUS_ORDER: TeamRunStatus[] = ['success', 'running', 'failed', 'pending', 'skipped'];
 
@@ -99,6 +73,7 @@ const SUMMARY_LABEL: Record<TeamRunStatus, string> = {
   failed: 'ناموفق',
   pending: 'در انتظار',
   skipped: 'صرف‌نظر شده',
+  stopped: 'متوقف شد',
 };
 
 export default function TeamsPage() {
@@ -197,6 +172,7 @@ export default function TeamsPage() {
                         outputSummary={run?.output_summary ?? null}
                         llmCalls={run?.llm_calls ?? 0}
                         error={run?.error ?? null}
+                        detailHref={`/dashboard/teams/${team}`}
                       />
                     );
                   })}

@@ -12,7 +12,7 @@
 import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
 import { fetchMarketData } from '../market';
-import type { MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
+import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 /** نام تیم در رجیستری تیم‌ها. */
 export const TEAM: TeamName = 'intel';
@@ -23,6 +23,8 @@ export const MISSION =
 
 /** ورودی استاندارد تیم از ارکستر (سازگار با TeamInput در lib/orchestrator.ts). */
 export interface TeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   runId: string;
   cycleId?: string;
   /** زمینه‌ی متنی از خروجی موج‌های قبلی / چانک‌های RAG (معادل «زمینه» در n8n). */
@@ -204,10 +206,12 @@ function countFeedItems(worker2Text: string): number | null {
  * کلید حافظه به شکل `learned:<runId>` ساخته می‌شود.
  */
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
   const runId = input.runId;
   try {
     // گام صفر: داده‌ی بازار از منبع بیرونی (کاملاً graceful؛
     // شکست آن فقط یادداشت می‌شود و چرخه را متوقف نمی‌کند).
+    await reportLive?.('دریافت داده‌ی بازار', 10);
     const market = await fetchMarketData();
     const marketContext =
       market.ok && market.data
@@ -220,6 +224,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       : `هشدار داده‌ی بازار: ${market.note ?? 'در دسترس نیست.'} چرخه بدون داده‌ی بازار ادامه یافت.`;
 
     // ۱. سرپرست: شکستن کار چرخه به سه مأموریت (با زمینه‌ی RAG + داده‌ی بازار)
+    await reportLive?.('سرپرست: طراحی مأموریت‌ها', 30);
     const supervisorText = await callLLM(SUPERVISOR_PROMPT(input.ragContext ?? '') + marketContext, {
       system: SUPERVISOR_SYSTEM,
       temperature: 0.2,
@@ -228,6 +233,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     const missions = parseMissions(supervisorText);
 
     // ۲. سه مجری به‌صورت موازی (معادل انشعاب n8n از نود سرپرست)
+    await reportLive?.('مجری‌ها: خبر، ثبت و دایجست', 60);
     const workerOutputs = await Promise.all(
       WORKER_ROLES.map((worker, i) =>
         callLLM(`مأموریت سرپرست:\n${missions[i]}\n\nنقش تو (${worker.label}): ${worker.body}`, {
@@ -240,6 +246,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     const [sourcesText, ingestText, digestText] = workerOutputs;
 
     // ۳. منتقد
+    await reportLive?.('منتقد: داوری خروجی', 85);
     const criticText = await callLLM(
       [
         'خروجی مجری ۱ (منابع خبری):',

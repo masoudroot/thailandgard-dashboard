@@ -17,7 +17,7 @@
 
 import { callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
-import type { QueuedTask, TeamName, TeamResult } from '../types';
+import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'content';
 
@@ -25,6 +25,8 @@ export const MISSION =
   'عمیق‌ترین محتوای فارسی سفر به تایلند را می‌نویسد (راهنما، ویزا، هزینه‌ها)؛ هیچ عددی بدون سند نوشته نمی‌شود.';
 
 export interface TeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   /** شناسه اجرای فعلی */
   runId: string;
   /** شناسه چرخه ارکستر */
@@ -74,10 +76,12 @@ const PERSIAN_DIGITS = ['۱', '۲', '۳'];
  * سه فراخوانی LLM: سرپرست، مجری‌ها، منتقد.
  */
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
   const context = input.context ?? input.input ?? '';
   const blockers: string[] = [];
 
   // فراخوانی ۱: سرپرست؛ شکستن کار چرخه به سه مأموریت مجزا
+  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
   const plan = await callLLMJson<SupervisorPlan>(
     [
       'زمینه',
@@ -96,6 +100,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const missionLines = PERSIAN_DIGITS.map(
     (digit, i) => `${digit}. ${missions[i] ?? '(مأموریت مشخص نشد)'}`,
   ).join('\n');
+  await reportLive?.('مجری‌ها: استخراج واقعیت‌ها و رکوردها', 50);
   const workers = await callLLMJson<WorkersOutput>(
     [
       'مأموریت‌های سرپرست',
@@ -111,6 +116,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   );
 
   // فراخوانی ۳: منتقد؛ داوری با معیارهای n8n
+  await reportLive?.('منتقد: داوری خروجی', 80);
   const verdict = await callLLMJson<CriticVerdict>(
     [
       'خروجی مجری ۱',

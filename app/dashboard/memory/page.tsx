@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Brain, Search, SearchX, X } from 'lucide-react';
+import { Brain, History, Search, SearchX, WifiOff, X } from 'lucide-react';
 import { TEAMS, type TeamName } from '@/lib/types';
 import EmptyState from '@/components/EmptyState';
 import PageHeader from '@/components/PageHeader';
@@ -26,11 +26,18 @@ const TEAM_LABELS: Record<TeamName, string> = {
   inspector: 'بازرس',
 };
 
+type TeamFilter = TeamName | 'all';
+
 interface MemoryRow {
   team: TeamName;
   key: string;
   value: unknown;
   updated_at: string;
+}
+
+interface HistoryEntry {
+  value: unknown;
+  superseded_at: string;
 }
 
 const faDigits = (n: number | string) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]);
@@ -49,58 +56,129 @@ function prettyJson(value: unknown): string {
   }
 }
 
-/** داده نمایشی؛ وقتی /api/memory در دسترس نیست استفاده می‌شود */
-function mockRows(team: TeamName): MemoryRow[] {
-  const now = new Date();
-  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3600_000).toISOString();
-  return [
-    {
-      team,
-      key: 'last_cycle_summary',
-      value: { status: 'success', cycles_done: 3, last_run: 'امروز صبح', notes: 'همه موج‌ها سبز شدند' },
-      updated_at: hoursAgo(2),
-    },
-    {
-      team,
-      key: 'blockers',
-      value: ['دسترسی API تایلندگرد', 'تأیید متن لندینگ توسط مدیر'],
-      updated_at: hoursAgo(7),
-    },
-    {
-      team,
-      key: 'preferences',
-      value: { tone: 'محاوره‌ای', digits: 'fa', rtl: true, max_items: 12 },
-      updated_at: hoursAgo(26),
-    },
-    {
-      team,
-      key: 'notes',
-      value: 'در چرخه بعدی اولویت با صفحات تور پرفروش است؛ آمار کلیک تماس چک شود.',
-      updated_at: hoursAgo(49),
-    },
-  ];
+/** کارت یک رکورد حافظه با تاریخچه‌ی تاشو. */
+function MemoryCard({ row }: { row: MemoryRow }) {
+  const [open, setOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<HistoryEntry[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  async function loadHistory() {
+    if (history !== null || historyLoading) return;
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(
+        `/api/memory/history?team=${encodeURIComponent(row.team)}&key=${encodeURIComponent(row.key)}`,
+        { cache: 'no-store' },
+      );
+      const json = await res.json().catch(() => null);
+      setHistory(res.ok && json?.ok !== false ? (json.data as HistoryEntry[]) : []);
+    } catch {
+      setHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  return (
+    <li className="overflow-hidden rounded-2xl border border-border bg-card shadow-surface">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex min-h-[52px] w-full items-center justify-between gap-3 px-4 py-3 text-start"
+      >
+        <span className="min-w-0">
+          <span className="block truncate font-mono text-sm font-semibold text-foreground" dir="ltr">
+            {row.key}
+          </span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">
+            {TEAM_LABELS[row.team]} · {jalaliFormatter.format(new Date(row.updated_at))}
+          </span>
+        </span>
+        <span className={`shrink-0 text-xs text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true">
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <div className="border-t border-border bg-muted/40">
+          <pre
+            dir="rtl"
+            className="overflow-x-auto whitespace-pre-wrap px-4 py-3 font-mono text-[13px] leading-7 text-foreground"
+          >
+            {prettyJson(row.value)}
+          </pre>
+          <div className="border-t border-border px-4 py-3">
+            <button
+              type="button"
+              onClick={() => {
+                const next = !historyOpen;
+                setHistoryOpen(next);
+                if (next) void loadHistory();
+              }}
+              aria-expanded={historyOpen}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-brand hover:underline"
+            >
+              <History size={14} strokeWidth={2} aria-hidden="true" />
+              {historyOpen ? 'بستن تاریخچه' : 'دیدن تاریخچه‌ی این رکورد'}
+            </button>
+
+            {historyOpen && (
+              <div className="mt-3 space-y-2">
+                {historyLoading && <p className="text-xs text-muted-foreground">در حال بارگذاری…</p>}
+                {!historyLoading && history !== null && history.length === 0 && (
+                  <p className="text-xs leading-6 text-muted-foreground">
+                    برای این رکورد نسخه‌ی قبلی ثبت نشده است.
+                  </p>
+                )}
+                {!historyLoading &&
+                  history !== null &&
+                  history.map((h, i) => (
+                    <div key={i} className="rounded-lg border border-border bg-card p-3">
+                      <p className="mb-1 text-[11px] text-muted-foreground">
+                        نسخه‌ی {faDigits(history.length - i)} · {jalaliFormatter.format(new Date(h.superseded_at))}
+                      </p>
+                      <pre
+                        dir="rtl"
+                        className="overflow-x-auto whitespace-pre-wrap font-mono text-xs leading-6 text-foreground"
+                      >
+                        {prettyJson(h.value)}
+                      </pre>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </li>
+  );
 }
 
 export default function MemoryPage() {
-  const [team, setTeam] = useState<TeamName>('content');
+  const [team, setTeam] = useState<TeamFilter>('all');
   const [rows, setRows] = useState<MemoryRow[]>([]);
   const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [usingMock, setUsingMock] = useState(false);
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'offline'>('loading');
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    setOpenKey(null);
-    fetch(`/api/memory?team=${team}`)
-      .then((res) => {
-        if (!res.ok) throw new Error('api-missing');
-        return res.json();
-      })
-      .then((data) => {
+    setState('loading');
+    fetch(`/api/memory?team=${team}`, { cache: 'no-store' })
+      .then(async (res) => {
+        const data = await res.json().catch(() => null);
         if (!alive) return;
-        const list = (data.ok ? data.data : data) as Array<{ team: TeamName; key: string; value: unknown; updated_at?: string }>;
+        if (!res.ok || data?.ok === false) {
+          setState('offline');
+          return;
+        }
+        const list = (data.data ?? []) as Array<{
+          team: TeamName;
+          key: string;
+          value: unknown;
+          updated_at?: string;
+        }>;
         setRows(
           (Array.isArray(list) ? list : []).map((r) => ({
             team: r.team,
@@ -109,15 +187,10 @@ export default function MemoryPage() {
             updated_at: r.updated_at ?? new Date().toISOString(),
           })),
         );
-        setUsingMock(false);
+        setState('ready');
       })
       .catch(() => {
-        if (!alive) return;
-        setRows(mockRows(team));
-        setUsingMock(true);
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
+        if (alive) setState('offline');
       });
     return () => {
       alive = false;
@@ -125,9 +198,13 @@ export default function MemoryPage() {
   }, [team]);
 
   const filtered = useMemo(() => {
-    const q = query.trim();
+    const q = query.trim().toLowerCase();
     if (!q) return rows;
-    return rows.filter((r) => r.key.toLowerCase().includes(q.toLowerCase()));
+    return rows.filter(
+      (r) =>
+        r.key.toLowerCase().includes(q) ||
+        prettyJson(r.value).toLowerCase().includes(q),
+    );
   }, [rows, query]);
 
   return (
@@ -136,7 +213,7 @@ export default function MemoryPage() {
         <PageHeader
           icon={Brain}
           title="نمایشگر حافظه"
-          subtitle="حافظه بلندمدت تیم‌ها؛ کلیدها و مقدارهای ذخیره‌شده در جدول team_memory"
+          subtitle="حافظه بلندمدت تیم‌ها؛ جست‌وجو در متن، فیلتر تیم و تاریخچه‌ی هر رکورد"
         />
 
         <div className="mb-4 flex flex-col gap-3 sm:flex-row">
@@ -144,9 +221,10 @@ export default function MemoryPage() {
             <span className="text-sm font-medium text-muted-foreground">تیم</span>
             <select
               value={team}
-              onChange={(e) => setTeam(e.target.value as TeamName)}
+              onChange={(e) => setTeam(e.target.value as TeamFilter)}
               className="rounded-xl border border-input bg-card px-3 py-2.5 text-foreground outline-none focus:border-ring"
             >
+              <option value="all">همه‌ی تیم‌ها</option>
               {TEAMS.map((t) => (
                 <option key={t} value={t}>
                   {TEAM_LABELS[t]} ({t})
@@ -156,7 +234,7 @@ export default function MemoryPage() {
           </label>
 
           <label className="flex flex-1 flex-col gap-1.5">
-            <span className="text-sm font-medium text-muted-foreground">جست‌وجو در کلیدها</span>
+            <span className="text-sm font-medium text-muted-foreground">جست‌وجو در متن</span>
             <span className="relative block">
               <Search
                 size={16}
@@ -167,8 +245,7 @@ export default function MemoryPage() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="مثلاً last_cycle"
-                dir="ltr"
+                placeholder="کلید یا محتوای مقدار…"
                 className={`w-full rounded-xl border border-input bg-card py-2.5 ps-9 text-start text-foreground outline-none placeholder:text-muted-foreground focus:border-ring ${query ? 'pe-10' : 'pe-3'}`}
               />
               {query && (
@@ -185,79 +262,69 @@ export default function MemoryPage() {
           </label>
         </div>
 
-        {usingMock && !loading && (
-          <p className="mb-4 rounded-xl border border-warning bg-warning/10 px-3 py-2 text-sm text-warning-foreground">
-            اتصال به API برقرار نشد؛ داده نمایشی نشان داده می‌شود.
-          </p>
-        )}
-
-        {loading ? (
+        {state === 'loading' && (
           <div className="tg-stagger space-y-3">
             {[0, 1, 2].map((i) => (
               <SkeletonPanel key={i} />
             ))}
           </div>
-        ) : filtered.length === 0 ? (
-          query ? (
-            <EmptyState
-              icon={SearchX}
-              title="کلیدی با این عبارت پیدا نشد"
-              description="عبارت دیگری را امتحان کنید، یا جست‌وجو را پاک کنید تا همهٔ کلیدهای حافظه دیده شوند."
-              action={
-                <button
-                  type="button"
-                  onClick={() => setQuery('')}
-                  className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border bg-card px-5 py-2 text-sm font-medium text-card-foreground shadow-control transition-colors hover:bg-accent"
-                >
-                  پاک کردن جست‌وجو
-                </button>
-              }
-            />
-          ) : (
-            <EmptyState
-              icon={Brain}
-              title="برای این تیم حافظه‌ای ثبت نشده است"
-              description="بعد از اولین اجرای تیم در چرخه، حافظهٔ بلندمدتش همین‌جا نمایش داده می‌شود."
-              tint="bg-brand/10 text-brand"
-            />
-          )
-        ) : (
-          <>
-            <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
-              {faDigits(filtered.length)} کلید در حافظه {TEAM_LABELS[team]}
-            </p>
-            <ul className="space-y-3">
-              {filtered.map((row) => {
-                const open = openKey === row.key;
-                return (
-                  <li key={row.key} className="overflow-hidden rounded-2xl border border-border bg-card shadow-surface">
-                    <button
-                      type="button"
-                      onClick={() => setOpenKey(open ? null : row.key)}
-                      aria-expanded={open}
-                      className="flex min-h-[52px] w-full items-center justify-between gap-3 px-4 py-3 text-start"
-                    >
-                      <span className="font-mono text-sm font-semibold text-foreground" dir="ltr">
-                        {row.key}
-                      </span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {jalaliFormatter.format(new Date(row.updated_at))}
-                      </span>
-                    </button>
-                    <div className={(open ? 'block' : 'hidden') + ' border-t border-border bg-muted/40'}>
-                      <pre
-                        dir="rtl"
-                        className="overflow-x-auto whitespace-pre-wrap px-4 py-3 font-mono text-[13px] leading-7 text-foreground"
-                      >
-                        {prettyJson(row.value)}
-                      </pre>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </>
         )}
+
+        {state === 'offline' && (
+          <EmptyState
+            icon={WifiOff}
+            title="به دیتابیس متصل نیست"
+            description="حافظه بارگذاری نشد. اتصال را بررسی کنید و دوباره تلاش کنید. هیچ داده‌ی نمایشی نشان داده نمی‌شود."
+            action={
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand px-5 py-2 text-sm font-medium text-brand-foreground shadow-control transition-colors hover:opacity-90"
+              >
+                تلاش دوباره
+              </button>
+            }
+          />
+        )}
+
+        {state === 'ready' &&
+          (filtered.length === 0 ? (
+            query ? (
+              <EmptyState
+                icon={SearchX}
+                title="چیزی با این عبارت پیدا نشد"
+                description="در کلیدها و متن مقدارها جست‌وجو شد. عبارت دیگری را امتحان کنید یا جست‌وجو را پاک کنید."
+                action={
+                  <button
+                    type="button"
+                    onClick={() => setQuery('')}
+                    className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border bg-card px-5 py-2 text-sm font-medium text-card-foreground shadow-control transition-colors hover:bg-accent"
+                  >
+                    پاک کردن جست‌وجو
+                  </button>
+                }
+              />
+            ) : (
+              <EmptyState
+                icon={Brain}
+                title="رکوردی ثبت نشده است"
+                description="بعد از اولین اجرای تیم‌ها در چرخه، حافظه‌ی بلندمدت همین‌جا نمایش داده می‌شود."
+                tint="bg-brand/10 text-brand"
+              />
+            )
+          ) : (
+            <>
+              <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
+                {faDigits(filtered.length)} رکورد
+                {team !== 'all' && ` در حافظه ${TEAM_LABELS[team as TeamName]}`}
+              </p>
+              <ul className="space-y-3">
+                {filtered.map((row) => (
+                  <MemoryCard key={`${row.team}:${row.key}`} row={row} />
+                ))}
+              </ul>
+            </>
+          ))}
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 /**
- * lib/teams/design.ts — تیم طراحی (design) تایلندگرد
+ * lib/teams/design.ts : تیم طراحی (design) تایلندگرد
  *
  * اقتباس از ورک‌فلو n8n: مجری بریف آرت‌دایرکشن با نزدیک‌ترین آیتم‌های
  * رجیستری وایب‌فارسی؛ سه مجری (نقد سه‌چشمی، دیف اجرایی برای dev، بازبینی
@@ -8,7 +8,7 @@
  */
 
 import { callLLM, callLLMJson } from '../llm';
-import type { MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
+import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'design';
 
@@ -16,6 +16,8 @@ export const MISSION =
   'مجری بریف آرت‌دایرکشن با نزدیک‌ترین آیتم‌های رجیستری وایب‌فارسی؛ هر روز حداقل یک تغییر بصری قابل‌مشاهده روی سایت منتشر می‌کند و دیزاین سیستم تایلندگرد را می‌سازد.';
 
 export interface TeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   cycleId: string;
   runId: string;
   ragContext: string;
@@ -122,8 +124,12 @@ async function remember(runId: string, lesson: string): Promise<void> {
 }
 
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
+  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
   const plan = await runSupervisor(input);
+  await reportLive?.('مجری‌ها: اجرای مأموریت‌ها', 50);
   const workersOutput = await runWorkers(input, plan);
+  await reportLive?.('منتقد: داوری خروجی', 80);
   const verdict = await runCritic(workersOutput);
 
   const tasks: QueuedTask[] = [];

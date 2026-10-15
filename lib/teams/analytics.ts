@@ -16,7 +16,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
-import type { QueuedTask, TeamName, TeamResult } from '../types';
+import type { MemoryEntry, ProgressReporter, QueuedTask, TeamName, TeamResult, TeamProgressInput } from '../types';
 
 export const TEAM: TeamName = 'analytics';
 
@@ -69,9 +69,21 @@ export interface RunTeamOptions {
   context?: string;
 }
 
+/**
+ * ورودی استاندارد اجرای تیم از ارکستر (سازگار با TeamInput در lib/orchestrator.ts).
+ * ارکستر همیشه یک آبجکت ورودی پاس می‌دهد؛ این امضا همان را می‌پذیرد.
+ */
+export interface AnalyticsTeamInput extends TeamProgressInput {
+  runId: string;
+  ragContext?: string;
+  context?: string;
+  memory?: MemoryEntry[];
+  previousWavesOutput?: Record<string, TeamResult | null>;
+}
+
 /** خط تیرهٔ بلند (U+2014) در هیچ خروجی نباید باشد. */
 function sanitize(input: string): string {
-  return input.replace(/—/g, '-');
+  return input.replace(/\u2014/g, '-');
 }
 
 /** سرپرست: سه مأموریت مجزا از روی زمینه می‌سازد. */
@@ -161,13 +173,18 @@ function extractTasks(payload: unknown): QueuedTask[] {
 }
 
 /** اجرای کامل تیم analytics در یک چرخه. */
-export async function runTeam(runId: string, opts: RunTeamOptions = {}): Promise<TeamResult> {
+export async function runTeam(input: AnalyticsTeamInput): Promise<TeamResult> {
+  const runId = typeof input?.runId === 'string' ? input.runId : 'unknown';
+  const reportLive = input?.reportProgress;
   try {
-    const missions = await planWork(opts.context ?? '');
+    await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
+    const missions = await planWork(input.ragContext ?? input.context ?? '');
+    await reportLive?.('مجری‌ها: تحلیل رفتار و متریک‌ها', 55);
     const outputs = (await Promise.all(
       missions.map((mission, i) => runWorker(mission, i as 0 | 1 | 2)),
     )) as [string, string, string];
 
+    await reportLive?.('منتقد: داوری خروجی', 85);
     const verdict = await judge(outputs);
 
     await writeMemory(TEAM, `learned:${runId}`, {

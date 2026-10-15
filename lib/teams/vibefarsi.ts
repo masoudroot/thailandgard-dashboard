@@ -8,7 +8,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
-import type { QueuedTask, TeamName, TeamResult } from '../types';
+import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'vibefarsi';
 
@@ -18,6 +18,8 @@ export const MISSION: string =
 
 /** ورودی اجرای تیم */
 export interface RunTeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   /** شناسه اجرای جاری (برای کلید حافظه) */
   runId: string;
   /** خروجی موج‌های قبلی؛ تیم design منبع اصلی ممیزی است */
@@ -109,6 +111,7 @@ function criticPrompt(text1: string, text2: string, text3: string): string {
  * منتقد داوری می‌کند و یادگیری چرخه در حافظه ثبت می‌شود.
  */
 export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
   const { runId, previousWavesOutput } = input;
   const designOutput = previousWavesOutput['design'] ?? null;
   const blockers: string[] = [];
@@ -119,6 +122,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
   }
 
   // قدم ۱: سرپرست، سه مأموریت مجری‌ها را مشخص می‌کند
+  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 20);
   const plan = await callLLMJson<SupervisorPlan>(supervisorPrompt(designOutput), {
     system: SYSTEM_SUPERVISOR,
   });
@@ -133,6 +137,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
   ]);
 
   // قدم ۳: منتقد
+  await reportLive?.('منتقد: داوری خروجی', 70);
   const verdict = await callLLMJson<CriticVerdict>(criticPrompt(text1, text2, text3), {
     system: SYSTEM_CRITIC,
     temperature: 0.2,

@@ -3,7 +3,7 @@ import { getLatestRunsByTeam } from '../../../../lib/errors';
 import { TEAMS, type TeamName, type TeamRun } from '../../../../lib/types';
 
 /**
- * GET /api/teams/status — جدیدترین ران هر ۱۵ تیم از داده‌ی واقعی team_runs.
+ * GET /api/teams/status : جدیدترین ران هر ۱۵ تیم از داده‌ی واقعی team_runs.
  * تیمی که هنوز هیچ رانی ندارد با وضعیت pending و فیلدهای خالی برمی‌گردد
  * (صادقانه، نه داده‌ی نمایشی).
  */

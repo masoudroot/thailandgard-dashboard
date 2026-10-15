@@ -3,7 +3,8 @@ import { ok, fail } from '@/lib/api';
 import { readMemory, writeMemory } from '@/lib/memory';
 
 /**
- * GET /api/memory?team=<team> — reads all memory entries for a team.
+ * GET /api/memory?team=<team> : reads all memory entries for a team.
+ * team=all برمی‌گرداند: همه‌ی تیم‌ها (برای فیلتر «همه»).
  */
 export async function GET(request: NextRequest) {
   const team = request.nextUrl.searchParams.get('team')?.trim() ?? '';
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/memory — body: { team, key, value } — upserts one entry.
+ * POST /api/memory : body: { team, key, value } : upserts one entry.
  */
 export async function POST(request: NextRequest) {
   let body: { team?: unknown; key?: unknown; value?: unknown } | null;

@@ -14,7 +14,7 @@
 
 import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
-import type { QueuedTask, TeamName, TeamResult } from '../types';
+import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 /** نام تیم در رجیستری سراسری (lib/types.ts). */
 export const TEAM: TeamName = 'farsiui';
@@ -28,6 +28,8 @@ export const INPUTS: TeamName[] = ['content'];
 
 /** ورودی runTeam. */
 export interface RunTeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   /** شناسهٔ اجرای چرخه؛ کلید حافظهٔ learned:<runId> از آن ساخته می‌شود. */
   runId: string;
   /** خروجی موج‌های قبلی؛ کلیدها نام تیم‌اند. این تیم previousWavesOutput['content'] را می‌خواند. */
@@ -281,13 +283,16 @@ function buildSummary(verdict: CriticVerdict): string {
  * متن‌هایی را می‌خواند که تیم محتوا در previousWavesOutput['content'] گذاشته است.
  */
 export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
   const { runId, previousWavesOutput } = input;
   const contentText = toText(previousWavesOutput['content']);
 
   // ۱. سرپرست: شکستن کار به سه مأموریت
+  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
   const missions = await planMissions(contentText);
 
   // ۲. سه مجری، موازی
+  await reportLive?.('مجری‌ها: سه خروجی موازی', 55);
   const [w1, w2, w3] = await Promise.all([
     callLLM(worker1Prompt(missions[0]), {
       system: WORKER_SYSTEM,
@@ -307,6 +312,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
   ]);
 
   // ۳. منتقد: داوری خروجی مجری‌ها
+  await reportLive?.('منتقد: داوری خروجی', 85);
   const verdict = await judge(w1, w2, w3);
 
   // ۴. ثبت در حافظهٔ تیم با کلید learned:<runId>

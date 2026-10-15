@@ -1,5 +1,5 @@
 /**
- * lib/teams/qa.ts — تیم qa (دروازهٔ کیفیت پیش از main)
+ * lib/teams/qa.ts : تیم qa (دروازهٔ کیفیت پیش از main)
  *
  * دروازهٔ کیفیت چرخه: هیچ تغییری بدون گذر از این تیم به main نزدیک نمی‌شود.
  * وابسته به خروجی تیم dev (موج ۴) است؛ همان نوبت توسعه را می‌آزماید.
@@ -10,7 +10,7 @@
 
 import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
-import type {
+import type { ProgressReporter,
   QueuedTask,
   TeamName,
   TeamResult,
@@ -35,6 +35,8 @@ const EXECUTOR_ROLES: string[] = [
 
 /** ورودی اجرای تیم: شناسهٔ اجرا و خروجی موج‌های قبلی (به‌ویژه dev). */
 export interface RunTeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   runId: string;
   previousWavesOutput: Partial<Record<TeamName, TeamResult | null>>;
 }
@@ -149,6 +151,7 @@ function tasksFromPayload(payload: unknown): QueuedTask[] {
  * اجرای کامل تیم qa برای یک چرخه.
  */
 export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
   const { runId, previousWavesOutput } = input;
   const context = buildContext(previousWavesOutput);
 
@@ -163,6 +166,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     'خروجی: فقط JSON معتبر با کلید workers شامل سه مأموریت متنی.',
   ].join('\n');
 
+  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 25);
   const supervisorText = await callLLM(supervisorPrompt, { system: SUPERVISOR_SYSTEM });
   const missions = parseSupervisorWorkers(supervisorText);
   const resolvedMissions =
@@ -199,6 +203,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     'تمرکز داوری: آیا باگ بحرانی انتشار را متوقف کرده، گزارش قدم‌به‌قدم قابل تکرار است و تست روی دادهٔ واقعی کاربر انجام نشده؟',
   ].join('\n');
 
+  await reportLive?.('منتقد: داوری خروجی', 70);
   const criticText = await callLLM(criticPrompt, {
     system: CRITIC_SYSTEM,
     temperature: 0.2,

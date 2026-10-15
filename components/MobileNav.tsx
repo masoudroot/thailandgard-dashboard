@@ -14,7 +14,7 @@ import {
 } from "./Nav";
 
 /** ۴ تب اصلی ناوبری پایینی: خانه، چرخه‌ها، تیم‌ها، صف ساخت */
-const TABS: NavItem[] = [NAV_ITEMS[0], NAV_ITEMS[1], NAV_ITEMS[2], NAV_ITEMS[4]];
+const TABS: NavItem[] = [NAV_ITEMS[0], NAV_ITEMS[2], NAV_ITEMS[3], NAV_ITEMS[5]];
 
 /** آیتم‌های دراور «بیشتر»: همهٔ آیتم‌ها به‌جز تب‌های ناوبری پایینی (پویا، تا با افزودن آیتم تازه نشکند) */
 const TAB_HREFS = new Set(TABS.map((t) => t.href));

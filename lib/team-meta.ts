@@ -1,0 +1,30 @@
+import type { TeamName } from './types';
+
+/** نام فارسی و مأموریت یک‌خطی هر ۱۵ تیم؛ منبع مشترک صفحه‌های تیم‌ها. */
+export const TEAM_META: Record<TeamName, { faName: string; mission: string }> = {
+  artdir: { faName: 'طراحی ارشد', mission: 'نگاه کلی و هدایت هنری کل پروژه' },
+  branding: { faName: 'برند', mission: 'هویت برند، لحن و شخصیت تایلندگرد' },
+  content: { faName: 'محتوا', mission: 'متن‌ها و پیام‌های اصلی صفحه‌ها' },
+  seo: { faName: 'سئو', mission: 'بهینه‌سازی فنی و ساختار برای گوگل' },
+  analytics: { faName: 'تحلیل', mission: 'داده‌ها، معیارها و سنجش عملکرد' },
+  intel: { faName: 'اطلاعات', mission: 'رصد بازار، رقبا و روندها' },
+  lead: { faName: 'لید', mission: 'ایده‌های تبدیل بازدیدکننده به درخواست' },
+  design: { faName: 'دیزاین', mission: 'چیدمان، ظاهر و تجربه صفحه‌ها' },
+  seocontent: { faName: 'محتوای سئو', mission: 'محتوای هدفمند برای رتبه گوگل' },
+  vibefarsi: { faName: 'وایب‌فارسی', mission: 'کامپوننت‌های فارسی استاندارد' },
+  farsiui: { faName: 'فارسی UI', mission: 'راست‌چین و جزئیات رابط فارسی' },
+  'design-ir': { faName: 'دیزاین ایرانی', mission: 'بومی‌سازی طرح برای سلیقه ایرانی' },
+  dev: { faName: 'توسعه', mission: 'پیاده‌سازی فنی و کد تمیز' },
+  qa: { faName: 'کیفیت', mission: 'آزمون، کنترل کیفیت و رفع ایراد' },
+  inspector: { faName: 'بازرس', mission: 'بازبینی نهایی و گزارش سلامت چرخه' },
+};
+
+/** عنوان فارسی موج‌ها. */
+export const WAVE_TITLES: Record<number, string> = {
+  1: 'موج ۱',
+  2: 'موج ۲',
+  3: 'موج ۳',
+  4: 'موج ۴',
+  5: 'موج ۵',
+  6: 'موج ۶',
+};

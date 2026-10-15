@@ -7,7 +7,7 @@
  */
 
 import { callLLM, callLLMJson } from '../llm';
-import type { MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
+import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'lead';
 
@@ -15,6 +15,8 @@ export const MISSION =
   'صاحب عملیات نیمهٔ دوم قیف است (از کلیک تماس تا تماس موفق): لیدهای تازه را پایش می‌کند، SLA را کنترل می‌کند و هشدار می‌دهد؛ خودش تماس نمی‌گیرد.';
 
 export interface TeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   cycleId: string;
   runId: string;
   ragContext: string;
@@ -150,14 +152,18 @@ async function remember(runId: string, lesson: string): Promise<void> {
 }
 
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
+  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
   const plan = await runSupervisor(input);
   const [mission1 = '', mission2 = '', mission3 = ''] = plan.workers ?? [];
 
+  await reportLive?.('مجری‌ها: پایش، SLA و تبدیل', 50);
   const outputs = await Promise.all([
     runWorkerMonitor(mission1),
     runWorkerSla(mission2),
     runWorkerConversion(mission3),
   ]);
+  await reportLive?.('منتقد: داوری خروجی', 80);
   const verdict = await runCritic(outputs as [string, string, string]);
 
   const safeReason = sanitizePII(verdict.reason ?? '');

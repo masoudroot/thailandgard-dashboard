@@ -1,5 +1,5 @@
 /**
- * lib/teams/seocontent.ts — تیم سئوی محتوا (seocontent)
+ * lib/teams/seocontent.ts : تیم سئوی محتوا (seocontent)
  *
  * پل بین تولید محتوا و سئوست؛ فقط روی محتواها کار می‌کند، نه سئوی تکنیکال.
  * به خروجی تیم content وابسته است و آن را از previousWavesOutput می‌خواند.
@@ -11,7 +11,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
-import type { QueuedTask, TeamName, TeamResult } from '../types';
+import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'seocontent';
 
@@ -24,6 +24,8 @@ const SYSTEM_CRITIC = 'تو منتقد سخت‌گیر تیم seocontent هست�
 
 /** ورودی اجرای تیم: خروجی موج‌های قبلی (کلید team به TeamResult). */
 export interface RunTeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   /** شناسهٔ اجرای چرخه؛ در کلید حافظه به شکل learned:<runId> می‌نشیند. */
   runId: string;
   /** شمارهٔ موج اجرایی این تیم. */
@@ -44,21 +46,21 @@ interface CriticVerdict {
 
 const WORKER_ROLES = [
   {
-    // مجری ۱ — شکار فرصت رتبه (analyze)
+    // مجری ۱ : شکار فرصت رتبه (analyze)
     temperature: 0.7,
     maxTokens: 2500,
     missionLine:
       'نقش تو: محتواهای موجود را می‌خوانی و فرصت‌های رتبه (کنیبالیزیشن، محتوای کهنه) را پیدا می‌کنی. فقط واقعیت؛ بدون حدس.',
   },
   {
-    // مجری ۲ — نگاشت کلمه‌کلیدی و لینک‌سازی داخلی (code)
+    // مجری ۲ : نگاشت کلمه‌کلیدی و لینک‌سازی داخلی (code)
     temperature: 0.3,
     maxTokens: 3000,
     missionLine:
       'نقش تو: نگاشت کلمه‌کلیدی به صفحه را نگه می‌داری و لینک‌سازی داخلی بین محتواها را اجرا می‌کنی. فقط واقعیت؛ بدون حدس.',
   },
   {
-    // مجری ۳ — بهینه‌سازی عنوان و متا و بریف سئو (write)
+    // مجری ۳ : بهینه‌سازی عنوان و متا و بریف سئو (write)
     temperature: 0.7,
     maxTokens: 3000,
     missionLine:
@@ -178,15 +180,19 @@ function coercePayload(raw: unknown): Record<string, unknown> {
  * سرپرست ← سه مجری موازی ← منتقد ← (تایید: حافظه + خروجی استاندارد) / (رد: بستهٔ بلوکر)
  */
 export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
   const contentSummary = summarizeContentOutput(input.previousWavesOutput['content']);
 
   try {
+    await reportLive?.('سرپرست: طراحی مأموریت‌ها', 20);
     const missions = await runSupervisor(contentSummary);
 
+    await reportLive?.('مجری‌ها: سه خروجی موازی', 55);
     const [out1, out2, out3] = await Promise.all(
       missions.map((mission, i) => runWorker(i, mission, contentSummary)),
     );
 
+    await reportLive?.('منتقد: داوری خروجی', 80);
     const verdict = await runCritic([out1, out2, out3]);
     const payload = coercePayload(verdict.payload);
 

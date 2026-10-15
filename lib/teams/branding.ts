@@ -1,5 +1,5 @@
 /**
- * lib/teams/branding.ts — تیم «صدای برند» تایلندگرد
+ * lib/teams/branding.ts : تیم «صدای برند» تایلندگرد
  *
  * اقتباس از ورک‌فلو n8n: سه خروجی برند (لحن، واژه‌نامهٔ یوایکس‌رایتینگ، شعار)
  * در سه فراخوانی LLM: سرپرست ← مجری‌ها (یکجا) ← منتقد.
@@ -7,7 +7,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
-import type { MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
+import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'branding';
 
@@ -15,6 +15,8 @@ export const MISSION =
   'صدای برند تایلندگرد است: لحن برند، واژه‌نامهٔ یوایکس‌رایتینگ و شعار را می‌سازد و حکم‌هایش برای تیم‌های دیزاین و محتوا لازم‌الاجراست.';
 
 export interface TeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   cycleId: string;
   runId: string;
   ragContext: string;
@@ -95,8 +97,12 @@ async function remember(runId: string, lesson: string): Promise<void> {
 }
 
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
+  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
   const plan = await runSupervisor(input);
+  await reportLive?.('مجری‌ها: اجرای مأموریت‌ها', 50);
   const workersOutput = await runWorkers(plan);
+  await reportLive?.('منتقد: داوری خروجی', 80);
   const verdict = await runCritic(workersOutput);
 
   const tasks: QueuedTask[] = [];

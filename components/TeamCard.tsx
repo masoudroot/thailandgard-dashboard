@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { TeamName, TeamRunStatus } from '../lib/types';
 import StatusBadge from './dataviz/StatusBadge';
 
@@ -18,6 +19,8 @@ export interface TeamCardProps {
   outputSummary: string | null;
   llmCalls: number;
   error?: string | null;
+  /** اگر داده شود، نام تیم به صفحه‌ی جزئیات/گزارش‌های تیم لینک می‌شود. */
+  detailHref?: string;
 }
 
 /**
@@ -31,12 +34,21 @@ export default function TeamCard({
   outputSummary,
   llmCalls,
   error,
+  detailHref,
 }: TeamCardProps) {
   return (
     <article className="tg-card flex h-full min-w-0 flex-col rounded-xl border border-border bg-card p-4 shadow-surface sm:p-5">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-base font-bold text-card-foreground">{faName}</h3>
+          <h3 className="text-base font-bold text-card-foreground">
+            {detailHref ? (
+              <Link href={detailHref} className="hover:text-brand hover:underline">
+                {faName}
+              </Link>
+            ) : (
+              faName
+            )}
+          </h3>
           <p className="mt-1 line-clamp-2 text-xs leading-6 text-muted-foreground">
             {mission}
           </p>

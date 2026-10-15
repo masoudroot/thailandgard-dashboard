@@ -11,7 +11,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
-import type { QueuedTask, TeamName, TeamResult } from '../types';
+import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'design-ir';
 
@@ -19,6 +19,8 @@ export const MISSION =
   '«چشم ایرانی» تایلندگرد: طرح نمی‌کشد و کد نمی‌زند، می‌بیند و با سه لنز فرهنگ دیداری ایرانی، زبان فارسی و نگاه مسافر ایرانی حکم لازم‌الاجرا می‌دهد.';
 
 export interface RunTeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   /** شناسهٔ اجرای جاری (برای کلید حافظه: learned:<runId>) */
   runId: string;
   /** خروجی تیم‌های موج‌های قبلی؛ این تیم ورودی previousWavesOutput['design'] را می‌خواند */
@@ -94,9 +96,11 @@ function payloadToTasks(payload: unknown): QueuedTask[] {
  * ورودی: خروجی تیم design از موج‌های قبلی. خروجی: TeamResult استاندارد.
  */
 export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
   const designOutput = describeDesignOutput(input.previousWavesOutput['design']);
 
   // ۱. سرپرست: شکستن کار این چرخه به سه مأموریت مجری
+  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
   const plan = await callLLMJson<SupervisorPlan>(
     [
       `زمینه و خروجی تیم design:\n${designOutput}`,
@@ -122,6 +126,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
       'فقط واقعیت؛ بدون حدس. نقدها را مشخص بنویس: کدام صفحه یا سکشن، چه ایرادی، چه راه‌حلی.',
     ].join('\n');
 
+  await reportLive?.('مجری‌ها: سه خروجی موازی', 50);
   const [text1, text2, text3] = await Promise.all([
     callLLM(
       `${workerPrompt(mission1)}\n\nنقش تو: خروجی‌های design را با سه لنز می‌خوانی و نقد روزانهٔ ۵ نقطهٔ سایت انجام می‌دهی.`,
@@ -138,6 +143,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
   ]);
 
   // ۳. منتقد سخت‌گیر
+  await reportLive?.('منتقد: داوری خروجی', 80);
   const verdict = await callLLMJson<CriticVerdict>(
     [
       `خروجی مجری ۱:\n${text1}`,

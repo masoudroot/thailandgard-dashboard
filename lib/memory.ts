@@ -28,19 +28,66 @@ function escapeLike(input: string): string {
 }
 
 /**
- * Reads all memory entries for a team.
+ * Reads all memory entries for a team, or for every team when team === 'all'.
  */
 export async function readMemory(team: string): Promise<MemoryEntry[]> {
-  const { data, error } = await getSupabase()
+  const query = getSupabase()
     .from('team_memory')
     .select('team, key, value, updated_at')
-    .eq('team', team)
+    .order('team', { ascending: true })
     .order('key', { ascending: true });
+  const { data, error } =
+    team === 'all' ? await query : await query.eq('team', team);
 
   if (error) {
     throw new Error(`readMemory failed: ${error.message}`);
   }
   return (data as MemoryRow[]).map(toEntry);
+}
+
+/** یک نسخه‌ی تاریخی از یک رکورد حافظه. */
+export interface MemoryHistoryEntry {
+  value: unknown;
+  superseded_at: string;
+}
+
+/** تاریخچه‌ی کامل یک رکورد (جدیدترین اول). */
+export async function readMemoryHistory(team: string, key: string): Promise<MemoryHistoryEntry[]> {
+  const { data, error } = await getSupabase()
+    .from('memory_history')
+    .select('value, superseded_at')
+    .eq('team', team)
+    .eq('key', key)
+    .order('superseded_at', { ascending: false })
+    .limit(50);
+  if (error) {
+    throw new Error(`readMemoryHistory failed: ${error.message}`);
+  }
+  return (data ?? []) as MemoryHistoryEntry[];
+}
+
+/**
+ * ثبت نسخه‌ی قبلی در تاریخچه؛ best-effort و بدون throw تا نوشتن
+ * اصلی هیچ‌وقت به‌خاطر تاریخچه مسدود نشود.
+ */
+async function archivePreviousVersion(team: string, key: string): Promise<void> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('team_memory')
+      .select('value')
+      .eq('team', team)
+      .eq('key', key)
+      .maybeSingle();
+    if (error || !data) return;
+    const { error: insertError } = await getSupabase()
+      .from('memory_history')
+      .insert({ team, key, value: (data as { value: unknown }).value });
+    if (insertError) {
+      console.error('[memory] failed to archive previous version:', insertError.message);
+    }
+  } catch (err) {
+    console.error('[memory] history archive failed:', err instanceof Error ? err.message : err);
+  }
 }
 
 /** Object form of writeMemory, used by some team modules. */
@@ -68,6 +115,9 @@ export async function writeMemory(
   const team = typeof teamOrArgs === 'string' ? teamOrArgs : teamOrArgs.team;
   const finalKey = typeof teamOrArgs === 'string' ? key! : teamOrArgs.key;
   const finalValue = typeof teamOrArgs === 'string' ? value : teamOrArgs.value;
+
+  // اول نسخه‌ی قبلی به تاریخچه می‌رود تا «تاریخچه‌ی کامل هر رکورد» حفظ شود.
+  await archivePreviousVersion(team, finalKey);
 
   const { error } = await getSupabase()
     .from('team_memory')

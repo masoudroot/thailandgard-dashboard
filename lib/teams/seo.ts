@@ -1,5 +1,5 @@
 /**
- * lib/teams/seo.ts — تیم سئو (seo)
+ * lib/teams/seo.ts : تیم سئو (seo)
  *
  * مأموریت: دیده شدن تایلندگرد در گوگل فارسی برای جست‌وجوهای تور تایلند.
  * به خروجی موج‌های قبلی وابسته است؛ خلاصه تیم محتوا از
@@ -10,7 +10,7 @@
  * دانش بازیابی‌شده (RAG) در صورت وجود از طریق input.knowledge تزریق می‌شود.
  */
 
-import type { QueuedTask, TeamName, TeamResult } from '../types';
+import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
 
@@ -22,6 +22,8 @@ export const MISSION =
 
 /** ورودی runTeam */
 export interface SeoTeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   /** شناسه اجرای جاری (برای کلید حافظه: learned:<runId>) */
   runId: string;
   /** خروجی تیم‌های موج‌های قبلی؛ تیم سئو خلاصه تیم محتوا را از ['content'] می‌خواند */
@@ -178,6 +180,7 @@ function coerceTasks(raw: CriticVerdict['payload']): QueuedTask[] {
  * خلاصه تیم محتوا از previousWavesOutput['content'] خوانده می‌شود.
  */
 export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
   const { runId, previousWavesOutput, knowledge } = input;
 
   try {
@@ -185,6 +188,7 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     const knowledgeText = knowledge?.trim() || '(دانش بازیابی‌شده‌ای در دسترس نیست)';
 
     // ۱. سرپرست: تصمیم چرخه و سه مأموریت
+    await reportLive?.('سرپرست: طراحی مأموریت‌ها', 20);
     const supervisorRaw = await callLLM(supervisorPrompt(knowledgeText, contentSummary), {
       system: 'تو سرپرست تیم سئوی تایلندگرد هستی.',
       temperature: 0.4,
@@ -202,6 +206,7 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     );
 
     // ۳. منتقد سخت‌گیر
+    await reportLive?.('منتقد: داوری خروجی', 70);
     const verdict = await callLLMJson<CriticVerdict>(criticPrompt(text1, text2, text3), {
       system: 'تو منتقد سخت‌گیر تیم سئو هستی. فقط JSON معتبر برمی‌گردانی.',
       temperature: 0.2,

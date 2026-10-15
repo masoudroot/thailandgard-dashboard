@@ -1,5 +1,5 @@
 /**
- * lib/teams/dev.ts — تیم توسعه (dev)
+ * lib/teams/dev.ts : تیم توسعه (dev)
  *
  * تصمیم‌های مدیر و طرح‌های تیم طراحی را به کد تمیز روی شاخهٔ dev تبدیل می‌کند.
  * چرخهٔ اجرا، اقتباس از ورک‌فلو n8n ‏«thailandgard-all-teams» است:
@@ -9,7 +9,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
-import type { QueuedTask, TeamName, TeamResult } from '../types';
+import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'dev';
 
@@ -19,6 +19,8 @@ export const MISSION =
 
 /** ورودی runTeam: شناسهٔ اجرا و خروجی تیم‌های موج‌های قبلی. */
 export interface DevTeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   runId: string;
   previousWavesOutput: Partial<Record<TeamName, TeamResult>>;
 }
@@ -77,6 +79,7 @@ function normalizeMissions(raw: string): string[] {
  * اگر منتقد رد کند، خروجی بلوکر است و حافظه نوشته نمی‌شود.
  */
 export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
   const { runId, previousWavesOutput } = input;
   const design = previousWavesOutput['design'];
   const designSummary =
@@ -88,6 +91,7 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
     `مأموریت تیم dev: ${MISSION}\n\n` +
     'بر اساس زمینه، تصمیم بگیر این چرخه چه کاری باید انجام شود و آن را به سه مأموریت مجزا برای سه مجری بشکن. ' +
     'خروجی فقط JSON معتبر با کلید workers شامل آرایه‌ای از سه مأموریت رشته‌ای.';
+  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
   const supervisorRaw = await callLLM(supervisorPrompt, {
     system: SUPERVISOR_SYSTEM,
     temperature: 0.3,
@@ -98,6 +102,7 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
   }
 
   // ۲) سه مجری: هر کدام مأموریت خودش را اجرا می‌کند
+  await reportLive?.('مجری‌ها: اجرای موازی مأموریت‌ها', 55);
   const workerTexts = await Promise.all(
     missions.map((mission, i) =>
       callLLM(`مأموریت سرپرست:\n${mission}\n\nنقش تو: ${WORKER_ROLES[i] ?? WORKER_ROLES[0]}`, {
@@ -114,6 +119,7 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
     `خروجی مجری ۳:\n${workerTexts[2] ?? ''}\n\n` +
     'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جمله)، payload. ' +
     'تمرکز داوری: آیا کد راست‌چین با logical CSS است، روی main دست نرفته و فایل محیطی کامیت نشده؟';
+  await reportLive?.('منتقد: داوری خروجی', 85);
   const verdict = await callLLMJson<CriticVerdict>(criticPrompt, {
     system: CRITIC_SYSTEM,
     temperature: 0.2,

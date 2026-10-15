@@ -11,7 +11,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
-import type { MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
+import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'artdir';
 
@@ -19,6 +19,8 @@ export const MISSION =
   '«سر» طراحی تایلندگرد است: کانسپت بصری، لی‌اوت، وایرفریم و تصمیم‌های آرت‌دایرکشن را می‌دهد، حکم نهایی زیبایی‌شناسی با اوست و نقد بصری روزانهٔ سایت را انجام می‌دهد؛ خودش اجرا نمی‌کند.';
 
 export interface TeamInput {
+  /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
+  reportProgress?: ProgressReporter;
   cycleId: string;
   runId: string;
   ragContext: string;
@@ -98,8 +100,12 @@ async function runCritic(workersOutput: string): Promise<CriticVerdict> {
 }
 
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
+  const reportLive = input.reportProgress;
+  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
   const plan = await runSupervisor(input);
+  await reportLive?.('مجری‌ها: اجرای مأموریت‌ها', 50);
   const workersOutput = await runWorkers(plan);
+  await reportLive?.('منتقد: داوری خروجی', 80);
   const verdict = await runCritic(workersOutput);
 
   const tasks: QueuedTask[] = [];
