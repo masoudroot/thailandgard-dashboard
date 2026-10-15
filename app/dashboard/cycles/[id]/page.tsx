@@ -170,7 +170,7 @@ export default function CycleDetailPage() {
           href="/dashboard/cycles"
           className="tg-link mb-6 inline-flex min-h-[44px] items-center gap-2 text-sm text-muted-foreground hover:text-brand"
         >
-          <ArrowRight size={16} strokeWidth={2} aria-hidden="true" />
+          <ArrowRight size={16} strokeWidth={2} aria-hidden="true" className="rotate-180" />
           بازگشت به لیست چرخه‌ها
         </Link>
 

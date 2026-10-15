@@ -18,7 +18,7 @@ import { getSetting, setSetting } from './settings';
 
 /** خط تیره‌ی بلند (U+2014) در هیچ خروجی نباید باشد. */
 function sanitize(input: string): string {
-  return input.replace(/—/g, '-');
+  return input.replace(/\u2014/g, '-');
 }
 
 function sleep(ms: number): Promise<void> {

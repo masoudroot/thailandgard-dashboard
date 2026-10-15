@@ -786,10 +786,10 @@ function LlmModelsCard() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-sm font-bold text-foreground">{ep.name}</p>
-                          <p dir="ltr" className="truncate text-left text-xs text-muted-foreground">
+                          <p dir="ltr" className="truncate text-start text-xs text-muted-foreground">
                             {ep.baseUrl}
                           </p>
-                          <p dir="ltr" className="mt-0.5 text-left font-mono text-xs text-muted-foreground">
+                          <p dir="ltr" className="mt-0.5 text-start font-mono text-xs text-muted-foreground">
                             {ep.apiKeyMasked}
                           </p>
                         </div>
