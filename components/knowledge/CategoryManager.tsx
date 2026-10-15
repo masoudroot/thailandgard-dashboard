@@ -279,18 +279,19 @@ function TreeNode({
         style={depth > 0 ? { marginInlineStart: `${depth * 1.25}rem` } : undefined}
       >
         {childCount > 0 ? (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
             onClick={() => setOpen((v) => !v)}
             aria-label={open ? `بستن زیرمجموعه‌های ${node.name}` : `باز کردن زیرمجموعه‌های ${node.name}`}
             aria-expanded={open}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-soft hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring"
           >
             <ChevronDown
               aria-hidden="true"
               className={cx("h-4 w-4 transition-transform", open ? "" : "-rotate-90")}
             />
-          </button>
+          </Button>
         ) : (
           <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40 ms-2" />
         )}
@@ -302,14 +303,15 @@ function TreeNode({
             {faNum(childCount)} زیرمجموعه
           </span>
         )}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
           onClick={() => onDelete(node)}
           aria-label={`حذف دستهٔ ${node.name}`}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-soft hover:bg-destructive/10 hover:text-destructive focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <Trash2 aria-hidden="true" className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
       {open && childCount > 0 && (
         <ul className="mt-1 space-y-1">

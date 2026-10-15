@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ChevronDown, FileText, History } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
 import { cx } from "@/components/ui/cx";
 
 export type KnowledgeVersion = {
@@ -166,12 +167,13 @@ export function KnowledgeHistory({
                   <p className="mt-1.5 line-clamp-2 text-sm font-medium leading-7">
                     {v.title}
                   </p>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setOpenVersionId(expanded ? null : v.id)}
                     aria-expanded={expanded}
                     aria-controls={`kh-content-${v.id}`}
-                    className="touch-target mt-2 inline-flex items-center gap-1.5 rounded-md text-xs font-medium leading-6 text-primary transition-soft hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="mt-2 px-2 text-xs text-primary hover:text-primary"
                   >
                     <FileText className="h-4 w-4" aria-hidden="true" />
                     {expanded ? "بستن متن" : "مشاهدهٔ متن"}
@@ -182,7 +184,7 @@ export function KnowledgeHistory({
                       )}
                       aria-hidden="true"
                     />
-                  </button>
+                  </Button>
                   {expanded && (
                     <div
                       id={`kh-content-${v.id}`}

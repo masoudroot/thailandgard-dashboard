@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Moon, Sun } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { PasswordInput } from '@/components/ui/password-input';
 
 /* تاگل سادهٔ تم: فقط کلاس dark روی html و ذخیره در localStorage.
    اسکریپت layout هنگام لود، انتخاب ذخیره‌شده (یا prefers-color-scheme) را اعمال می‌کند. */
@@ -25,14 +27,15 @@ function ThemeToggle() {
   }
 
   return (
-    <button
-      type="button"
+    <Button
+      variant="outline"
+      size="icon"
+      className="rounded-full"
       onClick={toggle}
       aria-label={dark ? 'حالت روشن' : 'حالت تیره'}
-      className="touch-target rounded-full border border-border bg-card text-muted-foreground shadow-control transition-soft hover:text-foreground"
     >
       {dark ? <Sun size={20} /> : <Moon size={20} />}
-    </button>
+    </Button>
   );
 }
 
@@ -96,22 +99,15 @@ export default function LoginPage() {
 
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-card-foreground mb-1.5"
-              >
+              <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-card-foreground">
                 رمز عبور
               </label>
-              <input
+              <PasswordInput
                 id="password"
-                type="password"
                 autoComplete="current-password"
-                enterKeyHint="go"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="h-12 w-full rounded-lg border border-input bg-background px-4 text-base text-foreground placeholder:text-muted-foreground outline-none transition-soft focus:border-ring focus:ring-2 focus:ring-ring/30"
                 placeholder="رمز عبور مدیر"
-                dir="ltr"
               />
             </div>
 
@@ -124,13 +120,14 @@ export default function LoginPage() {
               </p>
             )}
 
-            <button
+            <Button
               type="submit"
+              size="lg"
+              className="h-12 w-full text-base"
               disabled={loading}
-              className="tg-btn touch-target h-12 w-full rounded-lg bg-primary px-4 text-base font-semibold text-primary-foreground hover:brightness-95 active:brightness-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'در حال بررسی…' : 'ورود'}
-            </button>
+            </Button>
           </form>
         </div>
 

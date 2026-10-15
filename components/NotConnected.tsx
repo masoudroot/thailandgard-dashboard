@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { PlugZap } from 'lucide-react';
 import EmptyState from './EmptyState';
+import { Button } from '@/components/ui/Button';
 
 interface NotConnectedProps {
   /** تلاش دوباره برای بارگذاری داده */
@@ -27,13 +28,12 @@ export default function NotConnected({ onRetry, retrying = false }: NotConnected
         action={
           <>
             {onRetry ? (
-              <button
+              <Button
                 onClick={onRetry}
                 disabled={retrying}
-                className="tg-btn inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90 disabled:opacity-50"
               >
                 {retrying ? 'در حال تلاش…' : 'تلاش دوباره'}
-              </button>
+              </Button>
             ) : undefined}
             <Link
               href="/dashboard/settings"

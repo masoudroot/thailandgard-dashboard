@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { TEAMS } from '@/lib/types';
-import EmptyState from '@/components/EmptyState';
+import EmptyState from '@/components/ui/empty-state';
 import NotConnected from '@/components/NotConnected';
 import PageHeader from '@/components/PageHeader';
 import { SkeletonPanel } from '@/components/Skeleton';
@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Input, Label, Field } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/textarea';
+import { RadioGroup } from '@/components/ui/radio-group';
 import { faNum } from '@/lib/format';
 
 /* ------------------------------------------------------------------ */
@@ -154,14 +155,15 @@ function TaskDescription({ text }: { text: string }) {
       <p className={`text-sm leading-7 text-muted-foreground ${open ? '' : 'line-clamp-3'}`}>
         {text}
       </p>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="mt-1 inline-flex min-h-11 items-center text-xs font-medium text-brand hover:underline"
+        className="mt-1 px-2 text-xs text-brand hover:text-brand"
       >
         {open ? 'بستن' : 'بیشتر'}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -506,40 +508,26 @@ export default function QueuePage() {
                       تنظیمات اجرا
                     </legend>
                     <div className="grid gap-4 md:grid-cols-2">
-                      <div role="radiogroup" aria-label="حالت اجرا هنگام ثبت">
+                      <div>
                         <span className="mb-2 block text-sm font-medium">حالت اجرا هنگام ثبت</span>
-                        <div className="space-y-2">
-                          <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 has-[:checked]:border-brand">
-                            <input
-                              type="radio"
-                              name="execution-mode"
-                              checked={form.executionMode === 'now'}
-                              onChange={() => setForm((f) => ({ ...f, executionMode: 'now' }))}
-                              className="h-4 w-4 accent-[var(--brand)]"
-                            />
-                            <span className="text-sm">
-                              <span className="font-semibold">همین الان انجام شود</span>
-                              <span className="block text-xs text-muted-foreground">
-                                اجرای فوری با ساب‌ایجنت‌ها؛ نتیجه همین‌جا ثبت می‌شود
-                              </span>
-                            </span>
-                          </label>
-                          <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 has-[:checked]:border-brand">
-                            <input
-                              type="radio"
-                              name="execution-mode"
-                              checked={form.executionMode === 'cycle'}
-                              onChange={() => setForm((f) => ({ ...f, executionMode: 'cycle' }))}
-                              className="h-4 w-4 accent-[var(--brand)]"
-                            />
-                            <span className="text-sm">
-                              <span className="font-semibold">برود در چرخه</span>
-                              <span className="block text-xs text-muted-foreground">
-                                بعد از تأیید، در اسرع وقت توسط تیم در چرخه انجام می‌شود
-                              </span>
-                            </span>
-                          </label>
-                        </div>
+                        <RadioGroup
+                          variant="cards"
+                          name="execution-mode"
+                          value={form.executionMode}
+                          onChange={(v) => setForm((f) => ({ ...f, executionMode: v as 'now' | 'cycle' }))}
+                          options={[
+                            {
+                              value: 'now',
+                              label: 'همین الان انجام شود',
+                              description: 'اجرای فوری با ساب‌ایجنت‌ها؛ نتیجه همین‌جا ثبت می‌شود',
+                            },
+                            {
+                              value: 'cycle',
+                              label: 'برود در چرخه',
+                              description: 'بعد از تأیید، در اسرع وقت توسط تیم در چرخه انجام می‌شود',
+                            },
+                          ]}
+                        />
                       </div>
                       <div>
                         <span className="mb-2 block text-sm font-medium">نحوهٔ اجرای ساب‌ایجنت‌ها</span>
@@ -588,16 +576,12 @@ export default function QueuePage() {
               {STATUSES.map((s) => {
                 const active = tab === s.key;
                 return (
-                  <button
+                  <Button
                     key={s.key}
-                    type="button"
+                    variant={active ? "default" : "outline"}
+                    className="shrink-0 rounded-full"
                     onClick={() => setTab(s.key)}
                     aria-pressed={active}
-                    className={`tg-btn min-h-11 shrink-0 rounded-full border px-4 py-1.5 text-sm transition ${
-                      active
-                        ? 'border-primary bg-primary text-primary-foreground shadow-control'
-                        : 'border-border bg-card text-foreground hover:bg-accent'
-                    }`}
                   >
                     {s.label}
                     <span
@@ -605,7 +589,7 @@ export default function QueuePage() {
                     >
                       {faNum(counts[s.key])}
                     </span>
-                  </button>
+                  </Button>
                 );
               })}
             </nav>
@@ -635,7 +619,6 @@ export default function QueuePage() {
                           ? 'کارهای تأییدشده اینجا می‌مانند تا در چرخه یا فوری اجرا شوند.'
                           : undefined
                     }
-                    tint="bg-muted text-muted-foreground"
                     action={
                       tab === 'pending' ? (
                         <Button variant="default" onClick={() => setFormOpen(true)}>
@@ -745,28 +728,25 @@ export default function QueuePage() {
                             <div className="flex gap-2">
                               {task.status === 'pending' && (
                                 <>
-                                  {/* دکمهٔ تأیید سبز می‌ماند: رجیستری Button واریانت success ندارد و
-                                      primary هم برای «اجرا» رزرو است؛ فقط با توکن‌های تم. */}
-                                  <button
-                                    type="button"
+                                  <Button
+                                    variant="default"
+                                    className="bg-success text-success-foreground hover:bg-success/90"
                                     disabled={acting === task.id}
                                     onClick={() => handleApprove(task.id)}
-                                    className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-success px-5 py-1.5 text-sm font-semibold text-success-foreground transition-soft hover:brightness-105 disabled:pointer-events-none disabled:opacity-50"
                                   >
                                     {acting === task.id ? 'صبر کنید…' : 'تأیید کار'}
-                                  </button>
-                                  {/* ردِ خط‌دار قرمز هم معادل رجیستری ندارد؛ فقط با توکن‌های تم. */}
-                                  <button
-                                    type="button"
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    className="border-destructive/30 text-destructive hover:bg-destructive hover:text-white"
                                     disabled={acting === task.id}
                                     onClick={() => {
                                       setRejectingId(task.id);
                                       setRejectReason('');
                                     }}
-                                    className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-destructive px-5 py-1.5 text-sm font-semibold text-destructive transition-soft hover:bg-destructive hover:text-destructive-foreground disabled:pointer-events-none disabled:opacity-50"
                                   >
                                     رد کار
-                                  </button>
+                                  </Button>
                                 </>
                               )}
                               {(task.status === 'approved' || task.status === 'pending') && (

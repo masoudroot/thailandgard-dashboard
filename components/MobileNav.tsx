@@ -12,6 +12,7 @@ import {
   NavList,
   isNavActive,
 } from "./Nav";
+import { Button } from "./ui/Button";
 
 /** ۴ تب اصلی ناوبری پایینی: خانه، چرخه‌ها، تیم‌ها، صف ساخت */
 const TABS: NavItem[] = [NAV_ITEMS[0], NAV_ITEMS[2], NAV_ITEMS[3], NAV_ITEMS[5]];
@@ -73,6 +74,7 @@ function TabShell({
     );
   }
   return (
+    // تبِ ناوبری پایینی؛ الگوی ناوبری سفارشی است و معادل رجیستری ندارد. فقط با توکن‌های تم.
     <button
       ref={buttonRef}
       type="button"
@@ -197,15 +199,15 @@ export default function MobileNav() {
       >
         <div className="flex items-center justify-between gap-2 px-4 pt-5">
           <BrandMark />
-          <button
+          <Button
             ref={closeBtnRef}
-            type="button"
+            variant="ghost"
+            size="icon"
             onClick={close}
             aria-label="بستن منو"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
           >
             <X className="h-5 w-5" aria-hidden="true" />
-          </button>
+          </Button>
         </div>
         <div className="mt-6 flex-1 overflow-y-auto px-3">
           <NavList onNavigate={close} />

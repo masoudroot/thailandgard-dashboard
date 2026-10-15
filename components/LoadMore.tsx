@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { faNum } from '@/lib/format';
+import { Button } from '@/components/ui/Button';
 
 /**
  * هوک «نمایش بیشتر» برای لیست‌های بلند سمت کاربر:
@@ -41,14 +42,10 @@ export default function LoadMore({ visible, total, onShowMore }: LoadMoreProps) 
       <p className="text-xs text-muted-foreground" aria-live="polite">
         نمایش {faNum(visible)} از {faNum(total)}
       </p>
-      <button
-        type="button"
-        onClick={onShowMore}
-        className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-card px-5 py-2 text-sm font-medium text-card-foreground shadow-control transition-colors hover:bg-accent"
-      >
+      <Button variant="outline" onClick={onShowMore}>
         <ChevronDown size={16} strokeWidth={2} aria-hidden="true" />
         نمایش بیشتر
-      </button>
+      </Button>
     </div>
   );
 }

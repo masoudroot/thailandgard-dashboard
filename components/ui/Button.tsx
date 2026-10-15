@@ -26,9 +26,13 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   asChild?: boolean;
 }
 
-export function Button({ className, variant = "default", size = "md", type = "button", ...props }: ButtonProps) {
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { className, variant = "default", size = "md", type = "button", ...props },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type={type}
       className={cn(
         // Shape, depth, press and motion come from the design-system tokens.
@@ -43,4 +47,4 @@ export function Button({ className, variant = "default", size = "md", type = "bu
       {...props}
     />
   );
-}
+});
