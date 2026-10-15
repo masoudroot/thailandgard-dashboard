@@ -153,7 +153,7 @@ export default function DashboardHomePage() {
       });
       if (!cyclesRes.ok) throw new Error("cycles unavailable");
       const body = await cyclesRes.json().catch(() => null);
-      const raw = body?.ok ? body.data : (body?.data?.[0] ?? body?.[0]);
+      const raw = body?.ok ? body?.data?.[0] : (body?.data?.[0] ?? body?.[0]);
       setCycle((raw as CycleSummary) ?? null);
 
       /* هشدارها حیاتی نیست؛ نبودشان صفحه را نمی‌اندازد */
@@ -201,7 +201,7 @@ export default function DashboardHomePage() {
       hint: "منتظر شروع چرخه",
       tint: "bg-warning/10 text-warning",
     },
-    ...(cycle
+    ...(cycle?.id
       ? ([
           {
             icon: Clock3,

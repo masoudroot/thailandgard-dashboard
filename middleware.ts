@@ -5,11 +5,23 @@ export const SESSION_COOKIE = 'tg-admin';
 
 const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/login', '/login', '/favicon.ico']);
 
+/** مسیرهایی که کرون زمان‌بندی‌شده با هدر مخفی هم می‌تواند صدا بزند. */
+const CRON_PATHS = new Set(['/api/rates/fetch']);
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (PUBLIC_PATHS.has(pathname)) {
     return NextResponse.next();
+  }
+
+  // احراز کرون: هدر مخفیِ ست‌شده در متغیر محیطی RATES_CRON_SECRET
+  if (CRON_PATHS.has(pathname)) {
+    const cronSecret = process.env.RATES_CRON_SECRET;
+    const provided = request.headers.get('x-cron-secret');
+    if (cronSecret && provided && provided.length === cronSecret.length && provided === cronSecret) {
+      return NextResponse.next();
+    }
   }
 
   const protectedApi = pathname.startsWith('/api/');

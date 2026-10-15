@@ -11,6 +11,7 @@ import {
   ListChecks,
   FileText,
   GitCommitHorizontal,
+  TrendingUp,
   Settings,
   LogOut,
   Plane,
@@ -35,6 +36,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/queue", label: "صف ساخت", icon: ListChecks },
   { href: "/dashboard/reports", label: "گزارش‌ها", icon: FileText },
   { href: "/dashboard/changes", label: "تغییرات سایت", icon: GitCommitHorizontal },
+  { href: "/dashboard/rates", label: "نرخ ارز", icon: TrendingUp },
   { href: "/dashboard/settings", label: "تنظیمات", icon: Settings },
   { href: "/dashboard/debug", label: "دستیار فنی", icon: Wrench },
 ];
