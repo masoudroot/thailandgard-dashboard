@@ -4,7 +4,7 @@ import * as React from "react";
 import { ChevronDown, FolderPlus, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Input, Field } from "../ui/Input";
-import { Modal } from "../ui/Modal";
+import { Dialog } from "../ui/dialog";
 import { cx } from "../ui/cx";
 import { faNum } from "../../lib/format";
 import { CategoryPicker } from "./CategoryPicker";
@@ -126,7 +126,7 @@ export function CategoryManager({ team }: CategoryManagerProps) {
     <section aria-label="مدیریت دسته‌های دانش" className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold leading-7 text-foreground">دسته‌بندی‌ها</h2>
-        <Button size="sm" onClick={openAdd}>
+        <Button variant="default" size="sm" onClick={openAdd}>
           <FolderPlus aria-hidden="true" className="h-4 w-4" />
           دستهٔ تازه
         </Button>
@@ -155,7 +155,7 @@ export function CategoryManager({ team }: CategoryManagerProps) {
           <p className="text-sm leading-6 text-muted-foreground">
             هنوز دسته‌ای ساخته نشده. با دسته‌ها دانش تیم را مرتب نگه دارید.
           </p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={openAdd}>
+          <Button variant="default" size="sm" className="mt-3" onClick={openAdd}>
             <FolderPlus aria-hidden="true" className="h-4 w-4" />
             ساخت اولین دسته
           </Button>
@@ -170,14 +170,17 @@ export function CategoryManager({ team }: CategoryManagerProps) {
         </ul>
       )}
 
-      <Modal
+      <Dialog
         open={showAdd}
-        onClose={() => !saving && setShowAdd(false)}
+        onOpenChange={(o) => {
+          if (!o && !saving) setShowAdd(false);
+        }}
         title="دستهٔ تازه"
         description="نام فارسی دسته و محل قرارگیری‌اش در درخت را مشخص کنید."
         footer={
-          <div className="flex gap-2">
+          <>
             <Button
+              variant="default"
               onClick={() => void saveCategory()}
               disabled={saving}
               aria-busy={saving || undefined}
@@ -190,7 +193,7 @@ export function CategoryManager({ team }: CategoryManagerProps) {
             <Button variant="outline" onClick={() => setShowAdd(false)} disabled={saving}>
               انصراف
             </Button>
-          </div>
+          </>
         }
       >
         <div className="space-y-4">
@@ -217,15 +220,17 @@ export function CategoryManager({ team }: CategoryManagerProps) {
             disabled={saving}
           />
         </div>
-      </Modal>
+      </Dialog>
 
-      <Modal
+      <Dialog
         open={deleteTarget !== null}
-        onClose={() => !deleting && setDeleteTarget(null)}
+        onOpenChange={(o) => {
+          if (!o && !deleting) setDeleteTarget(null);
+        }}
         title="حذف دسته؟"
-        size="sm"
+        className="max-w-sm"
         footer={
-          <div className="flex gap-2">
+          <>
             <Button
               variant="destructive"
               onClick={() => void runDelete()}
@@ -240,7 +245,7 @@ export function CategoryManager({ team }: CategoryManagerProps) {
             <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>
               انصراف
             </Button>
-          </div>
+          </>
         }
       >
         {deleteTarget && (
@@ -252,7 +257,7 @@ export function CategoryManager({ team }: CategoryManagerProps) {
             حذف می‌شود. این کار قابل بازگشت نیست.
           </p>
         )}
-      </Modal>
+      </Dialog>
     </section>
   );
 }
@@ -304,9 +309,9 @@ function TreeNode({
           </span>
         )}
         <Button
-          variant="ghost"
+          variant="destructive"
           size="icon"
-          className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
+          className="h-8 w-8"
           onClick={() => onDelete(node)}
           aria-label={`حذف دستهٔ ${node.name}`}
         >

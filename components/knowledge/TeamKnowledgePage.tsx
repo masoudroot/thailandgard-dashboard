@@ -18,7 +18,8 @@ import { faNum } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonLines } from "@/components/Skeleton";
-import { Badge, Button, Card, CardContent, Modal } from "@/components/ui";
+import { Badge, Button, Card, CardContent } from "@/components/ui";
+import { Dialog } from "@/components/ui/dialog";
 import KnowledgeSearch from "./KnowledgeSearch";
 import {
   KnowledgeForm,
@@ -230,7 +231,7 @@ export default function TeamKnowledgePage({
                 امتیاز دانش {faNum(Math.round(score))} از {faNum(100)}
               </Badge>
             )}
-            <Button onClick={openAddForm}>
+            <Button variant="default" onClick={openAddForm}>
               <Plus size={18} aria-hidden="true" />
               افزودن دانش
             </Button>
@@ -273,7 +274,7 @@ export default function TeamKnowledgePage({
           title="هنوز دانشی ثبت نشده است"
           description="اولین دانش این تیم را اضافه کنید تا در جست‌وجو و پاسخ‌گویی تیم‌ها به کار رود."
           action={
-            <Button onClick={openAddForm}>
+            <Button variant="default" onClick={openAddForm}>
               <Plus size={18} aria-hidden="true" />
               افزودن دانش
             </Button>
@@ -364,12 +365,12 @@ export default function TeamKnowledgePage({
       />
 
       {/* تأیید حذف */}
-      <Modal
+      <Dialog
         open={deleteTarget !== null}
-        onClose={() => {
-          if (!deleting) setDeleteTarget(null);
+        onOpenChange={(o) => {
+          if (!o && !deleting) setDeleteTarget(null);
         }}
-        size="sm"
+        className="max-w-sm"
         title="این دانش حذف شود؟"
         footer={
           <>
@@ -403,7 +404,7 @@ export default function TeamKnowledgePage({
             {deleteError}
           </p>
         )}
-      </Modal>
+      </Dialog>
     </div>
   );
 }
@@ -443,7 +444,7 @@ function KnowledgeItemCard({
               )}
             </Button>
             <Button
-              variant="ghost"
+              variant="destructive"
               size="sm"
               onClick={onDelete}
               aria-label={`حذف ${item.title}`}

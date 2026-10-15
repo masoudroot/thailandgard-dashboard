@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ChevronDown, FileText, History } from "lucide-react";
-import { Modal } from "@/components/ui/Modal";
+import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/Button";
 import { cx } from "@/components/ui/cx";
 
@@ -95,12 +95,13 @@ export function KnowledgeHistory({
   }, [open, knowledgeId]);
 
   return (
-    <Modal
+    <Dialog
       open={open}
-      onClose={onClose}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
       title={knowledgeTitle ? `تاریخچهٔ «${knowledgeTitle}»` : "تاریخچهٔ دانش"}
       description="هر ویرایش، یک نسخه ثبت می‌کند؛ متن آن نسخه را هم می‌توانید ببینید."
-      size="md"
     >
       {loading && (
         <div className="space-y-3" aria-live="polite">
@@ -201,6 +202,6 @@ export function KnowledgeHistory({
           })}
         </ol>
       )}
-    </Modal>
+    </Dialog>
   );
 }
