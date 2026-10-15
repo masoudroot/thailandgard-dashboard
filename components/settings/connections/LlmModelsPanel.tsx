@@ -16,7 +16,7 @@ import {
   type ConnState,
 } from "./ConnectionRow";
 import { useLlmSettings } from "./useLlmSettings";
-import { SaveNote, HealthSummary, UnhealthySavedWarning } from "./LlmShared";
+import { SaveNote, HealthSummary, UnhealthySavedWarning, ModelTestButton } from "./LlmShared";
 
 /**
  * پنل «مدل‌های هوش مصنوعی»: مدل پیش‌فرض سامانه، مدل امبدینگ،
@@ -138,8 +138,14 @@ export function LlmModelsPanel() {
                 />
               </Field>
             </div>
-            <div className="mt-2">
+            <div className="mt-2 flex items-center gap-3">
               <SaveNote state={s.defaultSave} />
+              {s.defaultModel?.endpointId && s.defaultModel?.model?.trim() && (
+                <ModelTestButton
+                  endpointId={s.defaultModel.endpointId}
+                  model={s.defaultModel.model}
+                />
+              )}
             </div>
           </div>
 
@@ -205,8 +211,14 @@ export function LlmModelsPanel() {
                 در فهرست این درگاه مدل امبدینگ پیدا نشد؛ می‌توانید نام مدل را دستی تایپ کنید.
               </p>
             )}
-            <div className="mt-2">
+            <div className="mt-2 flex items-center gap-3">
               <SaveNote state={s.embeddingSave} />
+              {s.embeddingModel?.endpointId && s.embeddingModel?.model?.trim() && (
+                <ModelTestButton
+                  endpointId={s.embeddingModel.endpointId}
+                  model={s.embeddingModel.model}
+                />
+              )}
             </div>
           </div>
 
@@ -309,6 +321,11 @@ export function LlmModelsPanel() {
                     </div>
                     {epId && (
                       <UnhealthySavedWarning endpointId={epId} model={entry?.model ?? ""} modelHealth={s.modelHealth} />
+                    )}
+                    {epId && entry?.model?.trim() && (
+                      <div className="mt-2">
+                        <ModelTestButton endpointId={epId} model={entry.model} />
+                      </div>
                     )}
                   </li>
                 );
