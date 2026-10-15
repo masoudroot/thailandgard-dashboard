@@ -12,6 +12,7 @@ import {
   Play,
   Plus,
   RotateCw,
+  X,
   XCircle,
   Zap,
   type LucideIcon,
@@ -407,7 +408,8 @@ export default function QueuePage() {
                 aria-expanded={formOpen}
                 className="flex-1 sm:flex-none"
               >
-                <Plus size={16} strokeWidth={2} aria-hidden="true" />
+                <Plus size={16} strokeWidth={2} aria-hidden="true" className={formOpen ? 'hidden' : ''} />
+                <X size={16} strokeWidth={2} aria-hidden="true" className={formOpen ? '' : 'hidden'} />
                 {formOpen ? 'بستن فرم' : 'کار جدید'}
               </Button>
             </>
