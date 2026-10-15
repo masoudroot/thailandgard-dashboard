@@ -38,7 +38,7 @@ export default function TrendChart({
 
   if (points.length < 2) {
     return (
-      <div className={`rounded-2xl border border-border bg-card p-6 text-center text-sm text-muted-foreground ${className}`}>
+      <div className={`rounded-xl border border-border bg-card p-6 text-center text-sm text-muted-foreground ${className}`}>
         داده‌ای برای رسم نمودار نیست.
       </div>
     );
@@ -80,7 +80,7 @@ export default function TrendChart({
 
   return (
     <figure
-      className={`rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-control)] sm:p-5 ${className}`}
+      className={`rounded-xl border border-border bg-card p-4 shadow-control sm:p-5 ${className}`}
       aria-label={title}
     >
       <figcaption className="mb-1 flex items-center justify-between">
@@ -188,7 +188,7 @@ export default function TrendChart({
         {hp && (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-xl border border-border bg-card px-3 py-1.5 text-center shadow-[var(--shadow-surface)]"
+            className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-xl border border-border bg-card px-3 py-1.5 text-center shadow-lg"
             style={{
               left: `${(hx / W) * 100}%`,
               top: `${Math.max(0, ((hy - 64) / H) * 100)}%`,

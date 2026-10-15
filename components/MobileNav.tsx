@@ -38,7 +38,7 @@ function TabShell({
 }: TabButtonProps &
   ({ href: string } | { onClick: () => void; "aria-expanded": boolean })) {
   const className = [
-    "flex min-h-16 w-full flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] font-medium leading-4 transition-colors duration-200 motion-reduce:transition-none",
+    "flex min-h-16 w-full flex-col items-center justify-center gap-1 px-1 py-2 text-xs font-medium leading-4 transition-colors duration-200 motion-reduce:transition-none",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     active ? "text-brand" : "text-muted-foreground hover:text-foreground",
   ].join(" ");
@@ -145,7 +145,7 @@ export default function MobileNav() {
       {/* ناوبری پایینی */}
       <nav
         aria-label="ناوبری اصلی موبایل"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card lg:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <ul className="flex items-stretch">
@@ -190,7 +190,7 @@ export default function MobileNav() {
         aria-modal="true"
         aria-label="منوی ناوبری"
         className={[
-          "fixed inset-y-0 start-0 z-50 flex w-72 max-w-[80vw] flex-col bg-card shadow-surface lg:hidden",
+          "fixed inset-y-0 start-0 z-50 flex w-72 max-w-[80vw] flex-col bg-card shadow-xl lg:hidden",
           "transition-[transform,visibility] duration-200 ease-out motion-reduce:transition-none",
           open ? "visible translate-x-0" : "invisible translate-x-full",
         ].join(" ")}

@@ -245,14 +245,14 @@ export default function MemoryPage() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="کلید یا محتوای مقدار…"
-                className={`w-full rounded-xl border border-input bg-card py-2.5 ps-9 text-start text-foreground outline-none placeholder:text-muted-foreground focus:border-ring ${query ? 'pe-10' : 'pe-3'}`}
+                className={`w-full rounded-xl border border-input bg-card py-2.5 ps-9 text-start text-foreground outline-none placeholder:text-muted-foreground focus:border-ring ${query ? 'pe-12' : 'pe-3'}`}
               />
               {query && (
                 <button
                   type="button"
                   onClick={() => setQuery('')}
                   aria-label="پاک کردن جست‌وجو"
-                  className="absolute end-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  className="absolute end-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 >
                   <X size={16} strokeWidth={2} aria-hidden="true" />
                 </button>
@@ -278,7 +278,7 @@ export default function MemoryPage() {
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand px-5 py-2 text-sm font-medium text-brand-foreground shadow-control transition-colors hover:opacity-90"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control transition-colors hover:opacity-90"
               >
                 تلاش دوباره
               </button>

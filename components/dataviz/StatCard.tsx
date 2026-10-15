@@ -55,7 +55,7 @@ export default function StatCard({
 
   return (
     <div
-      className={`rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-control)] ${className}`}
+      className={`rounded-xl border border-border bg-card p-4 shadow-control ${className}`}
     >
       <div className="flex items-start gap-3">
         <span

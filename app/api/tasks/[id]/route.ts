@@ -17,7 +17,7 @@ interface PatchBody {
 }
 
 /**
- * PATCH /api/tasks/:id — drives the queue lifecycle.
+ * PATCH /api/tasks/:id: drives the queue lifecycle.
  * Body: { action: 'approve' | 'reject' | 'done' | 'set-model', reason?, result?, commitSha?, endpointId?, model? }
  */
 export async function PATCH(

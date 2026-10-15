@@ -10,9 +10,12 @@ export type SwitchProps = {
   disabled?: boolean;
   id?: string;
   className?: string;
-};
+} & Omit<
+  React.ButtonHTMLAttributes<HTMLButtonElement>,
+  "onClick" | "type" | "role" | "id" | "disabled" | "className"
+>;
 
-/** سوییچ/تاگل پایه؛ در RTL هم «روشن» سمت راست می‌نشیند. */
+/** سوییچ/تاگل پایه؛ در RTL آینه‌ای است («روشن» سمت چپ/انتها می‌نشیند). */
 export function Switch({
   checked,
   onCheckedChange,
@@ -20,6 +23,7 @@ export function Switch({
   disabled = false,
   id,
   className,
+  ...rest
 }: SwitchProps) {
   const inputId = React.useId();
   const switchId = id ?? `tg-switch-${inputId}`;
@@ -40,6 +44,7 @@ export function Switch({
         aria-checked={checked}
         disabled={disabled}
         onClick={() => onCheckedChange(!checked)}
+        {...rest}
         className={cx(
           "relative h-6 w-11 shrink-0 rounded-full transition-soft",
           /* ناحیهٔ کلیک نامرئی: تاچ‌تارگت ۴۴px بدون تغییر ظاهر سوییچ */

@@ -192,7 +192,7 @@ function ApplyButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-brand px-4 text-sm font-semibold text-brand-foreground transition-colors hover:bg-brand/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Wrench className="h-4 w-4" aria-hidden="true" />
         اعمال در گیت‌هاب
@@ -206,7 +206,7 @@ function ApplyButton({
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-t-xl bg-card p-5 shadow-surface sm:rounded-xl sm:p-6"
+            className="w-full max-w-md rounded-t-xl bg-card p-5 shadow-xl sm:rounded-xl sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
@@ -262,7 +262,7 @@ function ApplyButton({
                 type="button"
                 onClick={apply}
                 disabled={busy}
-                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-4 text-sm font-semibold text-brand-foreground disabled:opacity-50"
+                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
               >
                 {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                 {busy ? "در حال اعمال..." : "تأیید و اعمال"}
@@ -423,7 +423,7 @@ export default function DebugPage() {
             type="button"
             onClick={submit}
             disabled={busy}
-            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-brand px-5 text-sm font-semibold text-brand-foreground transition-colors hover:bg-brand/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
             {busy ? "در حال تحلیل با زمینه‌ی واقعی..." : "تحلیل باگ"}

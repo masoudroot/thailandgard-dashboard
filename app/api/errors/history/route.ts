@@ -3,7 +3,7 @@ import { fail, ok } from '../../../../lib/api';
 import { getTodayErrors } from '../../../../lib/errors';
 import { TEAMS, type TeamName } from '../../../../lib/types';
 
-/** GET /api/errors/history?team=<team> — تاریخچه‌ی خطاهای امروز (به وقت تهران). */
+/** GET /api/errors/history?team=<team>: تاریخچه‌ی خطاهای امروز (به وقت تهران). */
 export async function GET(request: NextRequest): Promise<Response> {
   try {
     const teamParam = request.nextUrl.searchParams.get('team');

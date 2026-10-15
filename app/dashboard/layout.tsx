@@ -20,7 +20,7 @@ export default function DashboardLayout({
 
       {/* ستون محتوا */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur">
+        <header className="sticky top-0 z-10 border-b border-border bg-background pt-[env(safe-area-inset-top)]">
           <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-4 lg:h-16 lg:px-6">
             <h1 className="text-base font-bold leading-7 lg:text-lg">
               <span className="lg:hidden">داشبورد</span>

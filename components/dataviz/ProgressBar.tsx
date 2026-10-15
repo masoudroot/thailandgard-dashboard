@@ -43,7 +43,7 @@ export default function ProgressBar({
         className="relative h-3 overflow-hidden rounded-full bg-muted"
       >
         <div
-          className="absolute inset-y-0 start-0 h-full rounded-full bg-gradient-to-l from-brand via-warning to-success transition-[width] duration-700 ease-out"
+          className="absolute inset-y-0 start-0 h-full rounded-full bg-brand transition-[width] duration-700 ease-out"
           style={{ width: `${pct}%` }}
         />
         {/* برق ملایم متحرک برای حس زنده بودن */}

@@ -80,7 +80,7 @@ export default function LoginPage() {
       </div>
 
       <div className="m-auto w-full max-w-sm animate-fade-in">
-        <div className="rounded-2xl bg-card border border-border p-6 sm:p-8 shadow-surface">
+        <div className="rounded-xl bg-card border border-border p-6 sm:p-8 shadow-surface">
           <div className="flex items-center gap-3 mb-6">
             <span
               aria-hidden="true"
@@ -127,7 +127,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="tg-btn touch-target h-12 w-full rounded-lg bg-brand px-4 text-base font-semibold text-brand-foreground hover:brightness-95 active:brightness-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="tg-btn touch-target h-12 w-full rounded-lg bg-primary px-4 text-base font-semibold text-primary-foreground hover:brightness-95 active:brightness-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'در حال بررسی…' : 'ورود'}
             </button>

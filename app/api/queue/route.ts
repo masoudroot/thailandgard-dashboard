@@ -4,7 +4,7 @@ import { enqueue, getQueueStats } from '../../../lib/queue';
 
 export const dynamic = 'force-dynamic';
 
-/** GET /api/queue — queue health: counts per status, total, oldest pending age, recent failures. */
+/** GET /api/queue: queue health: counts per status, total, oldest pending age, recent failures. */
 export async function GET(): Promise<Response> {
   try {
     const stats = await getQueueStats();
@@ -22,7 +22,7 @@ interface EnqueueBody {
 }
 
 /**
- * POST /api/queue — manually enqueue a job (for testing / ops).
+ * POST /api/queue: manually enqueue a job (for testing / ops).
  * Body: { type: string, payload?: any, maxAttempts?: number, timeoutMs?: number }
  */
 export async function POST(request: NextRequest): Promise<Response> {

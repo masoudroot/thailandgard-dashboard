@@ -278,7 +278,7 @@ export default function ChangesPage() {
           <button
             type="button"
             onClick={() => fetchCommits(page, team, since, until)}
-            className="mt-4 inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-bold text-brand-foreground shadow-control transition-opacity hover:opacity-90"
+            className="mt-4 inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90"
           >
             <RotateCcw size={16} aria-hidden="true" />
             تلاش دوباره
@@ -342,7 +342,7 @@ export default function ChangesPage() {
                         href={c.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-bold text-brand-foreground shadow-control transition-opacity hover:opacity-90"
+                        className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90"
                       >
                         <ExternalLink size={15} aria-hidden="true" />
                         گیت‌هاب
@@ -520,7 +520,7 @@ function NotConnectedGuide() {
       <div className="mt-6 text-center">
         <Link
           href="/dashboard/settings"
-          className="inline-flex min-h-[48px] items-center rounded-lg bg-brand px-6 py-2.5 text-sm font-bold text-brand-foreground shadow-control transition-opacity hover:opacity-90"
+          className="inline-flex min-h-[48px] items-center rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90"
         >
           رفتن به تنظیمات
         </Link>

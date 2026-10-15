@@ -3,7 +3,7 @@ import { ok, fail } from '@/lib/api';
 import { retrieveKnowledge } from '@/lib/rag';
 
 /**
- * POST /api/rag — test endpoint for the RAG service.
+ * POST /api/rag: test endpoint for the RAG service.
  * Body: { query: string, team?: string, topK?: number }
  * (Auth is enforced by middleware; the session cookie is required.)
  */

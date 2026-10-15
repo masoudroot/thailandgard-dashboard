@@ -186,7 +186,7 @@ export default function CycleDetailPage() {
             action={
               <Link
                 href="/login"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand px-6 py-2 text-sm font-bold text-brand-foreground shadow-control hover:opacity-90"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90"
               >
                 ورود دوباره
               </Link>
@@ -236,7 +236,7 @@ export default function CycleDetailPage() {
                     onClick={() => sendAction('resume')}
                     disabled={!isPaused || acting !== null}
                     title="ادامه از همان موجی که متوقف شده است"
-                    className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2 text-sm font-medium text-brand-foreground shadow-control hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Play size={16} strokeWidth={2} aria-hidden="true" />
                     {acting === 'resume' ? 'در حال ادامه…' : 'ادامه'}

@@ -55,7 +55,7 @@ export function SkeletonStat({ className }: { className?: string }) {
     <div
       aria-hidden="true"
       className={cx(
-        "rounded-2xl border border-border bg-card p-4",
+        "rounded-xl border border-border bg-card p-4",
         className,
       )}
     >
@@ -105,7 +105,7 @@ export function SkeletonRow({ className }: { className?: string }) {
     <div
       aria-hidden="true"
       className={cx(
-        "flex gap-3 rounded-2xl border border-border p-3",
+        "flex gap-3 rounded-xl border border-border p-3",
         className,
       )}
     >
@@ -133,7 +133,7 @@ export function SkeletonTable({
     <div
       aria-hidden="true"
       role="presentation"
-      className={cx("overflow-hidden rounded-2xl border border-border", className)}
+      className={cx("overflow-hidden rounded-xl border border-border", className)}
     >
       <div className="grid gap-2 border-b border-border bg-muted/60 p-4" style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}>
         {Array.from({ length: columns }).map((_, i) => (
@@ -168,7 +168,7 @@ export function SkeletonPanel({ className }: { className?: string }) {
   return (
     <div
       aria-hidden="true"
-      className={cx("rounded-2xl border border-border bg-card p-5", className)}
+      className={cx("rounded-xl border border-border bg-card p-5", className)}
     >
       <div className="flex items-center justify-between gap-3">
         <Skeleton className="h-6 w-40 rounded-lg" />

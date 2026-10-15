@@ -25,10 +25,10 @@ export default function EmptyState({
   tint = 'bg-muted text-muted-foreground',
 }: EmptyStateProps) {
   return (
-    <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center shadow-surface sm:py-16">
+    <div className="rounded-xl border border-dashed border-border bg-card px-6 py-12 text-center shadow-surface sm:py-16">
       <span
         aria-hidden="true"
-        className={`mx-auto flex h-14 w-14 items-center justify-center rounded-2xl ${tint}`}
+        className={`mx-auto flex h-14 w-14 items-center justify-center rounded-xl ${tint}`}
       >
         <Icon size={28} strokeWidth={1.5} />
       </span>

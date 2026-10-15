@@ -2,7 +2,7 @@ import { fail, ok } from '../../../../lib/api';
 import { retryFailedTeamRun } from '../../../../lib/retry';
 
 /**
- * POST /api/errors/retry — تلاش مجدد واقعی روی یک ران ناموفق.
+ * POST /api/errors/retry: تلاش مجدد واقعی روی یک ران ناموفق.
  * بدنه: { "run_id": "<uuid>" }
  * ردیف قدیمی (failed) به‌عنوان تاریخچه می‌ماند؛ ردیف تازه‌ای ساخته و تیم
  * واقعاً دوباره اجرا می‌شود. 202 + شناسه‌ی ردیف تازه برمی‌گردد.

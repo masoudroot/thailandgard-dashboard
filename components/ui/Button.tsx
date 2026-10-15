@@ -14,7 +14,7 @@ export type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    "bg-brand text-brand-foreground hover:brightness-105 active:brightness-95",
+    "bg-primary text-primary-foreground hover:brightness-105 active:brightness-95",
   secondary:
     "border border-border bg-secondary text-secondary-foreground hover:bg-accent",
   outline:
@@ -38,7 +38,8 @@ export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
 /**
  * دکمهٔ پایهٔ سیستم دیزاین.
- * variant پیش‌فرض primary است؛ اکشن اصلی همیشه در ابتدای گروه (راست در RTL) می‌نشیند.
+ * variant پیش‌فرض primary است (خنثی/جوهری، طبق جهت تک‌رنگ + یک لهجه)؛
+ * اکشن اصلی همیشه در ابتدای گروه (راست در RTL) می‌نشیند.
  */
 export function Button({
   variant = "primary",

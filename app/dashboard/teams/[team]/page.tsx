@@ -164,7 +164,7 @@ export default function TeamDetailPage() {
           action={
             <Link
               href="/dashboard/teams"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand px-5 py-2 text-sm font-medium text-brand-foreground"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground"
             >
               بازگشت به تیم‌ها
             </Link>
@@ -238,7 +238,7 @@ export default function TeamDetailPage() {
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand px-5 py-2 text-sm font-medium text-brand-foreground"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground"
               >
                 تلاش دوباره
               </button>

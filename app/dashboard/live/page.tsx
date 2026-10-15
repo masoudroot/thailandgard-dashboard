@@ -401,7 +401,7 @@ export default function LivePage() {
                   setState('loading');
                   void fetchLive();
                 }}
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand px-5 py-2 text-sm font-medium text-brand-foreground shadow-control transition-colors hover:opacity-90"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control transition-colors hover:opacity-90"
               >
                 تلاش دوباره
               </button>
@@ -417,7 +417,7 @@ export default function LivePage() {
             action={
               <Link
                 href="/dashboard/cycles"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand px-5 py-2 text-sm font-medium text-brand-foreground shadow-control transition-colors hover:opacity-90"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control transition-colors hover:opacity-90"
               >
                 رفتن به چرخه‌ها
               </Link>

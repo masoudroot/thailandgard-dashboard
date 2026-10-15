@@ -403,7 +403,7 @@ export default function QueuePage() {
                 type="button"
                 onClick={() => setFormOpen((v) => !v)}
                 aria-expanded={formOpen}
-                className="tg-btn inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-foreground shadow-control transition hover:opacity-90 sm:flex-none"
+                className="tg-btn inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-control transition hover:opacity-90 sm:flex-none"
               >
                 <Plus size={16} strokeWidth={2} aria-hidden="true" />
                 {formOpen ? 'بستن فرم' : 'تعریف کار جدید'}
@@ -428,7 +428,7 @@ export default function QueuePage() {
             action={
               <Link
                 href="/login"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand px-6 py-2 text-sm font-bold text-brand-foreground shadow-control hover:opacity-90"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90"
               >
                 ورود دوباره
               </Link>
@@ -440,7 +440,7 @@ export default function QueuePage() {
             {formOpen && (
               <section
                 aria-label="فرم تعریف کار جدید"
-                className="mb-6 rounded-2xl border border-border bg-card p-4 shadow-surface sm:p-6"
+                className="mb-6 rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6"
               >
                 <h2 className="text-base font-bold">تعریف کار جدید</h2>
                 <form onSubmit={handleCreate} className="mt-4 space-y-6">
@@ -579,7 +579,7 @@ export default function QueuePage() {
                     <button
                       type="submit"
                       disabled={submitting}
-                      className="tg-btn min-h-[48px] w-full rounded-xl bg-brand px-6 py-2 text-sm font-bold text-brand-foreground shadow-control transition hover:opacity-90 disabled:opacity-50 sm:w-auto"
+                      className="tg-btn min-h-[48px] w-full rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control transition hover:opacity-90 disabled:opacity-50 sm:w-auto"
                     >
                       {submitting
                         ? 'در حال ثبت…'
@@ -607,13 +607,13 @@ export default function QueuePage() {
                     aria-pressed={active}
                     className={`tg-btn min-h-[40px] shrink-0 rounded-full border px-4 py-1.5 text-sm transition ${
                       active
-                        ? 'border-brand bg-brand text-brand-foreground shadow-control'
+                        ? 'border-primary bg-primary text-primary-foreground shadow-control'
                         : 'border-border bg-card text-foreground hover:bg-accent'
                     }`}
                   >
                     {s.label}
                     <span
-                      className={`ms-2 inline-block rounded-full px-1.5 text-xs ${active ? 'bg-black/15' : 'bg-secondary'}`}
+                      className={`ms-2 inline-block rounded-full px-1.5 text-xs ${active ? 'bg-primary-foreground/25' : 'bg-secondary'}`}
                     >
                       {faNum(counts[s.key])}
                     </span>
@@ -653,7 +653,7 @@ export default function QueuePage() {
                         <button
                           type="button"
                           onClick={() => setFormOpen(true)}
-                          className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2 text-sm font-bold text-brand-foreground shadow-control transition hover:opacity-90"
+                          className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-bold text-primary-foreground shadow-control transition hover:opacity-90"
                         >
                           <Plus size={16} strokeWidth={2} aria-hidden="true" />
                           تعریف کار جدید
@@ -676,7 +676,7 @@ export default function QueuePage() {
                     return (
                       <article
                         key={task.id}
-                        className="tg-card flex flex-col rounded-2xl border border-border bg-card p-4 shadow-surface sm:p-5"
+                        className="tg-card flex flex-col rounded-xl border border-border bg-card p-4 shadow-surface sm:p-5"
                       >
                         <div className="mb-3 flex flex-wrap items-center gap-2">
                           <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
@@ -796,7 +796,7 @@ export default function QueuePage() {
                                   disabled={acting === task.id}
                                   onClick={() => handleRunNow(task.id)}
                                   title="اجرای فوری با ساب‌ایجنت‌ها"
-                                  className="tg-btn inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-brand px-5 py-1.5 text-sm font-medium text-brand-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
+                                  className="tg-btn inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-primary px-5 py-1.5 text-sm font-medium text-primary-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
                                 >
                                   <Zap size={15} strokeWidth={2} aria-hidden="true" />
                                   {acting === task.id ? 'در حال شروع…' : 'همین الان اجرا شود'}

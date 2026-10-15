@@ -1,7 +1,7 @@
 import { fail, getSupabase, ok } from '../../../../lib/api';
 
 /**
- * GET /api/cycles/latest — جدیدترین چرخه به‌همراه ران‌های تیم‌هایش،
+ * GET /api/cycles/latest: جدیدترین چرخه به‌همراه ران‌های تیم‌هایش،
  * مستقیم از team_runs (داده‌ی واقعی؛ بدون چرخه = آرایه‌ی خالی).
  */
 export async function GET(): Promise<Response> {

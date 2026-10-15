@@ -1,5 +1,5 @@
 /**
- * lib/rag.ts — Backend 8: RAG service
+ * lib/rag.ts: Backend 8: RAG service
  *
  * Vector search over `public.knowledge_chunks` (Supabase).
  * - `getEmbedding` posts to `{LLM_API_BASE}/embeddings` (OpenAI-compatible).

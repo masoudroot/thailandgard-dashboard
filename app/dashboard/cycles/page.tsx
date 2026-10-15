@@ -149,7 +149,7 @@ export default function CyclesPage() {
                     ? 'تا چرخهٔ فعال تمام یا لغو نشود، چرخهٔ جدید ساخته نمی‌شود'
                     : 'شروع چرخهٔ جدید'
                 }
-                className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground shadow-control hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-control hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {creating ? 'در حال ساخت…' : 'چرخه جدید'}
               </button>
@@ -183,7 +183,7 @@ export default function CyclesPage() {
             action={
               <Link
                 href="/login"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand px-6 py-2 text-sm font-bold text-brand-foreground shadow-control hover:opacity-90"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90"
               >
                 ورود دوباره
               </Link>
@@ -199,7 +199,7 @@ export default function CyclesPage() {
               <button
                 onClick={createCycle}
                 disabled={creating}
-                className="tg-btn inline-flex min-h-[48px] items-center justify-center rounded-xl bg-brand px-6 py-2.5 text-sm font-bold text-brand-foreground shadow-control hover:opacity-90 disabled:opacity-50"
+                className="tg-btn inline-flex min-h-[48px] items-center justify-center rounded-xl bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90 disabled:opacity-50"
               >
                 {creating ? 'در حال ساخت…' : 'ساخت اولین چرخه'}
               </button>

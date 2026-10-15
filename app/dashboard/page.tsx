@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   AlertTriangle,
-  BellRing,
   CheckCircle2,
   ClipboardList,
   Clock3,
@@ -242,21 +241,9 @@ export default function DashboardHomePage() {
         {/* ── هیرو ── */}
         <section
           aria-label="معرفی داشبورد"
-          className="tg-reveal relative overflow-hidden rounded-3xl border border-border bg-gradient-to-bl from-brand/15 via-card to-card p-6 shadow-[var(--shadow-surface)] md:p-10"
+          className="tg-reveal rounded-xl border border-border bg-card p-6 shadow-surface md:p-10"
         >
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute -start-24 -top-24 h-64 w-64 rounded-full bg-brand/15 blur-3xl"
-          />
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute -bottom-28 -end-20 h-72 w-72 rounded-full bg-success/10 blur-3xl"
-          />
           <div className="relative">
-            <p className="mb-2 inline-flex items-center gap-2 rounded-full bg-brand/10 px-3 py-1 text-sm font-medium text-brand">
-              <BellRing size={16} strokeWidth={1.75} />
-              عملیات زندهٔ تیم‌های هوش مصنوعی
-            </p>
             <h1 className="text-3xl font-extrabold md:text-4xl">
               داشبورد ایجنتیک تایلندگرد
             </h1>
@@ -291,7 +278,7 @@ export default function DashboardHomePage() {
           {/* کارت آخرین چرخه */}
           <section
             aria-label="آخرین چرخه"
-            className="rounded-3xl border border-border bg-card p-4 shadow-[var(--shadow-surface)] sm:p-6 lg:col-span-2"
+            className="rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6 lg:col-span-2"
           >
             {loading ? (
               <SkeletonPanel />
@@ -303,7 +290,7 @@ export default function DashboardHomePage() {
                 <button
                   type="button"
                   onClick={() => setDialogOpen(true)}
-                  className="tg-btn mt-4 inline-flex min-h-[48px] items-center justify-center gap-2 rounded-2xl bg-brand px-6 font-bold text-brand-foreground shadow-[var(--shadow-control)] hover:brightness-110"
+                  className="tg-btn mt-4 inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-primary px-6 font-bold text-primary-foreground shadow-control hover:brightness-105"
                 >
                   <Play size={20} strokeWidth={2} />
                   شروع چرخهٔ جدید
@@ -349,7 +336,7 @@ export default function DashboardHomePage() {
                 {/* دکمه شروع */}
                 <div className="mt-6 border-t border-border pt-6">
                   {queuedNotice ? (
-                    <p className="tg-pop flex items-center gap-2 rounded-2xl bg-success/10 px-4 py-3 text-sm font-medium text-success">
+                    <p className="tg-pop flex items-center gap-2 rounded-xl bg-success/10 px-4 py-3 text-sm font-medium text-success">
                       <CheckCircle2 size={18} strokeWidth={1.75} />
                       چرخهٔ جدید در صف شروع قرار گرفت؛ بعد از پایان موج جاری
                       آغاز می‌شود.
@@ -358,7 +345,7 @@ export default function DashboardHomePage() {
                     <button
                       type="button"
                       onClick={() => setDialogOpen(true)}
-                      className="tg-btn inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-brand px-6 font-bold text-brand-foreground shadow-[var(--shadow-control)] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:w-auto"
+                      className="tg-btn inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 font-bold text-primary-foreground shadow-control hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:w-auto"
                     >
                       <Play size={20} strokeWidth={2} />
                       شروع چرخهٔ جدید
@@ -372,7 +359,7 @@ export default function DashboardHomePage() {
           {/* کارت هشدارها */}
           <section
             aria-label="هشدارهای اخیر"
-            className="rounded-3xl border border-border bg-card p-4 shadow-[var(--shadow-surface)] sm:p-6"
+            className="rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6"
           >
             <h2 className="text-xl font-bold">هشدارهای اخیر</h2>
             <div className="tg-stagger mt-4 space-y-4">
@@ -381,11 +368,11 @@ export default function DashboardHomePage() {
                   <SkeletonRow key={i} />
                 ))
               ) : alertsError ? (
-                <p className="rounded-2xl bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
+                <p className="rounded-xl bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
                   هشدارها در دسترس نیست؛ سرویس هشدار وصل نیست.
                 </p>
               ) : alerts.length === 0 ? (
-                <p className="rounded-2xl bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
+                <p className="rounded-xl bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
                   هشدار تازه‌ای نیست؛ همه‌چیز آرام است.
                 </p>
               ) : (
@@ -395,7 +382,7 @@ export default function DashboardHomePage() {
                   return (
                     <article
                       key={a.id}
-                      className="flex gap-3 rounded-2xl border border-border p-3"
+                      className="flex gap-3 rounded-xl border border-border p-3"
                     >
                       <span
                         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${meta.ring}`}
@@ -431,7 +418,7 @@ export default function DashboardHomePage() {
         {/* ── شش موج ── */}
         <section
           aria-label="موج‌های چرخه"
-          className="mt-4 rounded-3xl border border-border bg-card p-4 shadow-[var(--shadow-surface)] sm:p-6 md:mt-6 md:p-8"
+          className="mt-4 rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6 md:mt-6 md:p-8"
         >
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/10 text-brand">
@@ -450,7 +437,7 @@ export default function DashboardHomePage() {
               <SkeletonPanel />
             </div>
           ) : !cycle ? (
-            <p className="mt-6 rounded-2xl bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
+            <p className="mt-6 rounded-xl bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
               هنوز چرخه‌ای اجرا نشده است؛ موج‌ها بعد از شروع اولین چرخه این‌جا
               می‌آیند.
             </p>
@@ -507,7 +494,7 @@ export default function DashboardHomePage() {
                   return (
                     <div
                       key={w.wave}
-                      className={`rounded-2xl border p-4 ${
+                      className={`rounded-xl border p-4 ${
                         state === "active"
                           ? "border-brand/50 bg-brand/[0.04]"
                           : "border-border"
@@ -551,7 +538,7 @@ export default function DashboardHomePage() {
           onClick={() => !starting && setDialogOpen(false)}
         >
           <div
-            className="tg-pop max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-border bg-card p-5 shadow-[var(--shadow-surface)] sm:max-w-md sm:rounded-3xl sm:p-6"
+            className="tg-pop max-h-[92dvh] w-full overflow-y-auto rounded-t-xl border border-border bg-card p-5 shadow-xl sm:max-w-md sm:rounded-xl sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="start-cycle-title" className="text-lg font-bold">
@@ -565,7 +552,7 @@ export default function DashboardHomePage() {
               <RippleButton
                 disabled={starting}
                 onClick={handleConfirmStart}
-                className="tg-btn inline-flex min-h-[48px] w-full flex-1 items-center justify-center gap-2 rounded-2xl bg-brand px-5 font-bold text-brand-foreground shadow-[var(--shadow-control)] hover:brightness-110 disabled:opacity-60"
+                className="tg-btn inline-flex min-h-[48px] w-full flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-bold text-primary-foreground shadow-control hover:brightness-105 disabled:opacity-60"
               >
                 {starting ? (
                   <>
@@ -583,7 +570,7 @@ export default function DashboardHomePage() {
                 type="button"
                 disabled={starting}
                 onClick={() => setDialogOpen(false)}
-                className="tg-btn inline-flex min-h-[48px] w-full items-center justify-center rounded-2xl border border-border bg-card px-5 font-medium text-foreground hover:bg-muted disabled:opacity-60 sm:w-auto"
+                className="tg-btn inline-flex min-h-[48px] w-full items-center justify-center rounded-xl border border-border bg-card px-5 font-medium text-foreground hover:bg-muted disabled:opacity-60 sm:w-auto"
               >
                 انصراف
               </button>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bot, Cpu, Plus, RefreshCw, Settings, Timer, Trash2, TrendingUp, Wifi, KeyRound } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import { Switch } from "@/components/ui/Switch";
 import type { MarketLastCheck } from "@/lib/market";
 
 /** تبدیل ارقام لاتین به فارسی */
@@ -176,22 +177,11 @@ function MarketSourceCard() {
                 {enabled ? "فعال: هر چرخه داده تازه می‌گیرد." : "خاموش: تیم بدون داده بازار کار می‌کند."}
               </p>
             </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={enabled}
+            <Switch
+              checked={enabled}
+              onCheckedChange={(v) => setEnabled(v)}
               aria-label="اتصال به منبع داده بازار"
-              onClick={() => setEnabled((v) => !v)}
-              className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${
-                enabled ? "bg-brand" : "bg-input"
-              }`}
-            >
-              <span
-                className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-all ${
-                  enabled ? "right-1" : "left-1"
-                }`}
-              />
-            </button>
+            />
           </div>
 
           {/* آدرس */}
@@ -286,7 +276,7 @@ function MarketSourceCard() {
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="min-h-[48px] rounded-lg bg-brand px-6 py-2.5 text-sm font-bold text-brand-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="min-h-[48px] rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {saving ? "در حال ذخیره…" : "ذخیره"}
             </button>
@@ -446,7 +436,7 @@ function GithubTokenCard() {
               type="button"
               onClick={handleSave}
               disabled={saving || !token.trim()}
-              className="min-h-[48px] rounded-lg bg-brand px-6 py-2.5 text-sm font-bold text-brand-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="min-h-[48px] rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {saving ? "در حال بررسی…" : "ذخیره و اتصال"}
             </button>
@@ -915,7 +905,7 @@ function LlmModelsCard() {
               type="button"
               onClick={handleAdd}
               disabled={adding || !addName.trim() || !addBase.trim() || !addKey.trim()}
-              className="mt-3 min-h-[48px] rounded-lg bg-brand px-6 py-2.5 text-sm font-bold text-brand-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="mt-3 min-h-[48px] rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {adding ? "در حال ذخیره…" : "افزودن درگاه"}
             </button>
@@ -972,12 +962,12 @@ function LlmModelsCard() {
                         >
                           مدل
                           {epId && cached && (
-                            <span className="mr-1 text-muted-foreground">
+                            <span className="me-1 text-muted-foreground">
                               ({faDigits(cached.length)} مدل از درگاه)
                             </span>
                           )}
                           {epId && loadingModels[epId] && (
-                            <span className="mr-1 text-muted-foreground">(در حال گرفتن لیست…)</span>
+                            <span className="me-1 text-muted-foreground">(در حال گرفتن لیست…)</span>
                           )}
                         </label>
                         <input
@@ -1009,7 +999,7 @@ function LlmModelsCard() {
                 type="button"
                 onClick={handleSaveTeams}
                 disabled={savingTeams}
-                className="min-h-[48px] rounded-lg bg-brand px-6 py-2.5 text-sm font-bold text-brand-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
+                className="min-h-[48px] rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {savingTeams ? "در حال ذخیره…" : "ذخیره مدل تیم‌ها"}
               </button>
@@ -1222,12 +1212,12 @@ export default function SettingsPage() {
         </section>
 
         {/* دکمه ذخیره: چسبان پایین در موبایل، تمام‌عرض؛ با فاصله از ناوبری پایینی */}
-        <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-4 bg-background/85 px-4 pb-1 pt-3 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+        <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-4 bg-background px-4 pb-1 pt-3 sm:static sm:mx-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <button
               type="submit"
               disabled={saving}
-              className="min-h-[48px] w-full rounded-lg bg-brand px-6 py-2.5 text-sm font-bold text-brand-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50 sm:w-auto"
+              className="min-h-[48px] w-full rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50 sm:w-auto"
             >
               {saving ? "در حال ذخیره…" : "ذخیره تنظیمات"}
             </button>

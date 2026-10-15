@@ -26,14 +26,14 @@ export default function NotConnected({ onRetry, retrying = false }: NotConnected
             <button
               onClick={onRetry}
               disabled={retrying}
-              className="tg-btn inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand px-6 py-2 text-sm font-bold text-brand-foreground shadow-control hover:opacity-90 disabled:opacity-50"
+              className="tg-btn inline-flex min-h-[44px] items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90 disabled:opacity-50"
             >
               {retrying ? 'در حال تلاش…' : 'تلاش دوباره'}
             </button>
           ) : undefined
         }
       />
-      <ol className="mx-auto mt-4 max-w-xl space-y-2.5 rounded-2xl border border-border bg-card p-4 text-sm leading-7 text-card-foreground shadow-surface sm:p-5">
+      <ol className="mx-auto mt-4 max-w-xl space-y-2.5 rounded-xl border border-border bg-card p-4 text-sm leading-7 text-card-foreground shadow-surface sm:p-5">
         <li className="flex gap-2">
           <span className="font-bold text-brand">۱.</span>
           <span>
