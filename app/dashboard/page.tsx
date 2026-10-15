@@ -160,7 +160,14 @@ export default function DashboardHomePage() {
       if (!cyclesRes.ok) throw new Error("cycles unavailable");
       const body = await cyclesRes.json().catch(() => null);
       const raw = body?.ok ? body?.data?.[0] : (body?.data?.[0] ?? body?.[0]);
-      setCycle((raw as CycleSummary) ?? null);
+      // محافظ: اگر API شکل غنی‌شده را نداد، صفحه نپرد
+      const safe =
+        raw && Array.isArray(raw.waves)
+          ? (raw as CycleSummary)
+          : raw
+            ? ({ ...raw, waves: [], currentWave: 1, progress: 0, activeTeam: '' } as CycleSummary)
+            : null;
+      setCycle(safe);
 
       /* هشدارها حیاتی نیست؛ نبودشان صفحه را نمی‌اندازد */
       try {

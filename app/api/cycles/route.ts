@@ -1,5 +1,6 @@
 import { fail, getSupabase, ok } from '../../../lib/api';
 import { waitUntil } from '@vercel/functions';
+import { WAVES } from '../../../lib/types';
 import {
   beginCycle,
   CycleLockedError,
@@ -7,16 +8,18 @@ import {
   runAllWaves,
 } from '../../../lib/orchestrator';
 
-/** GET /api/cycles: فهرست چرخه‌ها (جدیدترین اول). */
+/** GET /api/cycles: فهرست چرخه‌ها (جدیدترین اول) با خلاصه غنی‌شده برای داشبورد. */
 export async function GET(): Promise<Response> {
   try {
-    const { data, error } = await getSupabase()
+    const sb = getSupabase();
+    const { data, error } = await sb
       .from('cycles')
       .select('*')
       .order('started_at', { ascending: false })
       .limit(50);
     if (error) return fail(`failed to list cycles: ${error.message}`);
-    return ok(data ?? []);
+    const enriched = await Promise.all((data ?? []).map(enrichCycle));
+    return ok(enriched);
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));
   }
@@ -50,4 +53,42 @@ export async function POST(): Promise<Response> {
     if (err instanceof CycleLockedError) return fail(err.message, 409);
     return fail(err instanceof Error ? err.message : String(err));
   }
+}
+
+/** غنی‌سازی یک چرخه خام با موج‌ها، پیشرفت و تیم فعال برای داشبورد. */
+async function enrichCycle(cycle: Record<string, unknown>) {
+  const sb = getSupabase();
+  const cycleId = String(cycle.id ?? '');
+  let teamStatus: Record<string, string> = {};
+  try {
+    const { data } = await sb
+      .from('team_runs')
+      .select('team, status')
+      .eq('cycle_id', cycleId);
+    for (const r of (data ?? []) as { team: string; status: string }[]) {
+      teamStatus[r.team] = r.status;
+    }
+  } catch {
+    /* نادیده */
+  }
+  const waves = WAVES.map((w) => ({
+    wave: w.wave,
+    teams: w.teams.map((t) => ({ team: t, status: teamStatus[t] ?? 'pending' })),
+  }));
+  // موج جاری: اولین موجی که تیم ناتمام دارد
+  let currentWave = 1;
+  for (const w of waves) {
+    const done = w.teams.every((t) => ['success', 'failed', 'stopped'].includes(t.status));
+    if (!done) {
+      currentWave = w.wave;
+      break;
+    }
+    currentWave = w.wave + 1;
+  }
+  if (currentWave > WAVES.length) currentWave = WAVES.length;
+  const allTeams = waves.flatMap((w) => w.teams);
+  const doneCount = allTeams.filter((t) => ['success', 'failed', 'stopped'].includes(t.status)).length;
+  const progress = allTeams.length > 0 ? Math.round((doneCount / allTeams.length) * 100) : 0;
+  const activeTeam = allTeams.find((t) => t.status === 'running')?.team ?? '';
+  return { ...cycle, waves, currentWave, progress, activeTeam };
 }
