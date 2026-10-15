@@ -172,7 +172,7 @@ async function findWorkingModel(
   failedModel: string,
 ): Promise<{ model: string; endpointId: string } | null> {
   try {
-    const { getModelsHealth, getTeamModelMap, listEndpoints } = await import('./llm-endpoints');
+    const { getTeamModelMap, listEndpoints, fetchEndpointModels } = await import('./llm-endpoints');
     const map = await getTeamModelMap();
     const entry = (map as Record<string, { endpointId: string; model: string }>)[team];
     const endpoints = await listEndpoints();
@@ -184,12 +184,15 @@ async function findWorkingModel(
     for (const epId of orderedEndpoints) {
       const ep = endpoints.find((e) => e.id === epId);
       if (!ep?.apiKey) continue;
-      const health = await getModelsHealth(epId, [], {}).catch(() => ({}));
-      const healthyModels = Object.entries(health)
-        .filter(([m, h]) => (h as { ok: boolean }).ok && m !== failedModel)
-        .map(([m]) => m)
-        .slice(0, 3);
-      for (const m of healthyModels) {
+      // فهرست مدل‌ها را بگیر و چندتای اول را مستقیم تست کن
+      let models: string[] = [];
+      try {
+        const fetched = await fetchEndpointModels(epId, 15000);
+        models = fetched.models.map((m) => m.id).filter((id) => id !== failedModel).slice(0, 5);
+      } catch {
+        continue;
+      }
+      for (const m of models) {
         try {
           await postChatCompletions(ep.baseUrl, ep.apiKey, m, 'سلام', {
             maxTokens: 8,
