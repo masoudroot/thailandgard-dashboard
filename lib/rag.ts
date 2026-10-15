@@ -2,9 +2,9 @@
  * lib/rag.ts: سرویس خواندن دانش (RAG)، تیم ۲
  *
  * جست‌وجوی معنایی روی جدول `public.knowledge_chunks` در سوپابیس.
- * - `getEmbedding` پیکربندی امبدینگ را از `resolveEmbeddingConfig()`
- *   (lib/llm-endpoints.ts) می‌خواند، نه از env مستقیم. اگر تنظیم نشده باشد،
- *   خطای فارسی واضح پرتاب می‌کند.
+ * - `getEmbedding` زنجیره‌ی هوشمند fallback را از `resolveEmbeddingChain()`
+ *   (lib/llm-endpoints.ts) می‌خواند: مدل اصلی ← مدل خوب دیگر روی همان API ←
+ *   API بعدی. اگر هیچ کاندیدایی جواب نداد خطای فارسی واضح پرتاب می‌کند.
  * - `retrieveKnowledge` کوئری را امبد می‌کند، RPC از پیش ساخته‌شده‌ی
  *   `match_knowledge_chunks` را با فیلتر team صدا می‌زند و N چانک برتر را
  *   به یک رشته‌ی فارسی آماده‌ی تزریق در پرامپت تبدیل می‌کند.
@@ -16,7 +16,18 @@
  */
 
 import { getSupabase } from './api';
-import { resolveEmbeddingConfig } from './llm-endpoints';
+import {
+  EXPECTED_EMBEDDING_DIM,
+  resolveEmbeddingChain,
+  type ResolvedTeamLLM,
+} from './llm-endpoints';
+import {
+  classifyError,
+  getCooldownKeys,
+  normModelKey,
+  recordModelFailure,
+  recordModelSuccess,
+} from './model-health';
 
 /** سقف ۳۰ ثانیه برای همه‌ی فراخوانی‌های خروجی RAG. */
 const TIMEOUT_MS = 30_000;
@@ -36,19 +47,85 @@ export class RAGError extends Error {
  * در صورت تنظیم نبودن مدل امبدینگ، متن خالی، خطای درگاه، تایم‌اوت یا
  * پاسخ نامعتبر، RAGError با پیام فارسی پرتاب می‌شود.
  */
+/**
+ * ساخت بردار امبدینگ برای یک متن با زنجیره‌ی هوشمند fallback.
+ *
+ * ترتیب تلاش دقیقاً همان منطق درخواستی است:
+ *   ۱. مدل اصلی روی endpoint اصلی
+ *   ۲. مدل‌های خوب دیگر (۱۵۳۶ بُعدی) روی همان endpoint
+ *   ۳. همان مدل اصلی روی endpointهای بعدی (سهمیه‌ی تازه)
+ *   ۴. مدل‌های خوب روی endpointهای بعدی
+ *
+ * طبقه‌بندی خطا:
+ *   - 401/403 (کلید مرده): بقیه‌ی مدل‌های همان endpoint رد می‌شوند
+ *   - 429/404/408/5xx، تایم‌اوت، خطای شبکه: کاندیدای بعدی
+ *   - بُعد نامعتبر بردار: کاندیدای بعدی (جست‌وجوی معنایی فقط با ۱۵۳۶ بُعد کار می‌کند)
+ *
+ * اگر هیچ کاندیدایی جواب نداد، RAGError پرتاب می‌شود؛ فراخواننده‌های مسیر
+ * خواندن (buildKnowledgePromptSection و retrieveKnowledgeChunks) این خطا را
+ * می‌گیرند و بدون بخش دانش ادامه می‌دهند تا سیستم هرگز نمیرد.
+ */
 export async function getEmbedding(text: string): Promise<number[]> {
   const trimmed = text.trim();
   if (!trimmed) {
     throw new RAGError('متن خالی است؛ نمی‌توان امبدینگ ساخت.');
   }
 
-  const cfg = await resolveEmbeddingConfig();
-  if (!cfg) {
+  const chain = await resolveEmbeddingChain();
+  if (chain.length === 0) {
     throw new RAGError(
       'مدل امبدینگ تنظیم نشده است. از بخش تنظیمات سامانه، یک endpoint و یک مدل امبدینگ انتخاب کنید.',
     );
   }
 
+  // cooldownهای ماندگار: کاندیداهایی که در ران‌های قبلی خطا گرفتند رد می‌شوند
+  const dbCooldowns = await getCooldownKeys(chain.map((c) => c.endpointId));
+
+  const failures: string[] = [];
+  for (let i = 0; i < chain.length; i++) {
+    const cfg = chain[i];
+    if (dbCooldowns.has(`${cfg.endpointId}::${normModelKey(cfg.model)}`)) {
+      failures.push(`${cfg.model} (در استراحت از ران قبلی)`);
+      continue;
+    }
+    const outcome = await tryEmbeddingCandidate(cfg, trimmed);
+    if (outcome.ok) {
+      await recordModelSuccess(cfg.endpointId, cfg.model);
+      return outcome.embedding;
+    }
+    await recordModelFailure(
+      cfg.endpointId,
+      cfg.model,
+      classifyError(outcome.status ?? outcome.kind),
+      outcome.status,
+    );
+    failures.push(`${cfg.model} (${outcome.status ?? 'خطا'})`);
+    console.warn(
+      `[embedding] کاندیدای ${i + 1}/${chain.length} ناموفق بود (${cfg.model}): ${outcome.status ?? outcome.kind}؛ تلاش با کاندیدای بعدی.`,
+    );
+    if (outcome.kind === 'skip-endpoint') {
+      // کلید این endpoint مرده است؛ بقیه‌ی مدل‌های همان endpoint را رد کن
+      while (i + 1 < chain.length && chain[i + 1].baseUrl === cfg.baseUrl) {
+        i++;
+      }
+    }
+  }
+
+  throw new RAGError(
+    `همه‌ی مدل‌های امبدینگ ناموفق بودند (${chain.length} کاندیدا): ${failures.slice(0, 4).join('؛ ')}${failures.length > 4 ? '؛ …' : ''}`,
+  );
+}
+
+/** صادرشده برای تست: نتیجه‌ی تلاش یک کاندیدای امبدینگ. */
+export type EmbeddingCandidateOutcome =
+  | { ok: true; embedding: number[] }
+  | { ok: false; kind: 'next' | 'skip-endpoint'; status?: string };
+
+/** صادرشده برای تست: طبقه‌بندی خطای یک کاندیدا. */
+export async function tryEmbeddingCandidate(
+  cfg: ResolvedTeamLLM,
+  text: string,
+): Promise<EmbeddingCandidateOutcome> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -59,7 +136,7 @@ export async function getEmbedding(text: string): Promise<number[]> {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${cfg.apiKey}`,
       },
-      body: JSON.stringify({ model: cfg.model, input: trimmed }),
+      body: JSON.stringify({ model: cfg.model, input: text }),
       signal: controller.signal,
     });
 
@@ -69,25 +146,31 @@ export async function getEmbedding(text: string): Promise<number[]> {
     };
 
     if (!res.ok) {
-      const detail = body?.error?.message || `خطای HTTP ${res.status}`;
-      throw new RAGError(`خطای درگاه امبدینگ (${cfg.model}): ${detail}`);
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, kind: 'skip-endpoint', status: `خطای ${res.status} (کلید)` };
+      }
+      // 429 سهمیه/ریت‌لیمیت، 404 مدل منسوخ، 408/5xx خطای موقت درگاه
+      return { ok: false, kind: 'next', status: `خطای ${res.status}` };
     }
 
     const embedding = body.data?.[0]?.embedding;
     if (!Array.isArray(embedding) || embedding.length === 0) {
-      throw new RAGError(`درگاه امبدینگ برداری برنگرداند (${cfg.model}).`);
+      return { ok: false, kind: 'next', status: 'پاسخ خالی' };
     }
-    return embedding;
+    if (embedding.length !== EXPECTED_EMBEDDING_DIM) {
+      return {
+        ok: false,
+        kind: 'next',
+        status: `بُعد نامعتبر (${embedding.length} به‌جای ${EXPECTED_EMBEDDING_DIM})`,
+      };
+    }
+    return { ok: true, embedding };
   } catch (err) {
-    if (err instanceof RAGError) throw err;
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new RAGError(
-        `درخواست امبدینگ پس از ${TIMEOUT_MS / 1000} ثانیه بی‌پاسخ ماند (تایم‌اوت).`,
-      );
+      return { ok: false, kind: 'next', status: 'تایم‌اوت' };
     }
-    throw new RAGError(
-      `درخواست امبدینگ ناموفق بود: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    // خطای شبکه و سایر خطاها: موقت فرض می‌شود
+    return { ok: false, kind: 'next', status: 'خطای شبکه' };
   } finally {
     clearTimeout(timeout);
   }

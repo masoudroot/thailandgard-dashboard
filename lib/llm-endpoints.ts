@@ -58,6 +58,8 @@ export interface ResolvedTeamLLM {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** شناسه endpoint برای ردیابی سلامت مدل (lib/model-health). */
+  endpointId: string;
 }
 
 /** نام فارسی هر تیم برای نمایش در تنظیمات. */
@@ -295,7 +297,7 @@ export async function resolveTeamConfig(
   if (!entry) return null;
   const ep = await getEndpoint(entry.endpointId);
   if (!ep || !ep.apiKey || !entry.model) return null;
-  return { baseUrl: ep.baseUrl, apiKey: ep.apiKey, model: entry.model };
+  return { baseUrl: ep.baseUrl, apiKey: ep.apiKey, model: entry.model, endpointId: ep.id };
 }
 
 /** خواندن «مدل پیش‌فرض سامانه» (تیم‌های بدون تنظیم از آن استفاده می‌کنند). */
@@ -370,7 +372,137 @@ export async function resolveEmbeddingConfig(): Promise<ResolvedTeamLLM | null> 
   if (!entry) return null;
   const ep = await getEndpoint(entry.endpointId);
   if (!ep || !ep.apiKey || !entry.model) return null;
-  return { baseUrl: ep.baseUrl, apiKey: ep.apiKey, model: entry.model };
+  return { baseUrl: ep.baseUrl, apiKey: ep.apiKey, model: entry.model, endpointId: ep.id };
+}
+
+/* ------------------------------------------------------------------ */
+/* زنجیره‌ی هوشمند امبدینگ (fallback خودکار)                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * بُعد بردار امبدینگ ذخیره‌شده در دیتابیس.
+ * باید با `knowledge_chunks.embedding vector(1536)` یکی باشد؛ مدل جایگزین
+ * که بُعد دیگری برگرداند برای جست‌وجوی معنایی قابل استفاده نیست و در زنجیره
+ * رد می‌شود.
+ */
+export const EXPECTED_EMBEDDING_DIM = 1536;
+
+/**
+ * مدل‌های امبدینگ جایگزینِ شناخته‌شده با خروجی ۱۵۳۶ بُعدی.
+ * فقط مدل‌هایی این‌جا هستند که بُعد خروجی‌شان قطعی ۱۵۳۶ است؛ مدل «به‌دردنخور»
+ * یا با بُعد نامطمئن این‌جا نمی‌آید چون شباهت کسینوسی بین فضای برداری
+ * متفاوت بی‌معناست.
+ */
+export const EMBEDDING_FALLBACK_MODELS: string[] = [
+  'text-embedding-3-small',
+  'text-embedding-ada-002',
+];
+
+/**
+ * ساخت زنجیره‌ی مرتب کاندیداهای امبدینگ:
+ *   ۱. مدل اصلی روی endpoint اصلی (تنظیم `llm_embedding_model`)
+ *   ۲. مدل‌های جایگزینِ خوب روی همان endpoint
+ *   ۳. همان مدل اصلی روی endpointهای بعدی (سهمیه‌ی تازه)
+ *   ۴. مدل‌های جایگزین روی endpointهای بعدی
+ *
+ * ترتیب دقیقاً همان منطق درخواستی است: اول مدل خوب دیگر روی همان API،
+ * بعد API بعدی. endpoint بدون کلید نادیده گرفته می‌شود و ترکیب‌های تکراری
+ * حذف می‌شوند.
+ */
+export async function resolveEmbeddingChain(): Promise<ResolvedTeamLLM[]> {
+  const primary = await getEmbeddingModel();
+  const eps = await listEndpoints();
+  return buildEmbeddingChain(primary, eps);
+}
+
+/**
+ * ساخت زنجیره‌ی مرتب کاندیداها از روی ورودی خالص (قابل تست بدون دیتابیس).
+ */
+export function buildEmbeddingChain(
+  primary: TeamModelEntry | null,
+  endpoints: LLMEndpoint[],
+): ResolvedTeamLLM[] {
+  const chain: ResolvedTeamLLM[] = [];
+  const seen = new Set<string>();
+  const push = (ep: LLMEndpoint, model: string) => {
+    const key = `${ep.baseUrl}||${model}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    chain.push({ baseUrl: ep.baseUrl, apiKey: ep.apiKey, model, endpointId: ep.id });
+  };
+
+  const ordered = [...endpoints].sort((a, b) => {
+    if (primary) {
+      if (a.id === primary.endpointId) return -1;
+      if (b.id === primary.endpointId) return 1;
+    }
+    return 0;
+  });
+
+  for (const ep of ordered) {
+    if (!ep.apiKey) continue;
+    const models: string[] = [];
+    // مدل اصلی اول؛ روی endpoint اصلی همان مدل تنظیم‌شده، روی بقیه همان نام
+    // مدل (سهمیه‌ی تازه روی API بعدی). اگر روی آن API وجود نداشت، 404 می‌دهد
+    // و زنجیره به کاندیدای بعدی می‌رود.
+    if (primary?.model) models.push(primary.model);
+    for (const m of EMBEDDING_FALLBACK_MODELS) models.push(m);
+    for (const m of models) push(ep, m);
+  }
+  return chain;
+}
+
+export interface EmbeddingTestResult {
+  dims: number;
+  latencyMs: number;
+}
+
+/**
+ * تست واقعی امبدینگ: ارسال یک متن کوتاه به endpoint+مدل داده‌شده و برگرداندن
+ * بُعد بردار + زمان پاسخ. برای بخش «تست واقعی» تنظیمات.
+ */
+export async function testEmbedding(
+  endpointId: string,
+  model: string,
+  text = 'تست امبدینگ',
+  timeoutMs = 60_000,
+): Promise<EmbeddingTestResult> {
+  const ep = await getEndpoint(endpointId);
+  if (!ep) throw new InputError('این endpoint پیدا نشد.');
+  if (!ep.apiKey) throw new InputError('کلید API برای این endpoint ثبت نشده است.');
+  const cleanModel = model.trim();
+  if (!cleanModel) throw new InputError('مدل را مشخص کنید.');
+
+  const started = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${ep.baseUrl}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ep.apiKey}`,
+      },
+      body: JSON.stringify({ model: cleanModel, input: text }),
+      signal: controller.signal,
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      data?: Array<{ embedding?: number[] }>;
+      error?: { message?: string };
+    };
+    if (!res.ok) {
+      throw new InputError(
+        `تست امبدینگ ناموفق بود (وضعیت ${res.status}): ${body?.error?.message ?? ''}`.trim(),
+      );
+    }
+    const embedding = body.data?.[0]?.embedding;
+    if (!Array.isArray(embedding) || embedding.length === 0) {
+      throw new InputError('درگاه برداری برنگرداند.');
+    }
+    return { dims: embedding.length, latencyMs: Date.now() - started };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export interface PromptTestResult {
@@ -617,6 +749,14 @@ async function readHealthCache(): Promise<ModelHealthMap> {
     map[epId] = entry;
   }
   return map;
+}
+
+/**
+ * خواندن کش سلامت مدل‌ها برای روتر هوشمند (فقط خواندنی).
+ * کلیدها endpointId و نام مدل‌اند؛ مقدارها { ok, message, checkedAt }.
+ */
+export async function readModelHealthCache(): Promise<ModelHealthMap> {
+  return readHealthCache();
 }
 
 /**
