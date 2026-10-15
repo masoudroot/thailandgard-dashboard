@@ -1,0 +1,24 @@
+name: knowledge-review
+
+on:
+  schedule:
+    # هر روز ساعت ۰۴:۰۰ تهران (۰۰:۳۰ UTC)
+    - cron: '30 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: review knowledge freshness
+        run: npx tsx worker/knowledge-review.ts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
