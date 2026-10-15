@@ -14,6 +14,42 @@ import { claimTeam, startHeartbeat, type LockOwner } from '../lib/lock';
 
 const STUCK_TIMEOUT_MS = 15 * 60 * 1000;
 
+/**
+ * جاروی پچ‌های یتیم پل اجرا.
+ * هر پچ با وضعیت proposed را از طریق جریان خودکار
+ * (دروازه ← کامیت ← مرج به dev) پردازش می‌کند.
+ * دستور مسعود: بدون تأیید دستی. کاملاً best-effort.
+ */
+async function sweepOrphanedBridgePatches(): Promise<void> {
+  try {
+    const sb = getSupabase();
+    const { data, error } = await sb
+      .from('bridge_patches')
+      .select('id, team')
+      .eq('status', 'proposed')
+      .order('created_at', { ascending: true })
+      .limit(10);
+    if (error || !data || data.length === 0) return;
+    const { processProposedPatch } = await import('../lib/bridge/propose');
+    for (const row of data as Array<{ id: string; team: string }>) {
+      try {
+        const res = await processProposedPatch(row.id);
+        console.log(
+          `[bridge-sweep] patch ${row.id} (team ${row.team}): ` +
+            (res.merged ? `merged به dev` : res.gated ? `committed ولی مرج نشد` : `needs_review`),
+        );
+      } catch (err) {
+        console.error(
+          `[bridge-sweep] patch ${row.id} خطا داد:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  } catch (err) {
+    console.error('[bridge-sweep] خطای غیرمنتظره:', err instanceof Error ? err.message : err);
+  }
+}
+
 async function main(): Promise<void> {
   const sb = getSupabase();
   const action = process.argv[2];
@@ -37,6 +73,11 @@ async function main(): Promise<void> {
   }
   const cycleId = active.id as string;
   const runId = (active.run_id as string) ?? 'worker';
+
+  // جاروی پچ‌های یتیم پل: پچ‌هایی که در proposed مانده‌اند
+  // (مثلاً از پیش از قابلیت خودکار، یا کرش بین ثبت و پردازش)
+  // را خودکار پردازش می‌کند. best-effort؛ هرگز چرخه را متوقف نمی‌کند.
+  await sweepOrphanedBridgePatches();
 
   // وضعیت تیم‌ها (مرتب‌سازی صعودی تا آخرین ردیف هر تیم، جدیدترین وضعیت باشد)
   const { data: runs } = await sb

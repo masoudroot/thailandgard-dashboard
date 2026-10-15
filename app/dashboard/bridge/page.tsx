@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
-  CheckCircle2,
   ChevronDown,
   ExternalLink,
   FileDiff,
@@ -12,8 +11,6 @@ import {
   Inbox,
   KeyRound,
   RotateCw,
-  ShieldCheck,
-  XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
@@ -22,9 +19,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { SkeletonPanel } from '@/components/Skeleton';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Label } from '@/components/ui/Input';
-import { PasswordInput } from '@/components/ui/password-input';
-import { Textarea } from '@/components/ui/textarea';
 import { faNum } from '@/lib/format';
 import {
   BRIDGE_STATUS_FA,
@@ -38,14 +32,13 @@ import {
 /*  ابزارهای کوچک                                                      */
 /* ------------------------------------------------------------------ */
 
-const MANAGER_KEY_STORAGE = 'tg-bridge-manager-key';
-
 type TabKey = 'pending' | 'approved' | 'rejected';
 
+// دستور مسعود: پل کاملاً خودکار است؛ این صفحه فقط مشاهده است، نه تأیید.
 const TABS: { key: TabKey; label: string; statuses: BridgePatchStatus[] }[] = [
-  { key: 'pending', label: 'در انتظار تأیید', statuses: ['committed'] },
-  { key: 'approved', label: 'تأییدشده', statuses: ['approved', 'merged'] },
-  { key: 'rejected', label: 'ردشده', statuses: ['rejected'] },
+  { key: 'pending', label: 'در حال پردازش', statuses: ['proposed', 'gated', 'committed', 'needs_review'] },
+  { key: 'approved', label: 'مرج‌شده', statuses: ['approved', 'merged'] },
+  { key: 'rejected', label: 'ردشده', statuses: ['rejected', 'rolledback'] },
 ];
 
 const FILE_STATUS_FA: Record<string, string> = {
@@ -272,28 +265,28 @@ interface PatchCardProps {
   diff: DiffLoad | undefined;
   diffOpen: boolean;
   onToggleDiff: () => void;
-  onApprove: () => void;
-  onReject: (reason: string) => void;
-  acting: boolean;
-  confirmApprove: boolean;
-  onArmApprove: () => void;
-  onDisarmApprove: () => void;
+}
+
+function statusVariant(status: BridgePatchStatus): 'warning' | 'destructive' | 'success' {
+  if (status === 'rejected') return 'destructive';
+  if (status === 'merged' || status === 'approved' || status === 'rolledback') return 'success';
+  return 'warning';
 }
 
 function PatchCard(props: PatchCardProps) {
-  const { patch, diff, diffOpen, onToggleDiff, acting } = props;
-  const [rejectOpen, setRejectOpen] = useState(false);
-  const [reason, setReason] = useState('');
+  const { patch, diff, diffOpen, onToggleDiff } = props;
   const gateCount = gateErrorsCount(patch.gate_errors);
-  const pending = patch.status === 'committed';
 
   return (
     <article className="flex flex-col rounded-xl border border-border bg-card p-4 shadow-surface sm:p-5">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {patch.team && <Badge variant="secondary">تیم {patch.team}</Badge>}
-        <Badge variant={pending ? 'warning' : patch.status === 'rejected' ? 'destructive' : 'success'}>
+        <Badge variant={statusVariant(patch.status)}>
           {BRIDGE_STATUS_FA[patch.status] ?? patch.status}
         </Badge>
+        {patch.status === 'merged' && patch.decided_by === 'auto' && (
+          <Badge variant="secondary">خودکار</Badge>
+        )}
         {gateCount != null && (
           <Badge variant="secondary">
             {gateCount === 0 ? 'دروازه: بدون خطا' : `دروازه: ${faNum(gateCount)} خطا`}
@@ -350,7 +343,7 @@ function PatchCard(props: PatchCardProps) {
       )}
       {(patch.status === 'approved' || patch.status === 'merged') && (
         <p className="mb-3 rounded-lg bg-success/10 px-3 py-2 text-xs leading-6 text-card-foreground">
-          {patch.status === 'approved' ? 'تأیید و مرج شد' : 'مرج شد'}
+          {patch.decided_by === 'auto' ? 'به‌صورت خودکار مرج شد' : patch.status === 'approved' ? 'تأیید و مرج شد' : 'مرج شد'}
           {patch.decided_at && (
             <span>
               {'؛ '}
@@ -363,6 +356,11 @@ function PatchCard(props: PatchCardProps) {
               {'؛ مرج '} <code dir="ltr" className="font-mono">{patch.merge_sha.slice(0, 7)}</code>
             </span>
           )}
+        </p>
+      )}
+      {patch.status === 'needs_review' && (
+        <p className="mb-3 rounded-lg bg-warning/10 px-3 py-2 text-xs leading-6 text-card-foreground">
+          این پچ در دروازه کیفیت رد شد و متوقف ماند؛ چرخه ادامه یافت. برای جزئیات، diff و خطاهای دروازه را ببینید.
         </p>
       )}
 
@@ -384,90 +382,20 @@ function PatchCard(props: PatchCardProps) {
         )}
       </div>
 
-      {pending && (
-        <div className="mt-auto pt-1">
-          {rejectOpen ? (
-            <div>
-              <Label htmlFor={`reject-reason-${patch.id}`} className="mb-2 block text-xs font-medium">
-                دلیل رد (الزامی)
-              </Label>
-              <Textarea
-                id={`reject-reason-${patch.id}`}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                rows={2}
-                placeholder="چرا این پچ رد می‌شود؟"
-              />
-              <div className="mt-2 flex gap-2">
-                <Button
-                  variant="destructive"
-                  disabled={acting || !reason.trim()}
-                  aria-busy={acting || undefined}
-                  onClick={() => props.onReject(reason.trim())}
-                >
-                  {acting ? 'در حال رد…' : 'رد پچ'}
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={acting}
-                  onClick={() => {
-                    setRejectOpen(false);
-                    setReason('');
-                  }}
-                >
-                  انصراف
-                </Button>
-              </div>
-            </div>
-          ) : props.confirmApprove ? (
-            <div className="rounded-lg border border-warning/40 bg-warning/10 p-3">
-              <p className="mb-2 text-sm font-semibold">
-                این پچ تأیید و بلافاصله به dev مرج می‌شود. مطمئن هستید؟
-              </p>
-              <div className="flex gap-2">
-                <Button variant="default" disabled={acting} aria-busy={acting || undefined} onClick={props.onApprove}>
-                  {acting ? 'در حال مرج…' : 'بله، تأیید و مرج کن'}
-                </Button>
-                <Button variant="outline" disabled={acting} onClick={props.onDisarmApprove}>
-                  انصراف
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              {patch.compare_url && (
-                <a
-                  href={patch.compare_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-border px-4 py-2 text-sm font-semibold hover:bg-muted"
-                >
-                  <ExternalLink size={15} aria-hidden="true" />
-                  مقایسه در گیت‌هاب
-                </a>
-              )}
-              <Button
-                variant="default"
-                className="bg-success text-success-foreground hover:bg-success/90"
-                disabled={acting}
-                onClick={props.onArmApprove}
-              >
-                <CheckCircle2 size={16} strokeWidth={2} aria-hidden="true" />
-                تأیید و مرج به dev
-              </Button>
-              <Button
-                variant="outline"
-                className="border-destructive/30 text-destructive hover:bg-destructive hover:text-white"
-                disabled={acting}
-                onClick={() => setRejectOpen(true)}
-              >
-                <XCircle size={16} strokeWidth={2} aria-hidden="true" />
-                رد پچ
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+      {/* مشاهده‌محور: تأیید دستی حذف شده؛ پردازش و مرج خودکار است */}
+      <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
+        {patch.compare_url && (
+          <a
+            href={patch.compare_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-border px-4 py-2 text-sm font-semibold hover:bg-muted"
+          >
+            <ExternalLink size={15} aria-hidden="true" />
+            مقایسه در گیت‌هاب
+          </a>
+        )}
+      </div>
     </article>
   );
 }
@@ -482,23 +410,7 @@ export default function BridgePage() {
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [diffs, setDiffs] = useState<Record<string, DiffLoad>>({});
   const [diffOpenId, setDiffOpenId] = useState<string | null>(null);
-  const [actingId, setActingId] = useState<string | null>(null);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; kind: 'ok' | 'err' } | null>(null);
-  const [keyInput, setKeyInput] = useState('');
-  const [managerKey, setManagerKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem(MANAGER_KEY_STORAGE);
-      if (saved) {
-        setManagerKey(saved);
-        setKeyInput(saved);
-      }
-    } catch {
-      /* حافظهٔ نشست در دسترس نیست */
-    }
-  }, []);
 
   const showToast = useCallback((text: string, kind: 'ok' | 'err' = 'ok') => {
     setToast({ text, kind });
@@ -527,31 +439,6 @@ export default function BridgePage() {
   useEffect(() => {
     load();
   }, [load]);
-
-  function saveKey() {
-    const v = keyInput.trim();
-    if (!v) {
-      showToast('کلید مدیریتی را وارد کنید.', 'err');
-      return;
-    }
-    try {
-      sessionStorage.setItem(MANAGER_KEY_STORAGE, v);
-    } catch {
-      /* ذخیره نشد؛ فقط در همین حافظهٔ کامپوننت می‌ماند */
-    }
-    setManagerKey(v);
-    showToast('کلید مدیریتی برای این نشست ذخیره شد.');
-  }
-
-  function clearKey() {
-    try {
-      sessionStorage.removeItem(MANAGER_KEY_STORAGE);
-    } catch {
-      /* نادیده */
-    }
-    setManagerKey(null);
-    setKeyInput('');
-  }
 
   async function toggleDiff(id: string) {
     if (diffOpenId === id) {
@@ -583,75 +470,16 @@ export default function BridgePage() {
     }
   }
 
-  function needKey(): string | null {
-    if (!managerKey) {
-      showToast('اول کلید مدیریتی را وارد و ذخیره کنید.', 'err');
-      return null;
-    }
-    return managerKey;
-  }
-
-  async function handleApprove(id: string) {
-    const key = needKey();
-    if (!key) return;
-    setActingId(id);
-    try {
-      const res = await fetch(`/api/bridge/patches/${encodeURIComponent(id)}/approve`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${key}`,
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) throw new Error(await readError(res));
-      showToast('پچ تأیید و به dev مرج شد.');
-      setConfirmId(null);
-      setDiffOpenId(null);
-      await load();
-      setTab('approved');
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : 'تأیید انجام نشد؛ دوباره تلاش کنید.', 'err');
-    } finally {
-      setActingId(null);
-    }
-  }
-
-  async function handleReject(id: string, reason: string) {
-    const key = needKey();
-    if (!key) return;
-    setActingId(id);
-    try {
-      const res = await fetch(`/api/bridge/patches/${encodeURIComponent(id)}/reject`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${key}`,
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({ reason }),
-      });
-      if (!res.ok) throw new Error(await readError(res));
-      showToast('پچ رد شد.');
-      setDiffOpenId(null);
-      await load();
-      setTab('rejected');
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : 'رد انجام نشد؛ دوباره تلاش کنید.', 'err');
-    } finally {
-      setActingId(null);
-    }
-  }
-
   const activeTab = TABS.find((t) => t.key === tab) ?? TABS[0];
   const visible = patches
     .filter((p) => activeTab.statuses.includes(p.status))
     .sort((a, b) => +new Date(b.created_at ?? 0) - +new Date(a.created_at ?? 0));
   const counts: Record<TabKey, number> = {
-    pending: patches.filter((p) => p.status === 'committed').length,
+    pending: patches.filter((p) =>
+      ['proposed', 'gated', 'committed', 'needs_review'].includes(p.status),
+    ).length,
     approved: patches.filter((p) => p.status === 'approved' || p.status === 'merged').length,
-    rejected: patches.filter((p) => p.status === 'rejected').length,
+    rejected: patches.filter((p) => p.status === 'rejected' || p.status === 'rolledback').length,
   };
   const preparing = patches.filter((p) => p.status === 'proposed' || p.status === 'gated').length;
 
@@ -661,7 +489,7 @@ export default function BridgePage() {
         <PageHeader
           icon={GitPullRequest}
           title="پل اجرا"
-          subtitle="پچ‌های تیم‌ها را بازبینی کنید؛ مرج به dev فقط با تأیید صریح شما انجام می‌شود."
+          subtitle="پچ‌های تیم‌ها به‌صورت خودکار پردازش و به dev مرج می‌شوند؛ این صفحه فقط برای مشاهده است."
           actions={
             <Button variant="outline" onClick={load} className="flex-1 sm:flex-none">
               <RotateCw size={16} strokeWidth={2} aria-hidden="true" />
@@ -669,48 +497,6 @@ export default function BridgePage() {
             </Button>
           }
         />
-
-        {/* کلید مدیریتی */}
-        <section
-          aria-label="کلید مدیریتی"
-          className="mb-6 rounded-xl border border-border bg-card p-4 shadow-surface"
-        >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <Label htmlFor="bridge-manager-key" className="mb-1 block text-sm font-medium">
-                کلید مدیریتی
-              </Label>
-              <PasswordInput
-                id="bridge-manager-key"
-                dir="ltr"
-                value={keyInput}
-                onChange={(e) => setKeyInput(e.target.value)}
-                placeholder="کلید API مدیر داشبورد"
-                autoComplete="off"
-              />
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                تأیید و رد پچ فقط با کلید مدیریتی انجام می‌شود؛ کلید فقط در همین نشست مرورگر می‌ماند.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="default" onClick={saveKey}>
-                <KeyRound size={16} strokeWidth={2} aria-hidden="true" />
-                ذخیره کلید
-              </Button>
-              {managerKey && (
-                <Button variant="outline" onClick={clearKey}>
-                  حذف
-                </Button>
-              )}
-            </div>
-          </div>
-          {managerKey && (
-            <p className="mt-2 flex items-center gap-1 text-xs text-success">
-              <ShieldCheck size={14} aria-hidden="true" />
-              کلید مدیریتی برای این نشست ذخیره شد.
-            </p>
-          )}
-        </section>
 
         {loadState === 'loading' ? (
           <div className="grid gap-4 md:grid-cols-2">
@@ -762,7 +548,7 @@ export default function BridgePage() {
             {tab === 'pending' && preparing > 0 && (
               <p className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
                 <Hourglass size={14} aria-hidden="true" />
-                {faNum(preparing)} پچ در مرحلهٔ آماده‌سازی است و هنوز قابل تأیید نیست.
+                {faNum(preparing)} پچ در مرحلهٔ آماده‌سازی است.
               </p>
             )}
 
@@ -771,14 +557,14 @@ export default function BridgePage() {
                 icon={Inbox}
                 title={
                   tab === 'pending'
-                    ? 'پچی در انتظار تأیید نیست'
+                    ? 'پچی در حال پردازش نیست'
                     : tab === 'approved'
-                      ? 'هنوز پچی تأیید نشده است'
+                      ? 'هنوز پچی مرج نشده است'
                       : 'پچی رد نشده است'
                 }
                 description={
                   tab === 'pending'
-                    ? 'پچ‌های کامیت‌شدهٔ تیم‌ها برای تأیید شما اینجا می‌آیند.'
+                    ? 'پچ‌های تیم‌ها به‌صورت خودکار پردازش و به dev مرج می‌شوند.'
                     : undefined
                 }
               />
@@ -791,12 +577,6 @@ export default function BridgePage() {
                     diff={diffs[patch.id]}
                     diffOpen={diffOpenId === patch.id}
                     onToggleDiff={() => toggleDiff(patch.id)}
-                    onApprove={() => handleApprove(patch.id)}
-                    onReject={(reason) => handleReject(patch.id, reason)}
-                    acting={actingId === patch.id}
-                    confirmApprove={confirmId === patch.id}
-                    onArmApprove={() => setConfirmId(patch.id)}
-                    onDisarmApprove={() => setConfirmId(null)}
                   />
                 ))}
               </div>

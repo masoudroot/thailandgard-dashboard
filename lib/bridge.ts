@@ -27,7 +27,8 @@ export type BridgePatchStatus =
   | 'approved'
   | 'merged'
   | 'rejected'
-  | 'rolledback';
+  | 'rolledback'
+  | 'needs_review';
 
 export const BRIDGE_STATUS_FA: Record<BridgePatchStatus, string> = {
   proposed: 'پیشنهادشده',
@@ -37,6 +38,7 @@ export const BRIDGE_STATUS_FA: Record<BridgePatchStatus, string> = {
   merged: 'مرج‌شده',
   rejected: 'ردشده',
   rolledback: 'برگردانده‌شده',
+  needs_review: 'نیاز به بررسی',
 };
 
 /** یک فایل پچ در ستون files جدول. */
@@ -114,6 +116,7 @@ const VALID_STATUSES = new Set<string>([
   'merged',
   'rejected',
   'rolledback',
+  'needs_review',
 ]);
 
 const SUMMARY_COLUMNS =

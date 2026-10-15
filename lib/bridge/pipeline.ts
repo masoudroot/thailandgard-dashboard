@@ -29,7 +29,8 @@ export type BridgePatchStatus =
   | 'approved'
   | 'merged'
   | 'rejected'
-  | 'rolledback';
+  | 'rolledback'
+  | 'needs_review';
 
 export interface BridgePatch {
   id: string;

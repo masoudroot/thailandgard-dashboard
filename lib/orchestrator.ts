@@ -393,6 +393,7 @@ export interface RunWavesOptions {
  * یک ردیف برای هر تیم در هر چرخه؛ files آرایهٔ JSON از {path, content} است.
  * اگر جدول هنوز اعمال نشده (خطای 42P01)، فقط در لاگ ثبت می‌شود؛
  * این قدم هرگز نتیجهٔ تیم را خراب نمی‌کند.
+ * برمی‌گرداند: شناسهٔ ردیف پچ، یا null اگر ثبتی انجام نشد.
  */
 async function registerProposedPatches(
   sb: ReturnType<typeof getSupabase>,
@@ -403,7 +404,7 @@ async function registerProposedPatches(
     summary: string;
     patches: PatchFile[] | undefined;
   },
-): Promise<void> {
+): Promise<string | null> {
   const files = (opts.patches ?? [])
     .filter(
       (p) =>
@@ -416,14 +417,18 @@ async function registerProposedPatches(
       path: p.path.trim().replace(/^\/+/, ''),
       content: p.content,
     }));
-  if (files.length === 0) return;
-  const { error } = await sb.from('bridge_patches').insert({
-    team: opts.team,
-    cycle_id: opts.cycleId,
-    summary: opts.summary.slice(0, 2000),
-    files,
-    status: 'proposed',
-  });
+  if (files.length === 0) return null;
+  const { data, error } = await sb
+    .from('bridge_patches')
+    .insert({
+      team: opts.team,
+      cycle_id: opts.cycleId,
+      summary: opts.summary.slice(0, 2000),
+      files,
+      status: 'proposed',
+    })
+    .select('id')
+    .single();
   if (error) {
     if (error.code === '42P01') {
       console.error(
@@ -437,11 +442,44 @@ async function registerProposedPatches(
         error.message,
       );
     }
-    return;
+    return null;
   }
+  const patchId = (data as { id?: string } | null)?.id ?? null;
   console.log(
-    `[orchestrator] پچ پیشنهادی تیم ${opts.team} (${files.length} فایل) در bridge_patches با وضعیت proposed ثبت شد.`,
+    `[orchestrator] پچ پیشنهادی تیم ${opts.team} (${files.length} فایل) در bridge_patches با وضعیت proposed ثبت شد (id=${patchId}).`,
   );
+  return patchId;
+}
+
+/**
+ * پردازش خودکار پچ پل: دروازه کیفیت ← کامیت ← مرج خودکار به dev.
+ * دستور مسعود: بدون تأیید دستی. کاملاً best-effort؛ هرگز نتیجهٔ تیم را خراب نمی‌کند.
+ */
+async function autoProcessBridgePatch(patchId: string, team: TeamName): Promise<void> {
+  try {
+    const { processProposedPatch } = await import('./bridge/propose');
+    const res = await processProposedPatch(patchId);
+    if (!res.gated) {
+      console.log(
+        `[orchestrator] پچ ${patchId} تیم ${team} در دروازه رد شد (needs_review)؛ چرخه ادامه می‌یابد.`,
+      );
+      return;
+    }
+    if (res.merged) {
+      console.log(
+        `[orchestrator] پچ ${patchId} تیم ${team} خودکار به dev مرج شد (merge_sha=${res.mergeSha ?? 'already'}).`,
+      );
+    } else {
+      console.log(
+        `[orchestrator] پچ ${patchId} تیم ${team} کامیت شد ولی مرج خودکار ناموفق بود: ${res.mergeError ?? 'نامشخص'}.`,
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[orchestrator] پردازش خودکار پچ ${patchId} تیم ${team} خطا داد:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 /** اجرای یک تیم و ثبت نتیجه در team_runs. خطا => team_run=failed، ولی موج ادامه می‌یابد. */
@@ -683,18 +721,31 @@ export async function runSingleTeam(
       llm_calls: llmCalls,
     });
     // پچ پیشنهادی تیم → جدول bridge_patches (وضعیت proposed)؛
+    // بعد خودکار: دروازه کیفیت ← کامیت ← مرج به dev (بدون تأیید دستی، دستور مسعود).
     // best-effort: هرگز نتیجهٔ تیم را خراب نمی‌کند.
     try {
-      await registerProposedPatches(sb, {
+      // تیم‌ها دو فیلد جدا دارند (patch در dev، patches در content/design/seo)؛ هر دو را می‌گیریم
+      const seen = new Set<string>();
+      const mergedPatches: PatchFile[] = [];
+      for (const p of [...(result.patch ?? []), ...(result.patches ?? [])]) {
+        const key = (p?.path ?? '').trim().toLowerCase();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        mergedPatches.push(p);
+      }
+      const patchId = await registerProposedPatches(sb, {
         team,
         cycleId,
         runId: ctx.runId,
         summary: result.summary ?? '',
-        patches: result.patch,
+        patches: mergedPatches,
       });
+      if (patchId) {
+        await autoProcessBridgePatch(patchId, team);
+      }
     } catch (err) {
       console.error(
-        `[orchestrator] خطای غیرمنتظره در ثبت bridge_patches تیم ${team}:`,
+        `[orchestrator] خطای غیرمنتظره در پل خودکار تیم ${team}:`,
         err instanceof Error ? err.message : err,
       );
     }
