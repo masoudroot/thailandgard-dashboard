@@ -11,8 +11,11 @@
  */
 
 import { getSetting } from './settings';
+import type { TeamName } from './types';
 
 export const DEFAULT_REPO = 'masoudroot/thailandgard-dashboard';
+/** ریپوی سایت تایلندگرد؛ تیم‌ها تغییراتشان را اینجا کامیت می‌کنند. */
+export const SITE_REPO_FULL = 'masoudroot/thailandgard';
 export const COMMITTER_NAME = 'Masoud Akbari';
 export const COMMITTER_EMAIL = 'masoud.akbari.ai@gmail.com';
 
@@ -170,34 +173,58 @@ export interface ApplyResult {
   compareUrl: string;
 }
 
+export interface ApplyPatchOptions {
+  /** ریپوی هدف به شکل owner/name؛ پیش‌فرض: ریپوی کانفیگ‌شده (settings یا env). */
+  repo?: string;
+  /** شاخهٔ مبدأ برای انشعاب؛ پیش‌فرض: master. */
+  baseBranch?: string;
+}
+
 /**
- * اعمال فیکس روی گیت‌هاب: ساخت شاخهٔ تازه، کامیت، برگرداندن لینک مقایسه.
+ * شاخه‌های محافظت‌شده: کامیت مستقیم روی آن‌ها ممنوع است.
+ * پچ‌ها فقط روی شاخهٔ پل (مثل ai-bridge/...) کامیت می‌شوند و با PR به مقصد می‌روند.
+ */
+const PROTECTED_BRANCHES = new Set(['main', 'master', 'dev', 'production', 'prod', 'staging']);
+
+/**
+ * اعمال فیکس روی گیت‌هاب: ساخت شاخهٔ تازه از شاخهٔ مبدأ، کامیت، برگرداندن لینک مقایسه.
  * هویت کامیت همیشه Masoud Akbari است.
+ * قانون سفت: هرگز روی شاخهٔ محافظت‌شده (dev/main/...) کامیت مستقیم نمی‌زند؛ فقط شاخهٔ پل + PR.
  */
 export async function applyPatchViaGithub(
   branch: string,
   message: string,
   files: PatchFile[],
+  options?: ApplyPatchOptions,
 ): Promise<ApplyResult> {
-  const { token, repo } = await getGithubConfig();
+  const { token, repo: configuredRepo } = await getGithubConfig();
   if (!token) throw new Error(NOT_CONNECTED_MESSAGE);
   if (!/^[a-zA-Z0-9/_.-]{1,100}$/.test(branch)) {
     throw new Error('نام شاخه نامعتبر است.');
   }
+  if (PROTECTED_BRANCHES.has(branch.toLowerCase())) {
+    throw new Error('کامیت مستقیم روی شاخهٔ محافظت‌شده ممنوع است؛ فقط شاخهٔ پل + PR.');
+  }
   if (!message.trim()) throw new Error('پیام کامیت خالی است.');
   validateFiles(files);
+  const repo = options?.repo?.trim() || configuredRepo;
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('نام ریپو نامعتبر است.');
+  const baseBranch = options?.baseBranch?.trim() || 'master';
+  if (!/^[a-zA-Z0-9/_.-]{1,100}$/.test(baseBranch)) {
+    throw new Error('نام شاخهٔ مبدأ نامعتبر است.');
+  }
   const h = headers(token);
   const api = `https://api.github.com/repos/${repo}`;
 
-  // ۱) SHA رأس master
-  const refRes = await fetch(`${api}/git/refs/heads/master`, {
+  // ۱) SHA رأس شاخهٔ مبدأ
+  const refRes = await fetch(`${api}/git/refs/heads/${baseBranch}`, {
     headers: h,
     signal: AbortSignal.timeout(15_000),
   });
-  if (!refRes.ok) throw new Error(`خواندن رأس master ناموفق بود (وضعیت ${refRes.status}).`);
+  if (!refRes.ok) throw new Error(`خواندن رأس ${baseBranch} ناموفق بود (وضعیت ${refRes.status}).`);
   const refBody = (await refRes.json()) as { object?: { sha?: string } };
   const baseSha = refBody.object?.sha;
-  if (!baseSha) throw new Error('SHA رأس master پیدا نشد.');
+  if (!baseSha) throw new Error(`SHA رأس ${baseBranch} پیدا نشد.`);
 
   // ۲) ساخت شاخه
   const branchRes = await fetch(`${api}/git/refs`, {
@@ -271,6 +298,71 @@ export async function applyPatchViaGithub(
   return {
     branch,
     commitSha: commitBody.sha.slice(0, 7),
-    compareUrl: `https://github.com/${repo}/compare/master...${branch}`,
+    compareUrl: `https://github.com/${repo}/compare/${baseBranch}...${branch}`,
   };
+}
+
+/** پسوند تصادفی کوتاه برای یکتایی نام شاخه. */
+function randomSuffix(): string {
+  return Math.random().toString(36).slice(2, 8);
+}
+
+/**
+ * شاخهٔ پیش‌فرض یک ریپو از GitHub API (برای ریپوهایی که main دارند نه master).
+ */
+async function getDefaultBranch(repo: string, token: string): Promise<string> {
+  const res = await fetch(`https://api.github.com/repos/${repo}`, {
+    headers: headers(token),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`خواندن اطلاعات ریپو ناموفق بود (وضعیت ${res.status}).`);
+  const body = (await res.json()) as { default_branch?: string };
+  return body.default_branch?.trim() || 'master';
+}
+
+/**
+ * کامیت تغییرات یک تیم روی ریپوی سایت (masoudroot/thailandgard).
+ * یک شاخهٔ تازه می‌سازد (team/<team>-<timestamp>-<rand>) از روی شاخهٔ
+ * پیش‌فرض ریپو، فایل‌ها را کامیت می‌کند و اطلاعات شاخه + لینک مقایسه
+ * را برمی‌گرداند. در صورت تداخل نام شاخه (۴۲۲)، یک بار با نام تازه
+ * تلاش مجدد می‌کند.
+ */
+export async function commitTeamChanges(
+  team: TeamName,
+  files: PatchFile[],
+  message: string,
+): Promise<ApplyResult> {
+  const { token } = await getGithubConfig();
+  if (!token) throw new Error(NOT_CONNECTED_MESSAGE);
+  const baseBranch = await getDefaultBranch(SITE_REPO_FULL, token);
+  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  const makeBranch = () => `team/${team}-${stamp}-${randomSuffix()}`;
+  const opts = { repo: SITE_REPO_FULL, baseBranch };
+  try {
+    return await applyPatchViaGithub(makeBranch(), message, files, opts);
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('(وضعیت 422)')) {
+      return await applyPatchViaGithub(makeBranch(), message, files, opts);
+    }
+    throw err;
+  }
+}
+
+/** حذف یک شاخهٔ team/ از ریپوی سایت (برای پاک‌سازی تست‌ها). */
+export async function deleteSiteBranch(branch: string): Promise<void> {
+  const { token } = await getGithubConfig();
+  if (!token) throw new Error(NOT_CONNECTED_MESSAGE);
+  if (!/^[a-zA-Z0-9/_.-]{1,100}$/.test(branch)) {
+    throw new Error('نام شاخه نامعتبر است.');
+  }
+  if (!branch.startsWith('team/')) {
+    throw new Error('فقط شاخه‌های team/ قابل حذف‌اند.');
+  }
+  const res = await fetch(
+    `https://api.github.com/repos/${SITE_REPO_FULL}/git/refs/heads/${branch}`,
+    { method: 'DELETE', headers: headers(token), signal: AbortSignal.timeout(15_000) },
+  );
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`حذف شاخه ناموفق بود (وضعیت ${res.status}).`);
+  }
 }
