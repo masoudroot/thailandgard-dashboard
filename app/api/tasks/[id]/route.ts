@@ -1,19 +1,24 @@
 import { NextRequest } from 'next/server';
 import { ok, fail } from '../../../../lib/api';
-import { approveTask, rejectTask, completeTask } from '../../../../lib/taskqueue';
+import { InputError } from '../../../../lib/llm-endpoints';
+import { approveTask, rejectTask, completeTask, setTaskLLM } from '../../../../lib/taskqueue';
 
-type Action = 'approve' | 'reject' | 'done';
+type Action = 'approve' | 'reject' | 'done' | 'set-model';
 
 interface PatchBody {
   action?: Action;
   reason?: string;
   result?: string;
   commitSha?: string;
+  /** for action 'set-model': شناسه‌ی endpoint (خالی = پاک کردن انتخاب کار) */
+  endpointId?: string | null;
+  /** for action 'set-model': نام مدل */
+  model?: string;
 }
 
 /**
  * PATCH /api/tasks/:id — drives the queue lifecycle.
- * Body: { action: 'approve' | 'reject' | 'done', reason?, result?, commitSha? }
+ * Body: { action: 'approve' | 'reject' | 'done' | 'set-model', reason?, result?, commitSha?, endpointId?, model? }
  */
 export async function PATCH(
   request: NextRequest,
@@ -45,8 +50,23 @@ export async function PATCH(
       return ok({ id, status: 'done' });
     }
 
-    return fail("Field \"action\" must be one of 'approve', 'reject', 'done'.", 400);
+    if (action === 'set-model') {
+      const endpointId =
+        typeof body.endpointId === 'string' ? body.endpointId.trim() : '';
+      if (!endpointId) {
+        await setTaskLLM(id, null);
+        return ok({ id, llm: null });
+      }
+      if (!body.model || typeof body.model !== 'string' || !body.model.trim()) {
+        return fail('برای ثبت مدل کار، نام مدل لازم است.', 400);
+      }
+      await setTaskLLM(id, { endpointId, model: body.model.trim() });
+      return ok({ id, llm: { endpointId, model: body.model.trim() } });
+    }
+
+    return fail("Field \"action\" must be one of 'approve', 'reject', 'done', 'set-model'.", 400);
   } catch (err) {
+    if (err instanceof InputError) return fail(err.message, 400);
     return fail(err instanceof Error ? err.message : 'Unknown error', 500);
   }
 }

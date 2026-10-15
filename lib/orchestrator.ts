@@ -13,12 +13,15 @@
  */
 import { getSupabase } from './api';
 import { runWithTeamContext } from './llm';
+import { notifyTeamReport } from './notify';
 import {
   ACTIVE_CYCLE_STATUSES,
   normalizeCycleStatus,
   WAVES,
   type CycleStatus,
   type MemoryEntry,
+  type ProgressReporter,
+  type SubagentControl,
   type TeamName,
   type TeamResult,
 } from './types';
@@ -39,6 +42,24 @@ const PAUSE_LOOP_ALIVE_MS = 10 * 60 * 1000;
 
 export class CycleLockedError extends Error {}
 
+/** وقتی کاربر ساب‌ایجنت را متوقف می‌کند، در مرز مرحله‌ی بعدی پرتاب می‌شود. */
+export class SubagentStoppedError extends Error {
+  constructor(public readonly stage: string) {
+    super(`subagent stopped by user at stage: ${stage}`);
+  }
+}
+
+/** برچسب‌هایی که مرحله‌ی واقعی نیستند و ساب‌ایجنت جدا نمی‌خواهند. */
+const PSEUDO_TASKS = new Set(['شروع اجرا', 'پایان کار', 'خطا در اجرا']);
+/** هر چند وقت یک‌بار ردیف team_runsِ تیمِ در حال اجرا لمس می‌شود (میلی‌ثانیه). */
+const HEARTBEAT_MS = 60_000;
+/** گزارش‌های پیشرفت تکراری/خیلی نزدیک به هم ادغام می‌شوند. */
+const PROGRESS_MIN_INTERVAL_MS = 2000;
+/** فاصله‌ی نظرسنجی سیگنال کنترلی وقتی ساب‌ایجنت متوقف‌شده (pause) است. */
+const CONTROL_POLL_MS = 5000;
+/** سقف انتظار برای ادامه‌یافتن (resume) یک ساب‌ایجنت متوقف‌شده: ۳۰ دقیقه. */
+const PAUSE_TIMEOUT_MS = 30 * 60_000;
+
 /** ورودی استاندارد هر تیم. */
 export interface TeamInput {
   cycleId: string;
@@ -49,6 +70,12 @@ export interface TeamInput {
   memory: MemoryEntry[];
   /** خروجی کامل موج‌های قبلی: team -> TeamResult (یا null برای تیم‌های fail/skipped). */
   previousWavesOutput: Record<string, TeamResult | null>;
+  /**
+   * گزارش زنده‌ی پیشرفت به ارکستر: تیم در مرز مرحله‌هایش صدا می‌زند و
+   * ارکستر آن را در team_runs (progress/current_task) می‌نویسد و ساب‌ایجنت‌ها
+   * را مدیریت می‌کند.
+   */
+  reportProgress: ProgressReporter;
 }
 
 type RunTeamFn = (input: TeamInput) => Promise<TeamResult>;
@@ -393,7 +420,135 @@ async function runSingleTeam(
     if (error) console.error(`[orchestrator] failed to update team_run ${runRowId}:`, error.message);
   };
 
+  /** بستن همه‌ی ساب‌ایجنت‌های باز این اجرا با وضعیت نهایی. */
+  const closeSubagents = async (status: 'success' | 'failed' | 'stopped') => {
+    const { error } = await sb
+      .from('subagents')
+      .update({ status, finished_at: new Date().toISOString() })
+      .eq('team_run_id', runRowId)
+      .in('status', ['pending', 'running', 'paused']);
+    if (error) console.error(`[orchestrator] failed to close subagents of ${runRowId}:`, error.message);
+  };
+
+  /** خواندن سیگنال کنترلی یک ساب‌ایجنت (run/pause/stop). */
+  const readControl = async (subagentId: string): Promise<SubagentControl> => {
+    const { data } = await sb.from('subagents').select('control').eq('id', subagentId).maybeSingle();
+    const control = (data as { control?: string } | null)?.control;
+    return control === 'pause' || control === 'stop' ? control : 'run';
+  };
+
+  /**
+   * اعمال کنترل کاربر در مرز مرحله: اگر ساب‌ایجنت متوقف (pause) شده،
+   * تا ادامه‌یافتن (resume) صبر می‌کند؛ اگر stop شده، SubagentStoppedError می‌دهد.
+   * کنترل روی مرحله‌ای که هم‌اکنون در حال اجراست اثر نمی‌گذارد؛ از مرحله‌ی
+   * بعدی اعمال می‌شود (محدودیت صادقانه‌ی معماری مرحله‌ای).
+   */
+  const enforceControl = async (subagentId: string, label: string): Promise<void> => {
+    const deadline = Date.now() + PAUSE_TIMEOUT_MS;
+    for (;;) {
+      const control = await readControl(subagentId);
+      if (control === 'run') {
+        await sb.from('subagents').update({ status: 'running' }).eq('id', subagentId);
+        return;
+      }
+      if (control === 'stop') {
+        await sb
+          .from('subagents')
+          .update({ status: 'stopped', finished_at: new Date().toISOString() })
+          .eq('id', subagentId);
+        throw new SubagentStoppedError(label);
+      }
+      // pause: وضعیت را «متوقف‌شده» نشان بده و منتظر بمان
+      await sb.from('subagents').update({ status: 'paused' }).eq('id', subagentId);
+      if (Date.now() > deadline) {
+        throw new SubagentStoppedError(`${label} (پایان مهلت انتظار برای ادامه)`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, CONTROL_POLL_MS));
+    }
+  };
+
+  // گزارش زنده‌ی پیشرفت: تیم در مرز مرحله‌هایش صدا می‌زند. اینجا:
+  //  ۱. team_runs به‌روز می‌شود (progress/current_task)؛
+  //  ۲. ساب‌ایجنت مرحله در جدول subagents ساخته/به‌روز می‌شود؛
+  //  ۳. سیگنال کنترلی کاربر (توقف/ادامه/توقف کامل) اعمال می‌شود.
+  // تریگر دیتابیس updated_at را هم تازه می‌کند.
+  let lastPct = -1;
+  let lastTask = '';
+  let lastWriteAt = 0;
+  const reportProgress: ProgressReporter = async (task, progress) => {
+    const pct = Math.max(0, Math.min(100, Math.round(progress)));
+    const now = Date.now();
+    if (pct === lastPct && task === lastTask) return;
+    if (pct < 100 && now - lastWriteAt < PROGRESS_MIN_INTERVAL_MS && pct <= lastPct) return;
+    lastPct = pct;
+    lastTask = task;
+    lastWriteAt = now;
+    const { error } = await sb
+      .from('team_runs')
+      .update({ progress: pct, current_task: task.slice(0, 500) })
+      .eq('id', runRowId);
+    if (error) console.error(`[orchestrator] failed to report progress for ${team}:`, error.message);
+
+    if (PSEUDO_TASKS.has(task)) return;
+    // ساب‌ایجنت این مرحله: بساز یا بیاور، بعد کنترل کاربر را اعمال کن.
+    const { data: existing } = await sb
+      .from('subagents')
+      .select('id')
+      .eq('team_run_id', runRowId)
+      .eq('label', task)
+      .maybeSingle();
+    let subagentId = (existing as { id?: string } | null)?.id;
+    if (!subagentId) {
+      const { data: created, error: createErr } = await sb
+        .from('subagents')
+        .insert({
+          team_run_id: runRowId,
+          team,
+          label: task,
+          status: 'running',
+          current_task: task.slice(0, 500),
+          progress: pct,
+        })
+        .select('id')
+        .single();
+      if (createErr || !created) {
+        console.error(`[orchestrator] failed to create subagent row:`, createErr?.message);
+        return;
+      }
+      subagentId = created.id as string;
+    }
+    await enforceControl(subagentId, task);
+    // مرحله‌ی قبلی تمام شد؛ بقیه‌ی «در حال اجرا»ها موفق ثبت می‌شوند.
+    const { error: closeErr } = await sb
+      .from('subagents')
+      .update({ status: 'success', finished_at: new Date().toISOString() })
+      .eq('team_run_id', runRowId)
+      .eq('status', 'running')
+      .neq('id', subagentId);
+    if (closeErr) console.error('[orchestrator] failed to close previous subagents:', closeErr.message);
+    await sb
+      .from('subagents')
+      .update({ current_task: task.slice(0, 500), progress: pct })
+      .eq('id', subagentId);
+  };
+
+  // ضربان: اگر تیم مدتی مرحله‌ای گزارش نکرد، ردیف لمس می‌شود تا معلوم باشد
+  // فرایند هنوز زنده است (updated_at تازه می‌ماند).
+  const heartbeat = setInterval(() => {
+    void sb
+      .from('team_runs')
+      .update({ current_task: lastTask || 'در حال اجرا', progress: Math.max(0, lastPct) })
+      .eq('id', runRowId)
+      .then(({ error }) => {
+        if (error) console.error(`[orchestrator] heartbeat failed for ${team}:`, error.message);
+      });
+  }, HEARTBEAT_MS);
+  if (typeof heartbeat === 'object' && 'unref' in heartbeat) {
+    (heartbeat as unknown as { unref(): void }).unref();
+  }
+
   try {
+    await reportProgress('شروع اجرا', 5);
     const runTeam = await loadRunTeam(team);
     const memory = await loadTeamMemory(team);
     const input: TeamInput = {
@@ -402,21 +557,49 @@ async function runSingleTeam(
       ragContext: buildRagContext(ctx.previousWavesOutput),
       memory,
       previousWavesOutput: { ...ctx.previousWavesOutput },
+      reportProgress,
     };
     // Ambient team context: every callLLM inside runTeam automatically uses
     // this team's configured endpoint + model (settings: llm_endpoints/team_models).
     const result = await runWithTeamContext(team, () => runTeam(input));
+    await closeSubagents('success');
     await finish({
       status: 'success',
+      progress: 100,
+      current_task: 'پایان کار',
       output_summary: result.summary?.slice(0, 4000) ?? null,
       llm_calls: 0,
     });
+    // گزارش دوگانه: ثبت در پنل + ارسال به تلگرام (best-effort، مسدودکننده نیست).
+    await notifyTeamReport({
+      team,
+      message: `گزارش تیم در چرخه ${ctx.runId}\n\n${result.summary ?? '(خلاصه‌ای ثبت نشد)'}`,
+      cycleId,
+    });
     return result;
   } catch (err) {
+    if (err instanceof SubagentStoppedError) {
+      await closeSubagents('stopped');
+      await finish({ status: 'stopped', current_task: 'متوقف شد توسط کاربر' });
+      await notifyTeamReport({
+        team,
+        message: `تیم در چرخه ${ctx.runId} توسط کاربر متوقف شد (مرحله: ${err.stage}).`,
+        cycleId,
+      });
+      return null;
+    }
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[orchestrator] team "${team}" failed:`, message);
-    await finish({ status: 'failed', error: message.slice(0, 4000) });
+    await closeSubagents('failed');
+    await finish({ status: 'failed', current_task: 'خطا در اجرا', error: message.slice(0, 4000) });
+    await notifyTeamReport({
+      team,
+      message: `تیم در چرخه ${ctx.runId} ناموفق بود:\n\n${message.slice(0, 1500)}`,
+      cycleId,
+    });
     return null;
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 
@@ -496,7 +679,9 @@ export async function runAllWaves(
     .from('team_runs')
     .select('status')
     .eq('cycle_id', cycleId);
-  const failed = (runs ?? []).filter((r) => (r as { status: string }).status === 'failed').length;
+  const failed = (runs ?? []).filter((r) =>
+    ['failed', 'stopped'].includes((r as { status: string }).status),
+  ).length;
   const status: CycleStatus = fatal || failed > 0 ? 'failed' : 'success';
   const errorMsg =
     failed > 0

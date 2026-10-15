@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Ban,
   CheckCircle2,
@@ -35,6 +35,9 @@ interface BuildTask {
   status: TaskStatus;
   created_at: string;
   updated_at: string;
+  /** مدل انتخاب‌شده برای این کار؛ خالی یعنی «پیش‌فرض تیم» */
+  llmEndpointId?: string | null;
+  llmModel?: string | null;
 }
 
 const STATUSES: { key: TaskStatus; label: string }[] = [
@@ -304,6 +307,8 @@ async function createTask(input: {
   team: string;
   description: string;
   priority: TaskPriority;
+  llmEndpointId?: string;
+  llmModel?: string;
 }): Promise<BuildTask | null> {
   try {
     const res = await fetch("/api/tasks", {
@@ -327,7 +332,67 @@ async function createTask(input: {
       status: "pending",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      llmEndpointId: input.llmEndpointId || null,
+      llmModel: input.llmModel || null,
     };
+  }
+}
+
+/** ذخیره/تغییر مدل یک کار (خالی = برگشت به پیش‌فرض تیم) */
+async function setTaskModel(
+  id: string,
+  endpointId: string,
+  model: string,
+): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/tasks/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ action: "set-model", endpointId, model }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+interface LlmEndpointInfo {
+  id: string;
+  name: string;
+}
+
+/** لیست واقعی endpointها از تنظیمات (کلیدها ماسک‌شده‌اند) */
+async function fetchLlmEndpoints(): Promise<LlmEndpointInfo[]> {
+  try {
+    const res = await fetch("/api/settings/llm", {
+      credentials: "same-origin",
+    });
+    if (!res.ok) return [];
+    const payload = await res.json();
+    const eps = payload?.data?.endpoints;
+    if (!Array.isArray(eps)) return [];
+    return eps
+      .filter((e) => e && typeof e.id === "string" && typeof e.name === "string")
+      .map((e) => ({ id: e.id, name: e.name }));
+  } catch {
+    return [];
+  }
+}
+
+/** لیست واقعی مدل‌های یک endpoint (از تست اتصال) */
+async function fetchEndpointModels(endpointId: string): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `/api/settings/llm/${encodeURIComponent(endpointId)}/test`,
+      { method: "POST", credentials: "same-origin" },
+    );
+    if (!res.ok) return [];
+    const payload = await res.json();
+    const d = payload?.data;
+    return d?.ok && Array.isArray(d.models) ? (d.models as string[]) : [];
+  } catch {
+    return [];
   }
 }
 
@@ -335,9 +400,149 @@ async function createTask(input: {
 /*  صفحه                                                              */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/*  انتخاب مدل هر کار (از endpointهای واقعی تنظیمات)                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * یک خط جمع‌وجور در ردیف کار: نمایش مدل انتخاب‌شده + ویرایش آن.
+ * فقط برای کارهای «در انتظار» قابل ویرایش است.
+ */
+function TaskModelLine({
+  task,
+  endpoints,
+  modelsCache,
+  ensureModels,
+  onChanged,
+}: {
+  task: BuildTask;
+  endpoints: LlmEndpointInfo[];
+  modelsCache: Record<string, string[]>;
+  ensureModels: (endpointId: string) => void;
+  onChanged: (id: string, endpointId: string | null, model: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [endpointId, setEndpointId] = useState(task.llmEndpointId ?? "");
+  const [model, setModel] = useState(task.llmModel ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const epName = endpoints.find((e) => e.id === task.llmEndpointId)?.name;
+  const label =
+    task.llmEndpointId && task.llmModel
+      ? `${task.llmModel} (${epName ?? "درگاه"})`
+      : "پیش‌فرض تیم";
+
+  if (task.status !== "pending" && !editing) {
+    return (
+      <p className="mb-3 text-xs text-muted-foreground">
+        مدل اجرا: <span dir="ltr" className="font-medium">{label}</span>
+      </p>
+    );
+  }
+
+  if (!editing) {
+    return (
+      <div className="mb-3 flex items-center gap-2">
+        <p className="text-xs text-muted-foreground">
+          مدل اجرا: <span dir="ltr" className="font-medium text-foreground">{label}</span>
+        </p>
+        {endpoints.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              setEndpointId(task.llmEndpointId ?? "");
+              setModel(task.llmModel ?? "");
+              setEditing(true);
+            }}
+            className="min-h-[32px] rounded-lg px-2 text-xs font-medium text-brand hover:underline"
+          >
+            تغییر
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const listId = `task-model-list-${task.id}`;
+  const cached = endpointId ? modelsCache[endpointId] : undefined;
+
+  const handleSave = async () => {
+    if (endpointId && !model.trim()) return;
+    setSaving(true);
+    const okSaved = await setTaskModel(task.id, endpointId, model.trim());
+    setSaving(false);
+    if (okSaved) {
+      onChanged(task.id, endpointId || null, model.trim() || null);
+      setEditing(false);
+    }
+  };
+
+  return (
+    <div className="mb-3 rounded-lg border border-border bg-background p-3">
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">درگاه</span>
+          <select
+            value={endpointId}
+            onChange={(e) => {
+              setEndpointId(e.target.value);
+              setModel("");
+              if (e.target.value) ensureModels(e.target.value);
+            }}
+            className="w-full min-h-[44px] rounded-lg border border-input bg-card px-3 py-2 text-sm"
+          >
+            <option value="">پیش‌فرض تیم</option>
+            {endpoints.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">مدل</span>
+          <input
+            type="text"
+            dir="ltr"
+            list={listId}
+            disabled={!endpointId}
+            placeholder={endpointId ? "انتخاب یا تایپ مدل…" : "—"}
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            className="w-full min-h-[44px] rounded-lg border border-input bg-card px-3 py-2 text-sm disabled:opacity-50"
+          />
+          {cached && (
+            <datalist id={listId}>
+              {cached.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          )}
+        </label>
+      </div>
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving || (!!endpointId && !model.trim())}
+          className="min-h-[40px] rounded-lg bg-brand px-4 py-1.5 text-xs font-bold text-brand-foreground shadow-control transition hover:opacity-90 disabled:opacity-50"
+        >
+          {saving ? "در حال ذخیره…" : "ذخیره مدل"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          className="min-h-[40px] rounded-lg border border-border px-4 py-1.5 text-xs text-muted-foreground transition hover:bg-accent"
+        >
+          انصراف
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** توضیح کار با قابلیت باز و بسته شدن (line-clamp در موبایل) */
-function TaskDescription({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
+function TaskDescription({ text }: { text: string }) {  const [open, setOpen] = useState(false);
   return (
     <div className="mb-3">
       <p
@@ -371,7 +576,25 @@ export default function QueuePage() {
     team: "dev",
     description: "",
     priority: "medium" as TaskPriority,
+    llmEndpointId: "",
+    llmModel: "",
   });
+
+  /* endpointهای واقعی مدل‌ها (از تنظیمات) + کش لیست مدل هر درگاه */
+  const [llmEndpoints, setLlmEndpoints] = useState<LlmEndpointInfo[]>([]);
+  const [modelsCache, setModelsCache] = useState<Record<string, string[]>>({});
+  const modelsLoadingRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    fetchLlmEndpoints().then(setLlmEndpoints);
+  }, []);
+
+  const ensureModels = useCallback(async (endpointId: string) => {
+    if (!endpointId || modelsLoadingRef.current.has(endpointId)) return;
+    modelsLoadingRef.current.add(endpointId);
+    const models = await fetchEndpointModels(endpointId);
+    setModelsCache((prev) => ({ ...prev, [endpointId]: models }));
+  }, []);
 
   const showToast = useCallback((text: string, kind: "ok" | "err" = "ok") => {
     setToast({ text, kind });
@@ -441,11 +664,13 @@ export default function QueuePage() {
       team: form.team,
       description: form.description.trim(),
       priority: form.priority,
+      llmEndpointId: form.llmEndpointId || undefined,
+      llmModel: form.llmModel.trim() || undefined,
     });
     setSubmitting(false);
     if (created) {
       setTasks((prev) => [created, ...prev]);
-      setForm({ title: "", team: "dev", description: "", priority: "medium" });
+      setForm({ title: "", team: "dev", description: "", priority: "medium", llmEndpointId: "", llmModel: "" });
       setFormOpen(false);
       setTab("pending");
       showToast("کار تازه در صف «در انتظار» ثبت شد.");
@@ -453,6 +678,18 @@ export default function QueuePage() {
       showToast("ثبت کار ناموفق بود.", "err");
     }
   };
+
+  const handleTaskModelChanged = useCallback(
+    (id: string, endpointId: string | null, model: string | null) => {
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === id ? { ...t, llmEndpointId: endpointId, llmModel: model } : t,
+        ),
+      );
+      showToast("مدل کار ذخیره شد.");
+    },
+    [showToast],
+  );
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -537,6 +774,67 @@ export default function QueuePage() {
                 className="w-full min-h-[44px] rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
               />
             </label>
+            <div className="md:col-span-2 rounded-lg border border-border bg-background p-3">
+              <p className="mb-1 text-sm font-medium">مدل هوش مصنوعی این کار</p>
+              {llmEndpoints.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  درگاهی در تنظیمات ثبت نشده است؛ کار با «مدل پیش‌فرض تیم» اجرا می‌شود.
+                  درگاه تازه را از صفحهٔ تنظیمات، بخش «مدل‌های هوش مصنوعی» اضافه کنید.
+                </p>
+              ) : (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1 block text-xs text-muted-foreground">درگاه</span>
+                      <select
+                        value={form.llmEndpointId}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setForm((f) => ({ ...f, llmEndpointId: v, llmModel: "" }));
+                          if (v) void ensureModels(v);
+                        }}
+                        className="w-full min-h-[44px] rounded-lg border border-input bg-card px-3 py-2.5 text-sm"
+                      >
+                        <option value="">پیش‌فرض تیم</option>
+                        {llmEndpoints.map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs text-muted-foreground">
+                        مدل
+                        {form.llmEndpointId && modelsCache[form.llmEndpointId] && (
+                          <span> ({faNum(modelsCache[form.llmEndpointId].length)} مدل از درگاه)</span>
+                        )}
+                      </span>
+                      <input
+                        type="text"
+                        dir="ltr"
+                        list="new-task-model-list"
+                        disabled={!form.llmEndpointId}
+                        placeholder={form.llmEndpointId ? "انتخاب یا تایپ مدل…" : "—"}
+                        value={form.llmModel}
+                        onChange={(e) => setForm((f) => ({ ...f, llmModel: e.target.value }))}
+                        className="w-full min-h-[44px] rounded-lg border border-input bg-card px-3 py-2.5 text-sm disabled:opacity-50"
+                      />
+                      {form.llmEndpointId && modelsCache[form.llmEndpointId] && (
+                        <datalist id="new-task-model-list">
+                          {modelsCache[form.llmEndpointId].map((m) => (
+                            <option key={m} value={m} />
+                          ))}
+                        </datalist>
+                      )}
+                    </label>
+                  </div>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    اگر خالی بماند، کار با مدل پیش‌فرض تیمِ انتخاب‌شده اجرا می‌شود.
+                  </p>
+                </>
+              )}
+            </div>
             <div className="md:col-span-2">
               <button
                 type="submit"
@@ -628,6 +926,13 @@ export default function QueuePage() {
 
                 <h3 className="mb-1 text-base font-bold">{task.title}</h3>
                 {task.description && <TaskDescription text={task.description} />}
+                <TaskModelLine
+                  task={task}
+                  endpoints={llmEndpoints}
+                  modelsCache={modelsCache}
+                  ensureModels={(id) => void ensureModels(id)}
+                  onChanged={handleTaskModelChanged}
+                />
 
                 {task.files.length > 0 && (
                   <div className="mb-3 flex flex-wrap gap-1.5">

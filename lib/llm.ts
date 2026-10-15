@@ -2,18 +2,33 @@
  * lib/llm.ts — Backend 10: LLM service
  *
  * Thin wrapper around any OpenAI-compatible chat API.
- * - Base URL: `LLM_API_BASE` (default https://api.reformboss.com/v1)
- * - API key: `LLM_API_KEY` (required at call time, never hardcoded)
- * - Default model: opts.model -> settings -> `LLM_MODEL` env -> fallback constant
+ * - Endpoint/key/model can come from the per-team configuration in the
+ *   `settings` table (keys `llm_endpoints` / `team_models`), resolved via the
+ *   team context set by the orchestrator (see runWithTeamContext).
+ * - Otherwise: env `LLM_API_BASE` (default https://api.reformboss.com/v1),
+ *   env `LLM_API_KEY` (required at call time, never hardcoded), model from
+ *   opts.model -> settings provider -> `LLM_MODEL` env -> fallback constant.
  * - Fallback: on provider error (503 / 429 / timeout / network failure) one retry
  *   with a substitute model is attempted before throwing.
  * - Timeout: default 180s (3 min) via AbortController; never hangs forever.
  * - Call counts are tracked for statistics (see getLLMStats).
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
+import type { TeamName } from './types';
+import { getEndpoint, resolveTeamConfig } from './llm-endpoints';
+
 export interface LLMCallOptions {
-  /** Model to use. Defaults to settings or LLM_MODEL env. */
+  /** Model to use. Defaults to team config -> settings -> LLM_MODEL env. */
   model?: string;
+  /** Team on whose behalf this call runs. Defaults to the ambient team context. */
+  team?: TeamName;
+  /**
+   * Per-task model override (from the build_queue row). Beats the team config
+   * but loses to an explicit `model`. { endpointId } is resolved server-side;
+   * the API key is never passed through here.
+   */
+  task?: { endpointId: string; model: string };
   /** Timeout in ms. Default 180_000 (3 minutes). */
   timeoutMs?: number;
   /** Max completion tokens. Default 2000. */
@@ -22,6 +37,26 @@ export interface LLMCallOptions {
   system?: string;
   /** Sampling temperature. Default 0.7. */
   temperature?: number;
+}
+
+/**
+ * Ambient team context. The orchestrator wraps each team's runTeam() in
+ * runWithTeamContext so every callLLM inside automatically uses that team's
+ * configured endpoint + model, without touching the 15 team modules.
+ */
+const teamContext = new AsyncLocalStorage<TeamName>();
+
+/** Run fn with the given team as the ambient LLM team context. */
+export function runWithTeamContext<T>(
+  team: TeamName,
+  fn: () => T | Promise<T>,
+): Promise<T> {
+  return teamContext.run(team, () => Promise.resolve(fn()));
+}
+
+/** The team currently set by runWithTeamContext, if any. */
+export function currentTeam(): TeamName | undefined {
+  return teamContext.getStore();
 }
 
 export interface LLMStats {
@@ -58,7 +93,8 @@ const DEFAULT_TEMPERATURE = 0.7;
 const DEFAULT_API_BASE = "https://api.reformboss.com/v1";
 
 /**
- * Resolve the model: explicit opt > settings > LLM_MODEL env > built-in default.
+ * Resolve the model: explicit opt > team config > settings provider >
+ * LLM_MODEL env > built-in default.
  * `settings` is an optional DI hook for callers that keep the model in DB/settings;
  * if none is wired in, it is simply ignored.
  */
@@ -70,8 +106,12 @@ export function setLLMSettingsProvider(p: SettingsProvider | null): void {
   settingsProvider = p;
 }
 
-async function resolveModel(explicit?: string): Promise<string> {
+async function resolveModel(
+  explicit?: string,
+  teamModel?: string | null,
+): Promise<string> {
   if (explicit) return explicit;
+  if (teamModel) return teamModel;
   try {
     const s = await settingsProvider?.();
     if (s?.model) return s.model;
@@ -189,13 +229,54 @@ export async function callLLM(
   prompt: string,
   opts: LLMCallOptions = {},
 ): Promise<string> {
-  const apiKey = process.env.LLM_API_KEY;
-  if (!apiKey) {
-    throw new LLMError("LLM_API_KEY is not set");
+  // Team context: explicit opt wins, otherwise the ambient context set by the
+  // orchestrator via runWithTeamContext.
+  const team = opts.team ?? currentTeam() ?? null;
+
+  // Resolution priority for base URL + API key + model:
+  //   task override > team config (settings table) > env vars.
+  // If the DB is unreachable or the selection is stale, silently fall back
+  // down the chain; the call must never break because of this.
+  let base = process.env.LLM_API_BASE || DEFAULT_API_BASE;
+  let apiKey: string | undefined = process.env.LLM_API_KEY;
+  let configuredModel: string | null = null;
+
+  if (team) {
+    try {
+      const teamCfg = await resolveTeamConfig(team);
+      if (teamCfg) {
+        base = teamCfg.baseUrl;
+        apiKey = teamCfg.apiKey;
+        configuredModel = teamCfg.model;
+      }
+    } catch {
+      // fall through to env defaults
+    }
   }
-  const base = process.env.LLM_API_BASE || DEFAULT_API_BASE;
+
+  if (opts.task?.endpointId && opts.task?.model) {
+    try {
+      const taskEp = await getEndpoint(opts.task.endpointId);
+      if (taskEp?.apiKey) {
+        base = taskEp.baseUrl;
+        apiKey = taskEp.apiKey;
+        configuredModel = opts.task.model;
+      }
+      // stale/deleted endpoint: keep the team/env resolution above
+    } catch {
+      // fall through
+    }
+  }
+
+  if (!apiKey) {
+    throw new LLMError(
+      team
+        ? `no API key for team "${team}": configure an endpoint for it in settings, or set LLM_API_KEY`
+        : "LLM_API_KEY is not set",
+    );
+  }
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const model = await resolveModel(opts.model);
+  const model = await resolveModel(opts.model, configuredModel);
 
   const callOpts = {
     maxTokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
