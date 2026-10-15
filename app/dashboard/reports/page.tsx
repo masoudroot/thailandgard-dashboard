@@ -121,7 +121,7 @@ async function fetchCycles(): Promise<{ cycles: CycleReport[] }> {
   if (!res.ok) throw new Error('bad status');
   const body = await res.json().catch(() => null);
   const list: Cycle[] | undefined = body?.ok ? body.data : Array.isArray(body) ? body : undefined;
-  if (!Array.isArray(list) || list.length === 0) throw new Error('empty');
+  if (!Array.isArray(list)) throw new Error('bad shape');
   // فعلاً API گزارش پنج‌محوری ندارد؛ محورها خالی می‌مانند تا API تکمیل شود.
   const mapped: CycleReport[] = list
     .filter((c) => c.status === 'success')
@@ -130,7 +130,6 @@ async function fetchCycles(): Promise<{ cycles: CycleReport[] }> {
       teams: ALL_TEAMS,
       report: { goal: '', problem: '', plan: '', outcome: '', actions: '', summary: '' },
     }));
-  if (mapped.length === 0) throw new Error('no success');
   return { cycles: mapped };
 }
 
