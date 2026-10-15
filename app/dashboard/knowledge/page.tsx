@@ -8,6 +8,7 @@ import {
   Clock,
   FileText,
   FolderOpen,
+  GraduationCap,
   Star,
 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
@@ -209,6 +210,16 @@ export default function KnowledgeOverviewPage() {
         icon={BookOpen}
         title="دانش تیم‌ها"
         subtitle="دانش ثبت‌شدهٔ ۱۵ تیم در یک نگاه؛ برای دیدن جزئیات هر تیم روی کارتش بزنید."
+        actions={
+          /* لینک گزارش مربی (تیم ۱۵): ارزیابی دوره‌ای کیفیت دانش تیم‌ها */
+          <Link
+            href="/dashboard/knowledge/report"
+            className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-border bg-card px-5 text-sm font-semibold text-foreground hover:bg-accent"
+          >
+            <GraduationCap size={16} strokeWidth={2} aria-hidden="true" />
+            گزارش مربی
+          </Link>
+        }
       />
 
       {failed ? (
