@@ -183,6 +183,91 @@ export interface ApplyPatchOptions {
 const PROTECTED_BRANCHES = new Set(['main', 'master', 'dev', 'production', 'prod', 'staging']);
 
 /**
+ * تلاش برای استفادهٔ مجدد از شاخهٔ پل موجود (idempotency).
+ *
+ * وقتی ساخت شاخه با ۴۲۲ شکست می‌خورد، یعنی شاخه از قبل هست. اگر رأس شاخه
+ * دقیقاً همان کامیتی باشد که این فراخوانی می‌خواست بسازد (درخت و پیام یکسان)،
+ * همان کامیت موجود برگردانده می‌شود و کامیت تکراری ساخته نمی‌شود.
+ * اگر رأس شاخه چیز دیگری باشد (تداخل نام واقعی)، null برمی‌گردد تا خطای
+ * ۴۲۲ اصلی پرتاب شود.
+ */
+async function reuseExistingBridgeBranch(
+  api: string,
+  h: Record<string, string>,
+  branch: string,
+  message: string,
+  files: PatchFile[],
+  repo: string,
+  baseBranch: string,
+): Promise<ApplyResult | null> {
+  try {
+    // رأس فعلی شاخه
+    const refRes = await fetch(`${api}/git/refs/heads/${branch}`, {
+      headers: h,
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!refRes.ok) return null;
+    const refBody = (await refRes.json()) as { object?: { sha?: string } };
+    const headSha = refBody.object?.sha;
+    if (!headSha) return null;
+
+    // کامیت رأس: پیام و درخت و مبنا
+    const commitRes = await fetch(`${api}/git/commits/${headSha}`, {
+      headers: h,
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!commitRes.ok) return null;
+    const headCommit = (await commitRes.json()) as {
+      message?: string;
+      tree?: { sha?: string };
+      parents?: Array<{ sha?: string }>;
+    };
+    const headMessage = (headCommit.message ?? '').trim();
+    const headTree = headCommit.tree?.sha;
+    const parentSha = headCommit.parents?.[0]?.sha;
+    if (headMessage !== message.trim() || !headTree || !parentSha) return null;
+
+    // ساخت بلاب‌های ما و درخت موردنظر روی همان مبنای کامیت رأس
+    const blobs: Array<{ path: string; sha: string }> = [];
+    for (const f of files) {
+      const p = f.path.trim().replace(/^\/+/, '');
+      const blobRes = await fetch(`${api}/git/blobs`, {
+        method: 'POST',
+        headers: { ...h, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: f.content, encoding: 'utf-8' }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!blobRes.ok) return null;
+      const blobBody = (await blobRes.json()) as { sha?: string };
+      if (!blobBody.sha) return null;
+      blobs.push({ path: p, sha: blobBody.sha });
+    }
+    const treeRes = await fetch(`${api}/git/trees`, {
+      method: 'POST',
+      headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        base_tree: parentSha,
+        tree: blobs.map((b) => ({ path: b.path, mode: '100644', type: 'blob', sha: b.sha })),
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!treeRes.ok) return null;
+    const treeBody = (await treeRes.json()) as { sha?: string };
+    if (!treeBody.sha) return null;
+
+    // درخت یکسان و پیام یکسان یعنی اثر همین پچ از قبل ثبت شده است
+    if (treeBody.sha !== headTree) return null;
+    return {
+      branch,
+      commitSha: headSha.slice(0, 7),
+      compareUrl: `https://github.com/${repo}/compare/${baseBranch}...${branch}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * اعمال فیکس روی گیت‌هاب: ساخت شاخهٔ تازه از شاخهٔ مبدأ، کامیت، برگرداندن لینک مقایسه.
  * هویت کامیت همیشه Masoud Akbari است.
  * قانون سفت: هرگز روی شاخهٔ محافظت‌شده (dev/main/...) کامیت مستقیم نمی‌زند؛ فقط شاخهٔ پل + PR.
@@ -222,7 +307,7 @@ export async function applyPatchViaGithub(
   const baseSha = refBody.object?.sha;
   if (!baseSha) throw new Error(`SHA رأس ${baseBranch} پیدا نشد.`);
 
-  // ۲) ساخت شاخه
+  // ۲) ساخت شاخه؛ اگر از قبل هست، بررسی idempotent بودن
   const branchRes = await fetch(`${api}/git/refs`, {
     method: 'POST',
     headers: { ...h, 'Content-Type': 'application/json' },
@@ -230,6 +315,12 @@ export async function applyPatchViaGithub(
     signal: AbortSignal.timeout(15_000),
   });
   if (!branchRes.ok) {
+    if (branchRes.status === 422) {
+      // شاخه از قبل هست؛ اگر اثر همین پچ باشد (درخت و پیام یکسان)،
+      // دوباره استفاده می‌شود تا تلاش مجدد ورکر کامیت تکراری نسازد.
+      const reuse = await reuseExistingBridgeBranch(api, h, branch, message, files, repo, baseBranch);
+      if (reuse) return reuse;
+    }
     const detail = await branchRes.text().catch(() => '');
     throw new Error(
       `ساخت شاخه ناموفق بود (وضعیت ${branchRes.status}).${branchRes.status === 422 ? ' شاید شاخه از قبل هست.' : ''} ${detail.slice(0, 200)}`,

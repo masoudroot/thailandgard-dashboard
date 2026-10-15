@@ -43,6 +43,7 @@ const STATUS_FA: Record<string, string> = {
   committed: 'کامیت‌شده',
   approved: 'تأییدشده',
   merged: 'مرج‌شده',
+  needs_review: 'نیاز به بررسی',
   rejected: 'ردشده',
   rolledback: 'رول‌بک‌شده',
 };

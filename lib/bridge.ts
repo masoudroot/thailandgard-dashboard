@@ -305,6 +305,31 @@ export async function updateBridgePatch(
   return toBridgePatch(data as unknown as Record<string, unknown>);
 }
 
+/**
+ * ادعای اتمیک یک پچ proposed برای پردازش.
+ *
+ * به‌روزرسانی شرطی proposed ← gated در یک کوئری واحد انجام می‌شود؛
+ * اگر دو ورکر هم‌زمان همین پچ را بردارند، فقط یکی موفق می‌شود و دیگری
+ * null می‌گیرد (پردازش موازی یک پچ غیرممکن است).
+ *
+ * برمی‌گرداند: ردیف تازه در صورت موفقیت، null اگر پچ دیگر proposed نبود.
+ */
+export async function claimBridgePatch(id: string): Promise<BridgePatch | null> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from('bridge_patches')
+    .update({ status: 'gated', updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', 'proposed')
+    .select(SUMMARY_COLUMNS)
+    .maybeSingle();
+  if (error) {
+    throw new BridgeDbError(`ادعای پچ ناموفق بود: ${error.message}`, dbErrorCode(error));
+  }
+  if (!data) return null;
+  return toBridgePatch(data as unknown as Record<string, unknown>);
+}
+
 /* ------------------------------------------------------------------ */
 /*  گیت‌هاب: مقایسه و مرج                                              */
 /* ------------------------------------------------------------------ */

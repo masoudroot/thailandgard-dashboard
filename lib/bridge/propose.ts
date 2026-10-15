@@ -3,10 +3,15 @@
  *
  * دستور مسعود: سایت کاملاً خودکار، بدون تأیید دستی.
  * این تنها مسیر تولیدی است که پچ یک تیم را به dev ریپوی سایت می‌رساند:
- *   1. پچ را از bridge_patches می‌خواند (وضعیت باید proposed باشد)
- *   2. دروازه کیفیت (lib/bridge/gate.ts) را اجرا می‌کند
- *   3. قرمز ← وضعیت needs_review + ثبت gate_errors؛ پچ متوقف می‌شود ولی چرخه نمی‌میرد
- *   4. سبز ← کامیت به ai-bridge/<id> ← مرج خودکار به dev ← وضعیت merged
+ *   ۱. ادعای اتمیک پچ (proposed ← gated)؛ دو ورکر هم‌زمان یک پچ را پردازش نمی‌کنند
+ *   ۲. دروازه کیفیت (lib/bridge/gate.ts) را اجرا می‌کند
+ *   ۳. قرمز ← وضعیت needs_review + ثبت gate_errors؛ پچ متوقف می‌شود ولی چرخه نمی‌میرد
+ *   ۴. سبز ← کامیت به ai-bridge/<id> ← مرج خودکار به dev ← وضعیت merged
+ *
+ * بازیابی از خطا:
+ * - خطای کامیت: وضعیت به proposed برمی‌گردد تا جاروی بعدی دوباره تلاش کند؛
+ *   کامیت روی گیت‌هاب idempotent است (شاخهٔ موجود با محتوای یکسان دوباره استفاده می‌شود).
+ * - خطای مرج: پچ در committed می‌ماند تا بعداً دوباره تلاش شود؛ چرخه نمی‌میرد.
  *
  * امنیت حفظ شده: دروازه کیفیت، محدودیت فایل‌ها، ممنوعیت main، رول‌بک.
  * فقط قدم «تأیید دستی» حذف شده است.
@@ -14,7 +19,7 @@
 
 import { validatePatch } from './gate';
 import { commitToBridgeBranch, createBridgePR } from './commit';
-import { getBridgePatch, mergeBranchIntoDev, updateBridgePatch } from '../bridge';
+import { claimBridgePatch, getBridgePatch, mergeBranchIntoDev, updateBridgePatch } from '../bridge';
 import type { PatchFile } from '../types';
 
 export interface ProposeResult {
@@ -33,13 +38,18 @@ export interface ProposeResult {
 
 /** پردازش کامل خودکار یک پچ proposed تا مرج در dev. */
 export async function processProposedPatch(patchId: string): Promise<ProposeResult> {
-  const patch = await getBridgePatch(patchId);
-  if (!patch) throw new Error('پچی با این شناسه پیدا نشد.');
-  if (patch.status !== 'proposed') {
-    throw new Error(`این پچ در وضعیت «proposed» نیست (وضعیت فعلی: ${patch.status}).`);
+  // ۰. ادعای اتمیک: اگر ورکر دیگری همین پچ را برداشته، بی‌صدا عقب می‌نشینیم
+  const claimed = await claimBridgePatch(patchId);
+  if (!claimed) {
+    const current = await getBridgePatch(patchId);
+    throw new Error(
+      current
+        ? `پچ ${patchId} دیگر در وضعیت «proposed» نیست (وضعیت فعلی: ${current.status})؛ احتمالاً ورکر دیگری آن را برداشته است.`
+        : 'پچی با این شناسه پیدا نشد.',
+    );
   }
 
-  const files = (patch.files ?? []) as PatchFile[];
+  const files = (claimed.files ?? []) as PatchFile[];
 
   // ۱. دروازه کیفیت
   const gate = validatePatch(files);
@@ -53,11 +63,21 @@ export async function processProposedPatch(patchId: string): Promise<ProposeResu
     );
     return { patchId, gated: false, committed: false, merged: false, gateErrors: gate.errors };
   }
-  await updateBridgePatch(patchId, { status: 'gated', gate_errors: null });
 
-  // ۲. کامیت به شاخه پل
-  const team = patch.team || 'unknown';
-  const { branch, sha } = await commitToBridgeBranch(patchId, files, team, patch.summary || undefined);
+  // ۲. کامیت به شاخه پل (با بازیابی: خطا ← بازگشت به proposed برای تلاش بعدی)
+  const team = claimed.team || 'unknown';
+  let branch: string;
+  let sha: string;
+  try {
+    const res = await commitToBridgeBranch(patchId, files, team, claimed.summary || undefined);
+    branch = res.branch;
+    sha = res.sha;
+  } catch (err) {
+    await updateBridgePatch(patchId, { status: 'proposed' });
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[bridge] کامیت پچ ${patchId} ناموفق بود؛ به proposed برگشت:`, message);
+    throw new Error(`کامیت پچ ${patchId} ناموفق بود و برای تلاش بعدی به proposed برگشت: ${message}`);
+  }
   await updateBridgePatch(patchId, { status: 'committed', branch, commit_sha: sha });
 
   // ۳. ساخت PR (بهترین تلاش؛ برای شفافیت تاریخچه)
@@ -65,7 +85,7 @@ export async function processProposedPatch(patchId: string): Promise<ProposeResu
   try {
     const pr = await createBridgePR(
       branch,
-      `[پل] ${patch.summary || patchId}`,
+      `[پل] ${claimed.summary || patchId}`,
       `تیم: ${team}\nشناسه پچ: ${patchId}\n\nاین PR به‌صورت خودکار مرج می‌شود (دستور مدیر).`,
     );
     prUrl = pr.url;

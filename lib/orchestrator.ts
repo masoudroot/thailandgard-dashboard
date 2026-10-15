@@ -430,6 +430,23 @@ async function registerProposedPatches(
     .select('id')
     .single();
   if (error) {
+    // 23505 = پچ این تیم در این چرخه از قبل ثبت شده (تلاش مجدد ورکر)؛
+    // به‌جای خطا، شناسهٔ ردیف موجود را برمی‌گردانیم تا پچ تکراری ساخته نشود.
+    if (error.code === '23505') {
+      const { data: existing } = await sb
+        .from('bridge_patches')
+        .select('id')
+        .eq('team', opts.team)
+        .eq('cycle_id', opts.cycleId)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      const existingId = (existing as { id?: string } | null)?.id ?? null;
+      console.log(
+        `[orchestrator] پچ تیم ${opts.team} در چرخه ${opts.runId} از قبل ثبت شده بود (id=${existingId})؛ ثبت تکراری رد شد.`,
+      );
+      return existingId;
+    }
     if (error.code === '42P01') {
       console.error(
         `[orchestrator][DB-ENGINEER] جدول bridge_patches هنوز اعمال نشده؛ ` +

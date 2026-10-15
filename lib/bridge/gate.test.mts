@@ -101,5 +101,28 @@ test("نحوی خراب در tsx رد می‌شود", () => {
 test("خطاهای چند فایل یک‌جا جمع می‌شوند", () => {
   const result = validatePatch([file("../a.ts"), file("run.sh"), file("lib/ok.ts")]);
   assert.equal(result.ok, false);
+  // «../a.ts»: خطای مسیر + خطای نگهبان امنیتی؛ «run.sh»: پسوند غیرمجاز
+  assert.equal(result.errors.length, 3);
+});
+
+test("خط تیرهٔ بلند (U+2014) در هر فایلی رد می‌شود", () => {
+  const bad = "export const title = 'سلام — دنیا';\n";
+  const result = validatePatch([
+    file("lib/a.ts", bad),
+    file("docs/b.md", "# تیتر — متن\n"),
+  ]);
+  assert.equal(result.ok, false);
   assert.equal(result.errors.length, 2);
+  assert.ok(result.errors.every((e) => e.includes("خط تیرهٔ بلند")), JSON.stringify(result.errors));
+});
+
+test("فایل JSON خراب رد می‌شود", () => {
+  const result = validatePatch([file("data/bad.json", '{"a": 1,\n')]);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("معتبر نیست")), JSON.stringify(result.errors));
+});
+
+test("فایل JSON سالم قبول می‌شود", () => {
+  const result = validatePatch([file("data/ok.json", '{"a": [1, 2]}\n')]);
+  assert.equal(result.ok, true);
 });
