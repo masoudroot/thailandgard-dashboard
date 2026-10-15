@@ -2,6 +2,7 @@ import { fail, getSupabase, ok } from '../../../lib/api';
 import {
   beginCycle,
   CycleLockedError,
+  findActiveCycle,
   runAllWaves,
 } from '../../../lib/orchestrator';
 
@@ -22,12 +23,20 @@ export async function GET(): Promise<Response> {
 
 /**
  * POST /api/cycles — شروع چرخه‌ی جدید.
+ * اگر چرخهٔ فعالی (در حال اجرا، در آستانهٔ توقف، یا متوقف‌شده) هست، 409 برمی‌گردد؛
+ * اول باید همان چرخه لغو شود یا ادامه یابد. قفل ارکستراتور هم همین را تضمین می‌کند.
  * قفل و ردیف cycles هم‌زمان ساخته می‌شود و run_id برمی‌گردد (202)؛
  * اجرای موج‌ها در پس‌زمینه ادامه می‌یابد تا درخواست HTTP بلوکه نماند.
- * اگر چرخه‌ای در حال اجراست (قفل running و تازه)، 409 برمی‌گردد.
  */
 export async function POST(): Promise<Response> {
   try {
+    const active = await findActiveCycle();
+    if (active) {
+      return fail(
+        `چرخهٔ فعالی در حال اجراست (وضعیت: ${active.status})؛ اول آن را لغو کنید یا ادامه دهید.`,
+        409,
+      );
+    }
     const { cycleId, runId } = await beginCycle();
     // fire-and-forget: موج‌ها در پس‌زمینه اجرا می‌شوند؛ خطا در لاگ می‌ماند
     // و finishCycle وضعیت cycles را به‌روز می‌کند.

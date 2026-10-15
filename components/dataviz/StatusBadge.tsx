@@ -2,37 +2,49 @@
 
 export type VizStatus =
   | 'running'
+  | 'pausing'
+  | 'paused'
   | 'success'
   | 'failed'
   | 'pending'
   | 'canceled'
-  | 'skipped';
+  | 'skipped'
+  | 'stopped';
 
 const STATUS_LABEL: Record<VizStatus, string> = {
   running: 'در حال اجرا',
+  pausing: 'در حال توقف…',
+  paused: 'متوقف‌شده',
   success: 'موفق',
   failed: 'ناموفق',
   pending: 'در انتظار',
   canceled: 'لغوشده',
   skipped: 'صرف‌نظر شده',
+  stopped: 'متوقف شد',
 };
 
 const STATUS_TONE: Record<VizStatus, string> = {
   running: 'border-warning/40 bg-warning/10 text-warning',
+  pausing: 'border-warning/40 bg-warning/10 text-warning',
+  paused: 'border-border bg-muted/60 text-muted-foreground',
   success: 'border-success/40 bg-success/10 text-success',
   failed: 'border-destructive/40 bg-destructive/10 text-destructive',
   pending: 'border-border bg-muted/60 text-muted-foreground',
   canceled: 'border-border bg-muted/60 text-muted-foreground',
   skipped: 'border-border bg-muted/60 text-muted-foreground',
+  stopped: 'border-destructive/40 bg-destructive/10 text-destructive',
 };
 
 const STATUS_DOT: Record<VizStatus, string> = {
   running: 'bg-warning',
+  pausing: 'bg-warning',
+  paused: 'bg-muted-foreground/60',
   success: 'bg-success',
   failed: 'bg-destructive',
   pending: 'bg-muted-foreground/60',
   canceled: 'bg-muted-foreground/60',
   skipped: 'bg-muted-foreground/60',
+  stopped: 'bg-destructive',
 };
 
 export interface StatusBadgeProps {
@@ -55,7 +67,7 @@ export default function StatusBadge({
   className = '',
 }: StatusBadgeProps) {
   const dot = STATUS_DOT[status];
-  const pulsing = status === 'running';
+  const pulsing = status === 'running' || status === 'pausing';
 
   return (
     <span

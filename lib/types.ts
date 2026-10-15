@@ -20,9 +20,59 @@ export type TeamName =
   | 'qa'
   | 'inspector';
 
-export type CycleStatus = 'running' | 'success' | 'failed' | 'canceled';
+export type CycleStatus =
+  | 'running'
+  | 'pausing'
+  | 'paused'
+  | 'success'
+  | 'failed'
+  | 'canceled';
 
-export type TeamRunStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped';
+/** وضعیت‌هایی که چرخه را «فعال» حساب می‌کنند: در حال اجرا، در آستانهٔ توقف، یا متوقف‌شده. */
+export const ACTIVE_CYCLE_STATUSES: CycleStatus[] = ['running', 'pausing', 'paused'];
+
+/**
+ * نرمال‌سازی وضعیت چرخه: املای تاریخی 'cancelled' به 'canceled' برمی‌گردد
+ * تا بقیهٔ کد فقط با یک املا کار کند.
+ */
+export function normalizeCycleStatus(status: string | null | undefined): CycleStatus {
+  if (status === 'cancelled') return 'canceled';
+  return (status ?? 'failed') as CycleStatus;
+}
+
+export type TeamRunStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'stopped';
+
+/** وضعیت ساب‌ایجنت (مرحله‌ی خط لوله‌ی یک تیم). */
+export type SubagentStatus = 'pending' | 'running' | 'paused' | 'stopped' | 'success' | 'failed';
+
+/** سیگنال کنترلی ساب‌ایجنت؛ ارکستر آن را در مرز مرحله‌ها اعمال می‌کند. */
+export type SubagentControl = 'run' | 'pause' | 'stop';
+
+export interface Subagent {
+  id: string;
+  team_run_id: string;
+  team: TeamName;
+  label: string;
+  status: SubagentStatus;
+  control: SubagentControl;
+  current_task?: string | null;
+  progress?: number;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at?: string | null;
+}
+
+/**
+ * گزارش‌دهنده‌ی پیشرفت زنده‌ی تیم به ارکستر.
+ * (عنوان کار جاری، درصد ۰ تا ۱۰۰). ارکستر آن را در team_runs می‌نویسد؛
+ * پیاده‌سازی تیم نباید فرض کند همیشه داده شده است (اختیاری).
+ */
+export type ProgressReporter = (task: string, progress: number) => void | Promise<void>;
+
+/** میدان اختیاری ورودی تیم‌ها برای گزارش زنده‌ی پیشرفت. */
+export interface TeamProgressInput {
+  reportProgress?: ProgressReporter;
+}
 
 /** Lifecycle states of a durable job in the agent job queue (see lib/queue.ts). */
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed';
@@ -47,6 +97,12 @@ export interface TeamRun {
   output_summary: string | null;
   llm_calls: number;
   error: string | null;
+  /** درصد پیشرفت زنده (۰ تا ۱۰۰)؛ ارکستر و خود تیم آن را به‌روز می‌کنند. */
+  progress?: number;
+  /** عنوان کار جاری تیم (آخرین مرحله‌ی گزارش‌شده). */
+  current_task?: string | null;
+  /** آخرین به‌روزرسانی ردیف؛ مبنای «آخرین اقدام X پیش». */
+  updated_at?: string | null;
 }
 
 export interface QueuedTask {

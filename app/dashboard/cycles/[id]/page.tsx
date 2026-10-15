@@ -8,11 +8,17 @@ import {
   CalendarDays,
   Clock3,
   Cpu,
+  KeyRound,
+  Pause,
+  Play,
   SearchX,
   Users,
+  XCircle,
 } from 'lucide-react';
 import type { Cycle, TeamName, TeamRun } from '@/lib/types';
+import { normalizeCycleStatus } from '@/lib/types';
 import EmptyState from '@/components/EmptyState';
+import NotConnected from '@/components/NotConnected';
 import StatusBadge from '@/components/dataviz/StatusBadge';
 import ProgressBar from '@/components/dataviz/ProgressBar';
 import { SkeletonPanel } from '@/components/Skeleton';
@@ -46,6 +52,14 @@ function faDuration(start: string | null, end: string | null): string {
   return `${faNum(m)} دقیقه و ${faNum(sec)} ثانیه`;
 }
 
+/** باز کردن پوشش API: { ok, data } یا دادهٔ خام */
+function unwrapPayload(body: unknown): unknown {
+  if (body && typeof body === 'object' && 'data' in (body as Record<string, unknown>)) {
+    return (body as { data: unknown }).data;
+  }
+  return body;
+}
+
 const TEAM_LABEL: Record<TeamName, string> = {
   artdir: 'کارگردانی هنری',
   branding: 'برندینگ',
@@ -64,26 +78,8 @@ const TEAM_LABEL: Record<TeamName, string> = {
   inspector: 'بازرس',
 };
 
-const MOCK_CYCLE: Cycle = {
-  id: 'cyc-2026-10-14-01',
-  run_id: 'run_9f31ab',
-  status: 'running',
-  started_at: '2026-10-14T14:02:11+03:30',
-  finished_at: null,
-  stats: null,
-};
-
-const MOCK_TEAM_RUNS: TeamRun[] = [
-  { id: 'tr-1', cycle_id: 'cyc-2026-10-14-01', team: 'artdir', wave: 1, status: 'success', started_at: '2026-10-14T14:02:12+03:30', finished_at: '2026-10-14T14:20:45+03:30', output_summary: 'ری‌برند بصری هیرو تأیید شد؛ ۳ نسخه موکاپ تحویل داده شد.', llm_calls: 12, error: null },
-  { id: 'tr-2', cycle_id: 'cyc-2026-10-14-01', team: 'branding', wave: 1, status: 'success', started_at: '2026-10-14T14:02:12+03:30', finished_at: '2026-10-14T14:18:03+03:30', output_summary: 'پیام اصلی برند یکدست شد؛ شعار نهایی «ریشه را می‌جویم».', llm_calls: 9, error: null },
-  { id: 'tr-3', cycle_id: 'cyc-2026-10-14-01', team: 'content', wave: 1, status: 'success', started_at: '2026-10-14T14:02:13+03:30', finished_at: '2026-10-14T14:31:57+03:30', output_summary: '۵ پیش‌نویس مقاله آماده بازبینی؛ ۲ مورد نیاز به اصلاح لحن دارند.', llm_calls: 21, error: null },
-  { id: 'tr-4', cycle_id: 'cyc-2026-10-14-01', team: 'analytics', wave: 2, status: 'success', started_at: '2026-10-14T14:32:10+03:30', finished_at: '2026-10-14T14:55:41+03:30', output_summary: 'نرخ تبدیل هفته ۲.۴٪؛ ریزش اصلی در صفحه پرداخت شناسایی شد.', llm_calls: 7, error: null },
-  { id: 'tr-5', cycle_id: 'cyc-2026-10-14-01', team: 'intel', wave: 2, status: 'failed', started_at: '2026-10-14T14:32:10+03:30', finished_at: '2026-10-14T14:36:02+03:30', output_summary: null, llm_calls: 3, error: 'اتصال به منبع داده بیرونی قطع شد (timeout پس از ۳۰ ثانیه).' },
-  { id: 'tr-6', cycle_id: 'cyc-2026-10-14-01', team: 'lead', wave: 2, status: 'running', started_at: '2026-10-14T14:56:00+03:30', finished_at: null, output_summary: null, llm_calls: 5, error: null },
-  { id: 'tr-7', cycle_id: 'cyc-2026-10-14-01', team: 'design', wave: 3, status: 'pending', started_at: null, finished_at: null, output_summary: null, llm_calls: 0, error: null },
-  { id: 'tr-8', cycle_id: 'cyc-2026-10-14-01', team: 'seo', wave: 3, status: 'pending', started_at: null, finished_at: null, output_summary: null, llm_calls: 0, error: null },
-  { id: 'tr-9', cycle_id: 'cyc-2026-10-14-01', team: 'seocontent', wave: 3, status: 'pending', started_at: null, finished_at: null, output_summary: null, llm_calls: 0, error: null },
-];
+type LoadState = 'loading' | 'ready' | 'not-connected' | 'unauthorized';
+type CycleAction = 'pause' | 'resume' | 'cancel';
 
 export default function CycleDetailPage() {
   const params = useParams();
@@ -91,24 +87,34 @@ export default function CycleDetailPage() {
 
   const [cycle, setCycle] = useState<Cycle | null>(null);
   const [teamRuns, setTeamRuns] = useState<TeamRun[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [usingMock, setUsingMock] = useState(false);
+  const [loadState, setLoadState] = useState<LoadState>('loading');
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [acting, setActing] = useState<CycleAction | null>(null);
+  const [actionError, setActionError] = useState('');
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/cycles/${id}`, { cache: 'no-store' });
+      if (res.status === 401) {
+        setLoadState('unauthorized');
+        return;
+      }
       if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = await res.json();
-      setCycle(data.cycle ?? data);
-      setTeamRuns(data.team_runs ?? data.teamRuns ?? []);
-      setUsingMock(false);
+      const body = await res.json();
+      const payload = unwrapPayload(body) as {
+        cycle?: Cycle;
+        team_runs?: TeamRun[];
+      };
+      setCycle(payload.cycle ?? null);
+      setTeamRuns(payload.team_runs ?? []);
+      setLoadState('ready');
     } catch {
-      setCycle(MOCK_CYCLE);
-      setTeamRuns(MOCK_TEAM_RUNS);
-      setUsingMock(true);
+      // قانون مسعود: به‌جای دادهٔ نمونه، صادقانه «متصل نیست» نمایش بده.
+      setCycle(null);
+      setTeamRuns([]);
+      setLoadState('not-connected');
     } finally {
-      setLoading(false);
       setLastRefresh(new Date());
     }
   }, [id]);
@@ -117,18 +123,50 @@ export default function CycleDetailPage() {
     load();
   }, [load]);
 
-  const running = cycle?.status === 'running';
+  const status = cycle ? normalizeCycleStatus(cycle.status) : null;
+  const isRunning = status === 'running';
+  const isPausing = status === 'pausing';
+  const isPaused = status === 'paused';
+  const isActive = isRunning || isPausing || isPaused;
+
   useEffect(() => {
-    if (!running) return;
+    if (!(isRunning || isPausing)) return;
     const t = setInterval(load, 10_000);
     return () => clearInterval(t);
-  }, [running, load]);
+  }, [isRunning, isPausing, load]);
+
+  async function sendAction(action: CycleAction) {
+    setActing(action);
+    setActionError('');
+    setConfirmCancel(false);
+    try {
+      const res = await fetch(`/api/cycles/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const payload = unwrapPayload(body) as { error?: { message?: string } };
+        throw new Error(payload.error?.message ?? `خطا با کد ${res.status}`);
+      }
+      await load();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'انجام عمل ناموفق بود.');
+    } finally {
+      setActing(null);
+    }
+  }
 
   const waves = Array.from(new Set(teamRuns.map((r) => r.wave))).sort(
     (a, b) => a - b,
   );
   const totalLlmCalls = teamRuns.reduce((sum, r) => sum + (r.llm_calls ?? 0), 0);
   const failedRuns = teamRuns.filter((r) => r.status === 'failed');
+
+  const pauseHint = isRunning
+    ? 'توقف نرم: موج جاری تا انتها اجرا می‌شود و موج بعدی شروع نمی‌شود'
+    : undefined;
 
   return (
     <div dir="rtl" className="min-h-screen bg-background text-foreground">
@@ -141,8 +179,24 @@ export default function CycleDetailPage() {
           بازگشت به لیست چرخه‌ها
         </Link>
 
-        {loading ? (
+        {loadState === 'loading' ? (
           <SkeletonPanel />
+        ) : loadState === 'not-connected' ? (
+          <NotConnected onRetry={load} retrying={false} />
+        ) : loadState === 'unauthorized' ? (
+          <EmptyState
+            icon={KeyRound}
+            title="نشست شما منقضی شده است"
+            description="برای دیدن جزئیات چرخه دوباره وارد شوید."
+            action={
+              <Link
+                href="/login"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-brand px-6 py-2 text-sm font-bold text-brand-foreground shadow-control hover:opacity-90"
+              >
+                ورود دوباره
+              </Link>
+            }
+          />
         ) : !cycle ? (
           <EmptyState
             icon={SearchX}
@@ -159,12 +213,6 @@ export default function CycleDetailPage() {
           />
         ) : (
           <>
-            {usingMock && (
-              <p className="mb-4 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2.5 text-sm text-warning">
-                اتصال به API برقرار نشد؛ داده نمونه نمایش داده می‌شود.
-              </p>
-            )}
-
             <section className="mb-6 rounded-2xl border border-border bg-card p-4 shadow-surface sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -174,8 +222,70 @@ export default function CycleDetailPage() {
                   </h1>
                   <p className="mt-1 text-xs text-muted-foreground">{cycle.id}</p>
                 </div>
-                <StatusBadge status={cycle.status} />
+                <StatusBadge status={status ?? 'pending'} />
               </div>
+
+              {/* دکمه‌های کنترل واقعی چرخه */}
+              {isActive && (
+                <div className="mt-5 flex flex-wrap items-center gap-2.5 border-t border-border pt-5">
+                  <button
+                    onClick={() => sendAction('pause')}
+                    disabled={!isRunning || acting !== null}
+                    title={pauseHint}
+                    className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-warning/40 bg-warning/10 px-5 py-2 text-sm font-medium text-warning transition-colors hover:bg-warning/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Pause size={16} strokeWidth={2} aria-hidden="true" />
+                    {acting === 'pause' ? 'در حال توقف…' : 'توقف چرخه'}
+                  </button>
+                  <button
+                    onClick={() => sendAction('resume')}
+                    disabled={!isPaused || acting !== null}
+                    title="ادامه از همان موجی که متوقف شده است"
+                    className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2 text-sm font-medium text-brand-foreground shadow-control hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Play size={16} strokeWidth={2} aria-hidden="true" />
+                    {acting === 'resume' ? 'در حال ادامه…' : 'ادامه'}
+                  </button>
+                  {confirmCancel ? (
+                    <>
+                      <button
+                        onClick={() => sendAction('cancel')}
+                        disabled={acting !== null}
+                        className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-destructive px-5 py-2 text-sm font-bold text-destructive-foreground shadow-control hover:opacity-90 disabled:opacity-40"
+                      >
+                        <XCircle size={16} strokeWidth={2} aria-hidden="true" />
+                        {acting === 'cancel' ? 'در حال لغو…' : 'بله، لغو شود'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmCancel(false)}
+                        disabled={acting !== null}
+                        className="tg-btn inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border px-5 py-2 text-sm font-medium text-card-foreground hover:bg-muted disabled:opacity-40"
+                      >
+                        انصراف
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmCancel(true)}
+                      disabled={!isActive || acting !== null}
+                      title="لغو چرخه؛ دیگر ادامه نمی‌یابد"
+                      className="tg-btn inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-5 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <XCircle size={16} strokeWidth={2} aria-hidden="true" />
+                      لغو چرخه
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {actionError && (
+                <p
+                  role="alert"
+                  className="tg-shake mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive"
+                >
+                  {actionError}
+                </p>
+              )}
 
               <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 md:gap-4">
                 <div className="rounded-xl bg-muted/50 p-4">
@@ -209,9 +319,13 @@ export default function CycleDetailPage() {
               </dl>
 
               <p className="mt-4 text-xs text-muted-foreground">
-                {running
+                {isRunning
                   ? 'این چرخه در حال اجراست؛ هر ۱۰ ثانیه خودکار به‌روزرسانی می‌شود.'
-                  : 'این چرخه به پایان رسیده است.'}
+                  : isPausing
+                    ? 'درخواست توقف ثبت شد؛ موج جاری تا انتها اجرا می‌شود و بعد چرخه متوقف می‌ماند.'
+                    : isPaused
+                      ? 'این چرخه متوقف شده است؛ با «ادامه» از همان نقطه ادامه می‌یابد.'
+                      : 'این چرخه به پایان رسیده است.'}
                 {lastRefresh &&
                   ` آخرین به‌روزرسانی: ${new Intl.DateTimeFormat('fa-IR', { timeStyle: 'medium' }).format(lastRefresh)}`}
               </p>
