@@ -329,16 +329,41 @@ export async function callLLMJson<T = unknown>(
     temperature: opts.temperature ?? 0.2, // cooler by default for structured output
   });
 
-  let text = raw.trim();
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenceMatch) text = fenceMatch[1].trim();
+  const parsed = tryParseJson(raw);
+  if (parsed.ok) return parsed.value as T;
 
+  // تلاش دوم: از خود مدل بخواه خروجی را فقط به JSON معتبر تبدیل کند
+  const retry = await callLLM(
+    `خروجی قبلی‌ات JSON معتبر نبود. فقط و فقط JSON معتبر برگردان، بدون هیچ توضیح اضافه:\n\n${raw.slice(0, 4000)}`,
+    { ...opts, temperature: 0 },
+  );
+  const parsed2 = tryParseJson(retry);
+  if (parsed2.ok) return parsed2.value as T;
+
+  throw new LLMError(
+    `LLM output was not valid JSON: ${raw.trim().slice(0, 200)}${raw.length > 200 ? "..." : ""}`,
+    { retried: true },
+  );
+}
+
+/** استخراج تحمل‌پذیر JSON از متن: fence، بعد اولین { تا آخرین }. */
+function tryParseJson(text: string): { ok: boolean; value?: unknown } {
+  let t = text.trim();
+  const fenceMatch = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch) t = fenceMatch[1].trim();
   try {
-    return JSON.parse(text) as T;
+    return { ok: true, value: JSON.parse(t) };
   } catch {
-    throw new LLMError(
-      `LLM output was not valid JSON: ${text.slice(0, 200)}${text.length > 200 ? "..." : ""}`,
-      { retried: true },
-    );
+    // تلاش آخر: بزرگ‌ترین بازه‌ی { ... }
+    const start = t.indexOf("{");
+    const end = t.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return { ok: true, value: JSON.parse(t.slice(start, end + 1)) };
+      } catch {
+        /* ادامه */
+      }
+    }
+    return { ok: false };
   }
 }
