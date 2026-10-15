@@ -129,26 +129,43 @@ function NavRow({
 
   return (
     <li>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className={[linkClass(active), "w-full text-start"].join(" ")}
-      >
-        <Icon
-          className="h-5 w-5 shrink-0"
-          strokeWidth={active ? 2 : 1.5}
-          aria-hidden="true"
-        />
-        <span>{label}</span>
-        <ChevronDown
-          aria-hidden="true"
-          className={[
-            "ms-auto h-4 w-4 shrink-0 transition-transform duration-200 motion-reduce:transition-none",
-            open ? "rotate-180" : "",
-          ].join(" ")}
-        />
-      </button>
+      <div className="flex items-center gap-1">
+        <Link
+          href={href}
+          aria-current={selfActive && !childActive ? "page" : undefined}
+          onClick={onNavigate}
+          className={[linkClass(active), "flex-1"].join(" ")}
+        >
+          <Icon
+            className="h-5 w-5 shrink-0"
+            strokeWidth={active ? 2 : 1.5}
+            aria-hidden="true"
+          />
+          <span>{label}</span>
+          <span
+            aria-hidden="true"
+            className={[
+              "ms-auto h-2 w-2 rounded-full bg-brand transition-all duration-200 motion-reduce:transition-none",
+              active && !open ? "scale-100 opacity-100" : "scale-0 opacity-0",
+            ].join(" ")}
+          />
+        </Link>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-label={open ? "بستن زیرمنو" : "باز کردن زیرمنو"}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ChevronDown
+            aria-hidden="true"
+            className={[
+              "h-4 w-4 transition-transform duration-200 motion-reduce:transition-none",
+              open ? "rotate-180" : "",
+            ].join(" ")}
+          />
+        </button>
+      </div>
       <div
         className={[
           "grid transition-all duration-200 motion-reduce:transition-none",
