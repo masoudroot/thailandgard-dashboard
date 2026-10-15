@@ -4,7 +4,7 @@ import { Plug } from "lucide-react";
 import { SupabasePanel } from "./SupabasePanel";
 import { TelegramPanel } from "./TelegramPanel";
 import { GithubPanel } from "./GithubPanel";
-import { LlmPanel } from "./LlmPanel";
+import { LlmGatewaysPanel } from "./LlmGatewaysPanel";
 import { MarketPanel } from "./MarketPanel";
 import { AdminPasswordPanel } from "./AdminPasswordPanel";
 
@@ -31,7 +31,7 @@ export function ConnectionsHub() {
           <SupabasePanel />
           <TelegramPanel />
           <GithubPanel />
-          <LlmPanel />
+          <LlmGatewaysPanel />
           <AdminPasswordPanel />
         </div>
       </section>

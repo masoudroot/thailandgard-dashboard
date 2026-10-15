@@ -17,6 +17,7 @@ import {
   Plane,
   Wrench,
   Activity,
+  ChevronDown,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "./ui/Button";
@@ -25,6 +26,8 @@ export type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
+  /** زیرمنو؛ اگر باشد، آیتم والد بازشو می‌شود. */
+  children?: { href: string; label: string }[];
 };
 
 /** همهٔ آیتم‌های ناوبری داشبورد؛ منبع مشترک سایدبار دسکتاپ و دراور موبایل. */
@@ -38,7 +41,15 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/reports", label: "گزارش‌ها", icon: FileText },
   { href: "/dashboard/changes", label: "تغییرات سایت", icon: GitCommitHorizontal },
   { href: "/dashboard/rates", label: "نرخ ارز", icon: TrendingUp },
-  { href: "/dashboard/settings", label: "تنظیمات", icon: Settings },
+  {
+    href: "/dashboard/settings",
+    label: "تنظیمات",
+    icon: Settings,
+    children: [
+      { href: "/dashboard/settings", label: "اتصال‌ها" },
+      { href: "/dashboard/settings/models", label: "مدل‌های هوش مصنوعی" },
+    ],
+  },
   { href: "/dashboard/debug", label: "دستیار فنی", icon: Wrench },
 ];
 
@@ -53,40 +64,131 @@ export function NavList({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <ul className="flex flex-col gap-1">
-      {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-        const active = isNavActive(pathname, href);
-        return (
-          <li key={href}>
-            <Link
-              href={href}
-              aria-current={active ? "page" : undefined}
-              onClick={onNavigate}
-              className={[
-                "flex min-h-11 items-center gap-3 rounded-lg px-4 py-2.5 text-base leading-6 transition-colors duration-200 motion-reduce:transition-none",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                active
-                  ? "bg-brand/10 font-semibold text-brand"
-                  : "text-foreground/80 hover:bg-accent hover:text-foreground",
-              ].join(" ")}
-            >
-              <Icon
-                className="h-5 w-5 shrink-0"
-                strokeWidth={active ? 2 : 1.5}
-                aria-hidden="true"
-              />
-              <span>{label}</span>
-              <span
-                aria-hidden="true"
-                className={[
-                  "ms-auto h-2 w-2 rounded-full bg-brand transition-all duration-200 motion-reduce:transition-none",
-                  active ? "scale-100 opacity-100" : "scale-0 opacity-0",
-                ].join(" ")}
-              />
-            </Link>
-          </li>
-        );
-      })}
+      {NAV_ITEMS.map((item) => (
+        <NavRow key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
+      ))}
     </ul>
+  );
+}
+
+/** یک ردیف ناوبری؛ اگر زیرمنو داشته باشد بازشو می‌شود. */
+function NavRow({
+  item,
+  pathname,
+  onNavigate,
+}: {
+  item: NavItem;
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  const { href, label, icon: Icon, children } = item;
+  const selfActive = isNavActive(pathname, href);
+  const childActive = children?.some((c) => isNavActive(pathname, c.href)) ?? false;
+  const active = selfActive || childActive;
+  // اگر خود والد یا یکی از فرزندان فعال است، زیرمنو باز می‌ماند
+  const [open, setOpen] = React.useState(active);
+  React.useEffect(() => {
+    if (active) setOpen(true);
+  }, [active]);
+
+  const linkClass = (isActive: boolean) =>
+    [
+      "flex min-h-11 items-center gap-3 rounded-lg px-4 py-2.5 text-base leading-6 transition-colors duration-200 motion-reduce:transition-none",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      isActive
+        ? "bg-brand/10 font-semibold text-brand"
+        : "text-foreground/80 hover:bg-accent hover:text-foreground",
+    ].join(" ");
+
+  if (!children || children.length === 0) {
+    return (
+      <li>
+        <Link
+          href={href}
+          aria-current={active ? "page" : undefined}
+          onClick={onNavigate}
+          className={linkClass(active)}
+        >
+          <Icon
+            className="h-5 w-5 shrink-0"
+            strokeWidth={active ? 2 : 1.5}
+            aria-hidden="true"
+          />
+          <span>{label}</span>
+          <span
+            aria-hidden="true"
+            className={[
+              "ms-auto h-2 w-2 rounded-full bg-brand transition-all duration-200 motion-reduce:transition-none",
+              active ? "scale-100 opacity-100" : "scale-0 opacity-0",
+            ].join(" ")}
+          />
+        </Link>
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={[linkClass(active), "w-full text-start"].join(" ")}
+      >
+        <Icon
+          className="h-5 w-5 shrink-0"
+          strokeWidth={active ? 2 : 1.5}
+          aria-hidden="true"
+        />
+        <span>{label}</span>
+        <ChevronDown
+          aria-hidden="true"
+          className={[
+            "ms-auto h-4 w-4 shrink-0 transition-transform duration-200 motion-reduce:transition-none",
+            open ? "rotate-180" : "",
+          ].join(" ")}
+        />
+      </button>
+      <div
+        className={[
+          "grid transition-all duration-200 motion-reduce:transition-none",
+          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+        ].join(" ")}
+      >
+        <ul className="overflow-hidden">
+          {children.map((c) => {
+            const cActive = isNavActive(pathname, c.href);
+            // «اتصال‌ها» دقیقاً روی همان مسیر والد است؛ هایلایت جدا می‌خواهد
+            const exactActive = pathname === c.href;
+            return (
+              <li key={c.href + c.label}>
+                <Link
+                  href={c.href}
+                  aria-current={exactActive ? "page" : undefined}
+                  onClick={onNavigate}
+                  className={[
+                    "flex min-h-10 items-center gap-3 rounded-lg py-2 pe-4 ps-12 text-[15px] leading-6 transition-colors duration-200 motion-reduce:transition-none",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    exactActive
+                      ? "bg-brand/10 font-semibold text-brand"
+                      : "text-foreground/70 hover:bg-accent hover:text-foreground",
+                  ].join(" ")}
+                >
+                  <span>{c.label}</span>
+                  <span
+                    aria-hidden="true"
+                    className={[
+                      "ms-auto h-1.5 w-1.5 rounded-full bg-brand transition-all duration-200 motion-reduce:transition-none",
+                      exactActive ? "scale-100 opacity-100" : "scale-0 opacity-0",
+                    ].join(" ")}
+                  />
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </li>
   );
 }
 
