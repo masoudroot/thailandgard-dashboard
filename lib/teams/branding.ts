@@ -7,7 +7,8 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
-import { buildKnowledgePromptSection, indexKnowledge } from '../rag';
+import { buildKnowledgePromptSection } from '../rag';
+import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
 import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'branding';
@@ -153,34 +154,15 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   // استخراج دانش حرفه‌ای از حکم منتقد و ایندکس در RAG
   // تا چرخه‌های بعد از این درس استفاده کنند، نه اینکه دوباره همان خطا تکرار شود.
-  try {
-    const { getSupabase } = await import('../api');
-    const knowledgeTitle = verdict.approved
-      ? `درس موفق برندینگ (${input.runId.slice(0, 8)})`
-      : `رد منتقد برندینگ (${input.runId.slice(0, 8)})`;
-    const knowledgeContent = [
-      `حکم منتقد: ${verdict.approved ? 'تأیید شد' : 'رد شد'}.`,
-      `دلیل: ${verdict.reason}`,
-      verdict.approved
-        ? 'این الگو موفق بود؛ در چرخه‌های بعد تکرار شود.'
-        : 'این الگو مردود است؛ در چرخه‌های بعد از آن پرهیز شود.',
-    ].join('\n');
-    const sb = getSupabase();
-    const { data: item } = await sb
-      .from('team_knowledge')
-      .insert({ team: TEAM, title: knowledgeTitle, content: knowledgeContent, source: 'team-lesson' })
-      .select('id')
-      .single();
-    if (item?.id) {
-      await indexKnowledge(item.id, TEAM, knowledgeTitle, knowledgeContent);
-    }
-  } catch {
-    // fail-soft: اگر ایندکس دانش شکست خورد، چرخه نباید بایستد
-  }
-
+  const knowledgeResult = await extractCriticKnowledge(
+    TEAM,
+    { approved: verdict.approved, reason: verdict.reason, domain: 'لحن برند و شعار' },
+    input.runId,
+  );
+  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
   const summary = verdict.approved
-    ? `تیم برندینگ این چرخه شعار، واژه‌نامهٔ یوایکس‌رایتینگ و فیلتر لحن را بازبینی و تولید کرد و منتقد آن را تأیید کرد. ${verdict.reason} ۳ گزینهٔ شعار نهایی برای تأیید مسعود آماده است و دو کار بعدی (واژه‌نامه و اصلاح لحن متن‌ها) در صف گذاشته شد.`
-    : `تیم برندینگ این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${verdict.reason} حکم اصلاح لحن برای متن‌های زنده ثبت شده و بلوکر در گزارش درج شد.`;
+    ? `تیم برندینگ این چرخه شعار، واژه‌نامهٔ یوایکس‌رایتینگ و فیلتر لحن را بازبینی و تولید کرد و منتقد آن را تأیید کرد. ${verdict.reason} ۳ گزینهٔ شعار نهایی برای تأیید مسعود آماده است و دو کار بعدی (واژه‌نامه و اصلاح لحن متن‌ها) در صف گذاشته شد. ${knowledgeLog}`
+    : `تیم برندینگ این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${verdict.reason} حکم اصلاح لحن برای متن‌های زنده ثبت شده و بلوکر در گزارش درج شد. ${knowledgeLog}`;
 
   return {
     team: TEAM,

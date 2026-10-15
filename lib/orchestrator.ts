@@ -581,6 +581,16 @@ export async function runSingleTeam(
     const llmCalls = getLLMStats().total;
     await closeSubagents(result.approved === false ? 'failed' : 'success');
     const teamStatus = result.approved === false ? 'failed' : 'success';
+    // تیم ۹: ردیابی استفاده از دانش — کدام چانک‌ها تزریق شدند و آیا مفید بودند؟
+    try {
+      const { getLastRetrievedChunkIds, recordKnowledgeUsage } = await import('./rag');
+      const usedChunkIds = getLastRetrievedChunkIds(team);
+      if (usedChunkIds.length > 0) {
+        await recordKnowledgeUsage(usedChunkIds, runRowId, teamStatus === 'success');
+      }
+    } catch {
+      // best-effort: خطای ردیابی دانش نباید نتیجه تیم را خراب کند
+    }
     await finish({
       status: teamStatus,
       progress: 100,

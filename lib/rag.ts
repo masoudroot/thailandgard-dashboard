@@ -95,11 +95,38 @@ export async function getEmbedding(text: string): Promise<number[]> {
 
 interface KnowledgeChunkRow {
   id: string;
+  knowledge_id: string | null;
   source: string | null;
   team: string | null;
   title: string | null;
   chunk: string | null;
   similarity: number | null;
+  usefulness_score: number | null;
+}
+
+/** چانک بازیابی‌شده با شناسه (برای ردیابی استفاده). */
+export interface RetrievedChunk {
+  id: string;
+  knowledgeId: string | null;
+  title: string | null;
+  chunk: string;
+  similarity: number;
+  usefulnessScore: number;
+}
+
+/**
+ * آخرین چانک‌های تزریق‌شده به تفکیک تیم.
+ * تیم‌ها buildKnowledgePromptSection را صدا می‌زنند؛ ارکستراتور بعد از
+ * پایان runTeam با getLastRetrievedChunkIds(team) می‌فهمد چه دانشی استفاده شد.
+ */
+const lastRetrieval = new Map<string, string[]>();
+
+export function getLastRetrievedChunkIds(team: string): string[] {
+  return lastRetrieval.get(team) ?? [];
+}
+
+function rememberRetrieval(team: string | undefined, ids: string[]): void {
+  if (team) lastRetrieval.set(team, ids);
 }
 
 /** مسابقه‌ی promise با تایم‌اوت ۳۰ ثانیه تا فراخوانی RPC هیچ‌وقت آویزان نماند. */
@@ -125,6 +152,68 @@ function formatChunk(row: KnowledgeChunkRow, index: number): string {
 }
 
 /**
+ * جست‌وجوی معنایی ساخت‌یافته: برمی‌گرداند چانک‌ها را با شناسه، شباهت و
+ * امتیاز مفید بودن (برای ردیابی استفاده و مرتب‌سازی هوشمند).
+ *
+ * پارامتر maxAgeDays: فقط چانک‌های تازه‌تر از این تعداد روز (null یعنی بدون فیلتر).
+ * مرتب‌سازی نهایی: ترکیب شباهت معنایی و امتیاز مفید بودن؛ اگر RPC قدیمی
+ * usefulness_score را برنگرداند، فقط با similarity مرتب می‌شود (سازگار با عقب).
+ */
+export async function retrieveKnowledgeChunks(
+  query: string,
+  team?: string,
+  limit: number = DEFAULT_LIMIT,
+  maxAgeDays: number | null = null,
+): Promise<RetrievedChunk[]> {
+  try {
+    if (!query.trim()) return [];
+
+    const embedding = await getEmbedding(query);
+    const supabase = getSupabase();
+
+    const teamFilter = team?.trim() ? team.trim() : null;
+
+    const rpcParams: Record<string, unknown> = {
+      query_embedding: embedding,
+      match_count: limit,
+      filter_team: teamFilter,
+    };
+    // اگر RPC جدید max_age_days را پشتیبانی کند، می‌فرستیم؛ وگرنه نادیده گرفته می‌شود
+    if (maxAgeDays !== null) rpcParams.max_age_days = maxAgeDays;
+
+    const { data, error } = await withTimeout(
+      supabase.rpc('match_knowledge_chunks', rpcParams),
+    );
+
+    if (error) return [];
+    const rows = (data ?? []) as KnowledgeChunkRow[];
+    const chunks = rows.filter((r) => (r.chunk ?? '').trim().length > 0);
+
+    const result: RetrievedChunk[] = chunks.map((r) => ({
+      id: r.id,
+      knowledgeId: r.knowledge_id ?? null,
+      title: r.title ?? null,
+      chunk: (r.chunk ?? '').trim(),
+      similarity: r.similarity ?? 0,
+      usefulnessScore: r.usefulness_score ?? 0,
+    }));
+
+    // مرتب‌سازی سمت کلاینت (اگر RPC قدیمی بود و ترکیب را اعمال نکرد):
+    // شباهت ۷۰٪ + امتیاز مفید بودن نرمال‌شده ۳۰٪
+    result.sort((a, b) => {
+      const scoreA = a.similarity * 0.7 + Math.max(a.usefulnessScore, 0) / 10 * 0.3;
+      const scoreB = b.similarity * 0.7 + Math.max(b.usefulnessScore, 0) / 10 * 0.3;
+      return scoreB - scoreA;
+    });
+
+    rememberRetrieval(team, result.map((r) => r.id));
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * جست‌وجوی معنایی: امبدینگ کوئری، فراخوانی RPC `match_knowledge_chunks`
  * با فیلتر اختیاری team، و قالب‌بندی `limit` چانک برتر به رشته‌ی فارسی
  * آماده‌ی تزریق در پرامپت.
@@ -137,32 +226,25 @@ export async function retrieveKnowledge(
   team?: string,
   limit: number = DEFAULT_LIMIT,
 ): Promise<string> {
-  try {
-    if (!query.trim()) return '';
-
-    const embedding = await getEmbedding(query);
-    const supabase = getSupabase();
-
-    const teamFilter = team?.trim() ? team.trim() : null;
-
-    const { data, error } = await withTimeout(
-      supabase.rpc('match_knowledge_chunks', {
-        query_embedding: embedding,
-        match_count: limit,
-        filter_team: teamFilter,
-      }),
-    );
-
-    if (error) return '';
-    const rows = (data ?? []) as KnowledgeChunkRow[];
-    const chunks = rows.filter((r) => (r.chunk ?? '').trim().length > 0);
-    if (chunks.length === 0) return '';
-
-    return chunks.map((r, i) => formatChunk(r, i)).join('\n\n');
-  } catch {
-    // fail-soft عمدی: نداشتن دانش بهتر از مسدود شدن تیم است.
-    return '';
-  }
+  const chunks = await retrieveKnowledgeChunks(query, team, limit);
+  if (chunks.length === 0) return '';
+  return chunks
+    .map((c, i) =>
+      formatChunk(
+        {
+          id: c.id,
+          knowledge_id: c.knowledgeId,
+          source: null,
+          team: team ?? null,
+          title: c.title,
+          chunk: c.chunk,
+          similarity: c.similarity,
+          usefulness_score: c.usefulnessScore,
+        },
+        i,
+      ),
+    )
+    .join('\n\n');
 }
 
 /**
@@ -364,5 +446,60 @@ export async function deleteKnowledgeIndex(knowledgeId: string): Promise<void> {
   );
   if (error) {
     throw new RAGError(`deleteKnowledgeIndex: حذف ایندکس ناموفق بود: ${error.message}`);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* تیم ۹: ردیابی استفاده از دانش و امتیاز مفید بودن                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * ثبت استفاده از چانک‌های دانش در یک اجرای تیم و به‌روزرسانی امتیاز
+ * مفید بودن.
+ *
+ * - `chunkIds`: شناسه‌ی چانک‌هایی که در پرامپت این اجرا تزریق شدند
+ *   (از getLastRetrievedChunkIds گرفته می‌شود).
+ * - `teamRunId`: ردیف team_runs برای لاگ.
+ * - `approved`: اگر خروجی تیم تأیید شد (verdict.approved یا status موفق)،
+ *   هر چانک +۱ می‌گیرد؛ وگرنه −۱.
+ *
+ * best-effort است: هرگز خطا پرتاب نمی‌کند تا اجرای تیم را خراب نکند.
+ */
+export async function recordKnowledgeUsage(
+  chunkIds: string[],
+  teamRunId: string,
+  approved: boolean,
+): Promise<void> {
+  try {
+    if (chunkIds.length === 0 || !teamRunId) return;
+    const supabase = getSupabase();
+    const delta = approved ? 1 : -1;
+    const now = new Date().toISOString();
+
+    // ۱) لاگ روی team_runs
+    await supabase
+      .from('team_runs')
+      .update({ knowledge_chunk_ids: chunkIds })
+      .eq('id', teamRunId);
+
+    // ۲) به‌روزرسانی امتیاز چانک‌ها (تک‌تک تا با RLS و تریگرها سازگار بماند)
+    for (const chunkId of chunkIds) {
+      const { data: row } = await supabase
+        .from('knowledge_chunks')
+        .select('usefulness_score, use_count')
+        .eq('id', chunkId)
+        .maybeSingle();
+      if (!row) continue;
+      await supabase
+        .from('knowledge_chunks')
+        .update({
+          usefulness_score: (row.usefulness_score ?? 0) + delta,
+          use_count: (row.use_count ?? 0) + 1,
+          last_used_at: now,
+        })
+        .eq('id', chunkId);
+    }
+  } catch {
+    // best-effort: خطای ردیابی نباید اجرای تیم را خراب کند
   }
 }
