@@ -154,6 +154,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   // استخراج دانش حرفه‌ای از حکم منتقد و ایندکس در RAG
   // تا چرخه‌های بعد از این درس استفاده کنند، نه اینکه دوباره همان خطا تکرار شود.
   try {
+    const { getSupabase } = await import('../api');
     const knowledgeTitle = verdict.approved
       ? `درس موفق برندینگ (${input.runId.slice(0, 8)})`
       : `رد منتقد برندینگ (${input.runId.slice(0, 8)})`;
@@ -164,12 +165,15 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         ? 'این الگو موفق بود؛ در چرخه‌های بعد تکرار شود.'
         : 'این الگو مردود است؛ در چرخه‌های بعد از آن پرهیز شود.',
     ].join('\n');
-    await indexKnowledge(
-      crypto.randomUUID(),
-      TEAM,
-      knowledgeTitle,
-      knowledgeContent,
-    );
+    const sb = getSupabase();
+    const { data: item } = await sb
+      .from('team_knowledge')
+      .insert({ team: TEAM, title: knowledgeTitle, content: knowledgeContent, source: 'team-lesson' })
+      .select('id')
+      .single();
+    if (item?.id) {
+      await indexKnowledge(item.id, TEAM, knowledgeTitle, knowledgeContent);
+    }
   } catch {
     // fail-soft: اگر ایندکس دانش شکست خورد، چرخه نباید بایستد
   }
