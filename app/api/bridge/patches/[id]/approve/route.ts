@@ -2,7 +2,8 @@
  * POST /api/bridge/patches/[id]/approve: تأیید صریح مدیر + مرج به dev.
  *
  * احراز: فقط کلید مدیریتی (lib/manager-auth)؛ هدر Authorization: Bearer <token>.
- * این تنها مسیر قانونی مرج به dev است (قانون بخش ۳ docs/execution-bridge.md).
+ * نکته: از دستور «پل کاملاً خودکار» (مهر ۱۴۰۵)، مرج به dev به‌صورت خودکار
+ * در lib/bridge/propose.ts انجام می‌شود؛ این مسیر فقط برای موارد دستی/اضطراری مانده است.
  *
  * شرط وضعیت: committed (یا approved بدون merge_sha برای تلاش مجدد پس از خطای گذرا).
  * رفتار مرج:
