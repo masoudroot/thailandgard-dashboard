@@ -12,11 +12,7 @@ import LoadMore, { useVisibleCount } from '@/components/LoadMore';
 import StatusBadge from '@/components/dataviz/StatusBadge';
 import TrendChart, { type TrendPoint } from '@/components/dataviz/TrendChart';
 import { SkeletonTable } from '@/components/Skeleton';
-
-/** تبدیل ارقام لاتین به فارسی */
-function faNum(v: string | number): string {
-  return String(v).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
-}
+import { faNum } from '@/lib/format';
 
 /** تاریخ و ساعت شمسی با ارقام فارسی */
 function faDate(iso: string | null): string {
@@ -138,8 +134,7 @@ export default function CyclesPage() {
   const newCycleDisabled = creating || loadState !== 'ready' || !!activeCycle;
 
   return (
-    <div dir="rtl" className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-6xl px-4 py-8">
+    <div className="mx-auto max-w-6xl">
         <PageHeader
           icon={Repeat2}
           title="مانیتور چرخه‌ها"
@@ -217,15 +212,15 @@ export default function CyclesPage() {
                 title="روند فراخوانی LLM در چرخه‌های اخیر"
                 unit="فراخوانی"
                 points={trendPoints}
-                className="mb-4 md:mb-6"
+                className="mb-6 md:mb-8"
               />
             )}
             {/* کارت‌های عمودی در موبایل */}
-            <div className="space-y-3 md:hidden">
+            <div className="space-y-4 md:hidden">
               {shownCycles.map((c) => (
                 <article
                   key={c.id}
-                  className="tg-card rounded-2xl border border-border bg-card p-4 shadow-surface"
+                  className="tg-card rounded-xl border border-border bg-card p-4 shadow-surface"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span
@@ -269,7 +264,7 @@ export default function CyclesPage() {
             </div>
 
             {/* جدول در دسکتاپ */}
-            <div className="hidden overflow-hidden rounded-2xl border border-border bg-card shadow-surface md:block">
+            <div className="hidden overflow-hidden rounded-xl border border-border bg-card shadow-surface md:block">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] text-sm">
                 <thead>
@@ -318,7 +313,6 @@ export default function CyclesPage() {
             )}
           </>
         )}
-      </div>
     </div>
   );
 }

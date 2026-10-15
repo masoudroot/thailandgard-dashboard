@@ -8,10 +8,8 @@ import EmptyState from '../../../components/EmptyState';
 import StatusBadge from '../../../components/dataviz/StatusBadge';
 import { SkeletonTeamCard } from '../../../components/Skeleton';
 import { TEAMS, type Cycle, type Subagent, type TeamName, type TeamRun } from '../../../lib/types';
+import { faNum } from '../../../lib/format';
 import { TEAM_META, WAVE_TITLES } from '../../../lib/team-meta';
-
-const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
-const faNum = (v: number | string) => String(v).replace(/[0-9]/g, (d) => FA_DIGITS[Number(d)]);
 
 const jalaliDate = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
   dateStyle: 'medium',
@@ -373,8 +371,7 @@ export default function LivePage() {
   const waiting = TEAMS.length - data.runs.length;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 md:py-8">
+    <div className="mx-auto max-w-7xl">
         <PageHeader
           icon={Activity}
           title="فعالیت زنده"
@@ -382,7 +379,7 @@ export default function LivePage() {
         />
 
         {state === 'loading' && (
-          <div className="tg-stagger grid gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
+          <div className="tg-stagger grid gap-4 sm:grid-cols-2 md:gap-5 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <SkeletonTeamCard key={i} />
             ))}
@@ -431,7 +428,7 @@ export default function LivePage() {
         {state === 'live' && data.cycle && (
           <>
             {!data.liveColumns && (
-              <section className="mb-4 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm leading-7 text-card-foreground">
+              <section className="mb-6 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm leading-7 text-card-foreground">
                 پیشرفت و کار جاری زنده هنوز فعال نیست؛ فایل{' '}
                 <code className="font-mono text-xs" dir="ltr">
                   supabase/migrations/20261015074440_team_runs_live.sql
@@ -440,7 +437,7 @@ export default function LivePage() {
                 ستون‌های پایه خوانده می‌شود.
               </section>
             )}
-            <section className="mb-6 rounded-xl border border-border bg-card p-4 shadow-surface sm:p-5">
+            <section className="mb-8 rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6">
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                 <span className="inline-flex items-center gap-2 text-sm font-bold text-card-foreground">
                   <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
@@ -469,7 +466,7 @@ export default function LivePage() {
               </div>
             </section>
 
-            <div className="tg-stagger grid gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
+            <div className="tg-stagger grid gap-4 sm:grid-cols-2 md:gap-5 lg:grid-cols-3">
               {TEAMS.map((team) => {
                 const run = byTeam.get(team);
                 return (
@@ -491,7 +488,6 @@ export default function LivePage() {
             </p>
           </>
         )}
-      </div>
     </div>
   );
 }

@@ -22,11 +22,7 @@ import NotConnected from '@/components/NotConnected';
 import StatusBadge from '@/components/dataviz/StatusBadge';
 import ProgressBar from '@/components/dataviz/ProgressBar';
 import { SkeletonPanel } from '@/components/Skeleton';
-
-/** تبدیل ارقام لاتین به فارسی */
-function faNum(v: string | number): string {
-  return String(v).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
-}
+import { faNum } from '@/lib/format';
 
 /** تاریخ و ساعت شمسی با ارقام فارسی */
 function faDate(iso: string | null): string {
@@ -169,8 +165,7 @@ export default function CycleDetailPage() {
     : undefined;
 
   return (
-    <div dir="rtl" className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-6xl px-4 py-6 md:py-8">
+    <div className="mx-auto max-w-6xl">
         <Link
           href="/dashboard/cycles"
           className="tg-link mb-6 inline-flex min-h-[44px] items-center gap-2 text-sm text-muted-foreground hover:text-brand"
@@ -213,7 +208,7 @@ export default function CycleDetailPage() {
           />
         ) : (
           <>
-            <section className="mb-6 rounded-2xl border border-border bg-card p-4 shadow-surface sm:p-6">
+            <section className="mb-6 rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground">شناسه اجرا</p>
@@ -332,7 +327,7 @@ export default function CycleDetailPage() {
             </section>
 
             {failedRuns.length > 0 && (
-              <section className="mb-6 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 sm:p-6">
+              <section className="mb-6 rounded-xl border border-destructive/30 bg-destructive/5 p-4 sm:p-6">
                 <h2 className="mb-3 text-sm font-bold text-destructive">
                   خطاها ({faNum(failedRuns.length)})
                 </h2>
@@ -362,7 +357,7 @@ export default function CycleDetailPage() {
                 return (
                   <section
                     key={wave}
-                    className="overflow-hidden rounded-2xl border border-border bg-card shadow-surface"
+                    className="overflow-hidden rounded-xl border border-border bg-card shadow-surface"
                   >
                     <header className="border-b border-border bg-muted/40 px-4 py-3 sm:px-5">
                       <h2 className="text-sm font-bold">موج {faNum(wave)}</h2>
@@ -402,7 +397,6 @@ export default function CycleDetailPage() {
             </div>
           </>
         )}
-      </div>
     </div>
   );
 }

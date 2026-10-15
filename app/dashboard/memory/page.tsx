@@ -81,7 +81,7 @@ function MemoryCard({ row }: { row: MemoryRow }) {
   }
 
   return (
-    <li className="overflow-hidden rounded-2xl border border-border bg-card shadow-surface">
+    <li className="overflow-hidden rounded-xl border border-border bg-card shadow-surface">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -208,15 +208,14 @@ export default function MemoryPage() {
   }, [rows, query]);
 
   return (
-    <div dir="rtl" className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-3xl px-4 py-6 md:py-8">
+    <div className="mx-auto max-w-3xl">
         <PageHeader
           icon={Brain}
           title="نمایشگر حافظه"
           subtitle="حافظه بلندمدت تیم‌ها؛ جست‌وجو در متن، فیلتر تیم و تاریخچه‌ی هر رکورد"
         />
 
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row">
           <label className="flex flex-1 flex-col gap-1.5">
             <span className="text-sm font-medium text-muted-foreground">تیم</span>
             <select
@@ -263,7 +262,7 @@ export default function MemoryPage() {
         </div>
 
         {state === 'loading' && (
-          <div className="tg-stagger space-y-3">
+          <div className="tg-stagger space-y-4">
             {[0, 1, 2].map((i) => (
               <SkeletonPanel key={i} />
             ))}
@@ -318,14 +317,13 @@ export default function MemoryPage() {
                 {faDigits(filtered.length)} رکورد
                 {team !== 'all' && ` در حافظه ${TEAM_LABELS[team as TeamName]}`}
               </p>
-              <ul className="space-y-3">
+              <ul className="space-y-4">
                 {filtered.map((row) => (
                   <MemoryCard key={`${row.team}:${row.key}`} row={row} />
                 ))}
               </ul>
             </>
           ))}
-      </div>
     </div>
   );
 }

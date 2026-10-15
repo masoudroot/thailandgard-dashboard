@@ -156,7 +156,7 @@ export default function TeamDetailPage() {
 
   if (!valid) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-6">
+      <div className="mx-auto max-w-3xl">
         <EmptyState
           icon={FileText}
           title="تیم نامعتبر است"
@@ -178,8 +178,7 @@ export default function TeamDetailPage() {
   const lastRun = detail?.runs[0];
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 md:py-8">
+    <div className="mx-auto max-w-3xl">
         <Link
           href="/dashboard/teams"
           className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
@@ -291,7 +290,6 @@ export default function TeamDetailPage() {
         )}
 
         {state === 'ready' && detail && tab === 'reports' && <ReportsTab detail={detail} />}
-      </div>
     </div>
   );
 }

@@ -15,16 +15,12 @@ import {
 import PageHeader from '@/components/PageHeader';
 import EmptyState from '@/components/EmptyState';
 import { SkeletonPanel } from '@/components/Skeleton';
+import { faNum } from '@/lib/format';
 import { ALL_TEAM_SLUGS, teamFa } from '@/lib/github-teams';
 
 /* ------------------------------------------------------------------ */
 /* کمک‌کننده‌های فارسی‌سازی                                          */
 /* ------------------------------------------------------------------ */
-
-/** ارقام لاتین را به فارسی تبدیل می‌کند. */
-function faDigits(value: number | string): string {
-  return String(value).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
-}
 
 /** تاریخ شمسی به وقت تهران. */
 function jalaliDate(iso: string): string {
@@ -191,7 +187,7 @@ export default function ChangesPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
+    <div className="mx-auto w-full max-w-6xl">
       <PageHeader
         icon={GitCommitHorizontal}
         title="تاریخچه تغییرات سایت"
@@ -201,7 +197,7 @@ export default function ChangesPage() {
       {/* فیلترها: موبایل روی هم، دسکتاپ در یک ردیف */}
       <section
         aria-label="فیلتر تغییرات"
-        className="mb-6 grid gap-3 rounded-xl border border-border bg-card p-4 shadow-surface sm:p-5 md:grid-cols-4"
+        className="mb-8 grid gap-3 rounded-xl border border-border bg-card p-4 shadow-surface sm:p-6 md:grid-cols-4"
       >
         <div>
           <label htmlFor="changes-team" className="mb-1.5 block text-sm font-medium text-foreground">
@@ -370,13 +366,13 @@ export default function ChangesPage() {
                       {detail && detail !== 'loading' && detail !== 'error' && (
                         <>
                           <p className="mb-3 text-sm text-muted-foreground">
-                            {faDigits(detail.files.length)} فایل تغییر کرده
+                            {faNum(detail.files.length)} فایل تغییر کرده
                             {detail.total > 0 && (
                               <>
                                 {' '}(
-                                <span className="text-success">+{faDigits(detail.additions)}</span>
+                                <span className="text-success">+{faNum(detail.additions)}</span>
                                 {' / '}
-                                <span className="text-destructive">-{faDigits(detail.deletions)}</span>
+                                <span className="text-destructive">-{faNum(detail.deletions)}</span>
                                 )
                               </>
                             )}
@@ -406,9 +402,9 @@ export default function ChangesPage() {
                                     </span>
                                     <span className="flex shrink-0 items-center gap-2">
                                       <span className="font-mono text-[11px]" dir="ltr">
-                                        <span className="text-success">+{faDigits(f.additions)}</span>
+                                        <span className="text-success">+{faNum(f.additions)}</span>
                                         {' '}
-                                        <span className="text-destructive">-{faDigits(f.deletions)}</span>
+                                        <span className="text-destructive">-{faNum(f.deletions)}</span>
                                       </span>
                                       <span
                                         className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${st.tint}`}
@@ -444,7 +440,7 @@ export default function ChangesPage() {
               قبلی
             </button>
             <p className="text-sm text-muted-foreground">
-              صفحهٔ {faDigits(page)}
+              صفحهٔ {faNum(page)}
             </p>
             <button
               type="button"
@@ -471,7 +467,7 @@ function NotConnectedGuide() {
       <div className="mx-auto max-w-2xl text-center">
         <span
           aria-hidden="true"
-          className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground"
+          className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-muted text-muted-foreground"
         >
           <Unplug size={26} strokeWidth={1.75} />
         </span>
@@ -487,7 +483,7 @@ function NotConnectedGuide() {
             aria-hidden="true"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-brand-foreground"
           >
-            {faDigits(1)}
+            {faNum(1)}
           </span>
           <p>
             در گیت‌هاب یک توکن شخصی بسازید:{' '}
@@ -502,7 +498,7 @@ function NotConnectedGuide() {
             aria-hidden="true"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-brand-foreground"
           >
-            {faDigits(2)}
+            {faNum(2)}
           </span>
           <p>
             توکن را در صفحهٔ تنظیمات داشبورد، در کارت «اتصال گیت‌هاب» وارد و ذخیره کنید؛
@@ -516,7 +512,7 @@ function NotConnectedGuide() {
             aria-hidden="true"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-brand-foreground"
           >
-            {faDigits(3)}
+            {faNum(3)}
           </span>
           <p>به همین صفحه برگردید؛ لیست واقعی کامیت‌ها خودکار خوانده می‌شود.</p>
         </li>

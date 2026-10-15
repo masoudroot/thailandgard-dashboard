@@ -20,11 +20,6 @@ import { faNum } from '../../../lib/format';
 import { TEAMS, type TeamName } from '../../../lib/types';
 import { TEAM_META, teamFaName } from '../../../lib/teams-meta';
 
-const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
-function faDigits(v: number | string): string {
-  return String(v).replace(/[0-9]/g, (d) => FA_DIGITS[Number(d)]);
-}
-
 /** تاریخ و ساعت شمسی با ارقام فارسی */
 function faDate(iso: string | null): string {
   if (!iso) return 'نامشخص';
@@ -161,8 +156,7 @@ export default function ErrorsPage() {
   const loading = current === null || alerts === null || history === null;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 md:py-8">
+    <div className="mx-auto max-w-7xl">
         <PageHeader
           icon={TriangleAlert}
           title="خطاهای زنده"
@@ -231,7 +225,7 @@ export default function ErrorsPage() {
                               {teamFaName(item.team)}
                             </h3>
                             <p className="mt-0.5 text-xs text-muted-foreground">
-                              موج {faDigits(item.wave)}
+                              موج {faNum(item.wave)}
                             </p>
                           </div>
                           <StatusBadge status={stuck ? 'running' : 'failed'} className="shrink-0" />
@@ -362,7 +356,7 @@ export default function ErrorsPage() {
                         <p className="text-sm font-bold text-card-foreground">
                           {teamFaName(item.team)}
                           <span className="ms-2 text-xs font-normal text-muted-foreground">
-                            موج {faDigits(item.wave)}
+                            موج {faNum(item.wave)}
                           </span>
                         </p>
                         <p className="mt-1 line-clamp-2 text-sm leading-7 text-muted-foreground">
@@ -398,7 +392,6 @@ export default function ErrorsPage() {
             )}
           </>
         )}
-      </div>
     </div>
   );
 }

@@ -77,9 +77,9 @@ type GithubInfo = {
 };
 
 const CONFIDENCE_LABEL: Record<string, { label: string; className: string }> = {
-  high: { label: "اطمینان بالا", className: "bg-green-500/10 text-green-700 dark:text-green-400" },
-  medium: { label: "اطمینان متوسط", className: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
-  low: { label: "اطمینان پایین", className: "bg-red-500/10 text-red-700 dark:text-red-400" },
+  high: { label: "اطمینان بالا", className: "bg-success/10 text-success" },
+  medium: { label: "اطمینان متوسط", className: "bg-warning/10 text-warning" },
+  low: { label: "اطمینان پایین", className: "bg-destructive/10 text-destructive" },
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -139,7 +139,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       onClick={copy}
       className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-input bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {done ? <CheckCircle2 className="h-4 w-4 text-green-600" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+      {done ? <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
       {done ? "کپی شد" : label}
     </button>
   );
@@ -206,7 +206,7 @@ function ApplyButton({
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-t-2xl bg-card p-5 shadow-xl sm:rounded-2xl"
+            className="w-full max-w-md rounded-t-xl bg-card p-5 shadow-surface sm:rounded-xl sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
@@ -252,7 +252,7 @@ function ApplyButton({
               </div>
             </div>
             {error && (
-              <p className="mt-3 flex items-start gap-1.5 text-sm leading-6 text-red-600 dark:text-red-400">
+              <p className="mt-3 flex items-start gap-1.5 text-sm leading-6 text-destructive">
                 <TriangleAlert className="mt-1 h-4 w-4 shrink-0" aria-hidden="true" />
                 {error}
               </p>
@@ -357,7 +357,7 @@ export default function DebugPage() {
   const conf = diag ? CONFIDENCE_LABEL[diag.confidence] : null;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6 md:space-y-8">
       <PageHeader
         icon={Wrench}
         title="دستیار فنی"
@@ -368,14 +368,14 @@ export default function DebugPage() {
       <div
         className={`flex items-start gap-2.5 rounded-xl border p-3 text-sm leading-6 ${
           github?.connected
-            ? "border-green-500/30 bg-green-500/5 text-foreground"
-            : "border-amber-500/30 bg-amber-500/5 text-foreground"
+            ? "border-success/30 bg-success/5 text-foreground"
+            : "border-warning/30 bg-warning/5 text-foreground"
         }`}
       >
         {github?.connected ? (
-          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600" aria-hidden="true" />
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success" aria-hidden="true" />
         ) : (
-          <Unplug className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
+          <Unplug className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
         )}
         <div>
           <p className="font-semibold">
@@ -394,7 +394,7 @@ export default function DebugPage() {
       </div>
 
       {/* فرم چت */}
-      <section className="rounded-xl border border-border bg-card p-4">
+      <section className="rounded-xl border border-border bg-card p-4 sm:p-6">
         <label htmlFor="bug-desc" className="mb-2 block text-sm font-bold leading-6">
           باگ را توصیف کنید
         </label>
@@ -407,13 +407,13 @@ export default function DebugPage() {
           className={`${inputClass} resize-y`}
         />
         {error && (
-          <p className="mt-2 flex items-start gap-1.5 text-sm leading-6 text-red-600 dark:text-red-400">
+          <p className="mt-2 flex items-start gap-1.5 text-sm leading-6 text-destructive">
             <TriangleAlert className="mt-1 h-4 w-4 shrink-0" aria-hidden="true" />
             {error}
           </p>
         )}
         {appliedMsg && (
-          <p className="mt-2 flex items-start gap-1.5 text-sm leading-6 text-green-700 dark:text-green-400">
+          <p className="mt-2 flex items-start gap-1.5 text-sm leading-6 text-success">
             <CheckCircle2 className="mt-1 h-4 w-4 shrink-0" aria-hidden="true" />
             {appliedMsg}
           </p>
@@ -455,9 +455,9 @@ export default function DebugPage() {
           )}
 
           {diag.needs_info.length > 0 && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+            <div className="rounded-xl border border-warning/30 bg-warning/5 p-4">
               <h3 className="flex items-center gap-2 text-sm font-bold leading-6">
-                <TriangleAlert className="h-4 w-4 text-amber-600" aria-hidden="true" />
+                <TriangleAlert className="h-4 w-4 text-warning" aria-hidden="true" />
                 برای تشخیص دقیق‌تر این اطلاعات لازم است
               </h3>
               <ul className="mt-2 list-disc space-y-1 pe-5 text-sm leading-7 text-foreground/90">
@@ -482,7 +482,7 @@ export default function DebugPage() {
               <div className="mt-3">
                 <pre
                   dir="ltr"
-                  className="max-h-96 overflow-auto rounded-lg border border-border bg-muted/60 p-3 text-left text-xs leading-5"
+                  className="max-h-96 overflow-auto rounded-lg border border-border bg-muted/60 p-3 text-xs leading-5"
                 >
                   <code>{diag.fix_code}</code>
                 </pre>
@@ -506,7 +506,7 @@ export default function DebugPage() {
           </RoleCard>
 
           {/* اعمال فیکس */}
-          <section className="rounded-xl border border-border bg-card p-4">
+          <section className="rounded-xl border border-border bg-card p-4 sm:p-6">
             <h3 className="flex items-center gap-2 text-sm font-bold leading-6">
               <FileDiff className="h-4 w-4 text-brand" aria-hidden="true" />
               اعمال فیکس
@@ -600,7 +600,7 @@ export default function DebugPage() {
                         </p>
                       )}
                       {Array.isArray(d.needs_info) && d.needs_info.length > 0 && (
-                        <p className="text-amber-700 dark:text-amber-400">
+                        <p className="text-warning">
                           <strong>اطلاعات لازم:</strong> {(d.needs_info as string[]).join("؛ ")}
                         </p>
                       )}
