@@ -165,6 +165,15 @@ function fallbackModel(primary: string): string {
  * جست‌وجوی هوشمند مدل جایگزین: مدل‌های سالم درگاه تیم را در لحظه تست می‌کند
  * و اولین مدلی که پاسخ می‌دهد را برمی‌گرداند.
  */
+/**
+ * مدل‌های جایگزین شناخته‌شده به تفکیک درگاه (سریع، بدون فچ داینامیک).
+ * وقتی درگاهی خوابیده، مستقیم سراغ این‌ها می‌رویم.
+ */
+const KNOWN_FALLBACK_MODELS: Record<string, string[]> = {
+  reformboss: ['deepseek-v4-flash', 'glm-5.3-flash', 'qwen3.8-flash'],
+  cheapvibecode: ['glm-5.3-flash', 'gemini-3.8-flash'],
+};
+
 async function findWorkingModel(
   team: string,
   base: string,
@@ -172,14 +181,22 @@ async function findWorkingModel(
   failedModel: string,
 ): Promise<{ model: string; endpointId: string } | null> {
   try {
-    const { getTeamModelMap, listEndpoints, fetchEndpointModels } = await import('./llm-endpoints');
+    const { getTeamModelMap, listEndpoints } = await import('./llm-endpoints');
     const map = await getTeamModelMap();
     const entry = (map as Record<string, { endpointId: string; model: string }>)[team];
     const endpoints = await listEndpoints();
-    // اول درگاه خود تیم، بعد بقیه درگاه‌ها (برای وقتی کل پرووایدر خوابیده)
+    console.log(`[findWorkingModel] team=${team}, endpoints=${endpoints.length}`);
+    // اول درگاه خود تیم، بعد بقیه (غیر gemini اول، چون خوابیده)
     const orderedEndpoints = [
       ...(entry?.endpointId ? [entry.endpointId] : []),
-      ...endpoints.map((e) => e.id).filter((id) => id !== entry?.endpointId),
+      ...endpoints
+        .map((e) => e.id)
+        .filter((id) => id !== entry?.endpointId)
+        .sort((a, b) => {
+          const aIsGemini = (endpoints.find((e) => e.id === a)?.name ?? '').toLowerCase().includes('gemini') ? 1 : 0;
+          const bIsGemini = (endpoints.find((e) => e.id === b)?.name ?? '').toLowerCase().includes('gemini') ? 1 : 0;
+          return aIsGemini - bIsGemini;
+        }),
     ];
     for (const epId of orderedEndpoints) {
       const ep = endpoints.find((e) => e.id === epId);
@@ -187,32 +204,32 @@ async function findWorkingModel(
         console.log(`[findWorkingModel] skipping ${epId}: no apiKey`);
         continue;
       }
-      console.log(`[findWorkingModel] trying endpoint ${ep.name} (${epId})`);
-      // فهرست مدل‌ها را بگیر و چندتای اول را مستقیم تست کن
-      let models: string[] = [];
-      try {
-        const fetched = await fetchEndpointModels(epId, 15000);
-        models = fetched.models.filter((id) => id !== failedModel).slice(0, 5);
-        console.log(`[findWorkingModel] ${ep.name}: ${models.length} models fetched`);
-      } catch (fetchErr) {
-        console.log(`[findWorkingModel] ${ep.name}: fetch models failed: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`);
-        continue;
-      }
-      for (const m of models) {
+      const epName = ep.name.toLowerCase();
+      console.log(`[findWorkingModel] trying endpoint ${ep.name}`);
+      // مدل‌های شناخته‌شده این درگاه را مستقیم تست کن (سریع)
+      const knownModels = Object.entries(KNOWN_FALLBACK_MODELS).find(([key]) =>
+        epName.includes(key),
+      )?.[1] ?? [];
+      for (const m of knownModels) {
+        if (m === failedModel) continue;
         try {
           await postChatCompletions(ep.baseUrl, ep.apiKey, m, 'سلام', {
             maxTokens: 8,
             temperature: 0,
-            timeoutMs: 15000,
+            timeoutMs: 10000,
           });
+          console.log(`[findWorkingModel] FOUND working model: ${m} on ${ep.name}`);
           return { model: m, endpointId: epId };
-        } catch {
+        } catch (testErr) {
+          console.log(`[findWorkingModel] ${m} on ${ep.name} failed: ${testErr instanceof Error ? testErr.message.slice(0, 80) : String(testErr).slice(0, 80)}`);
           continue;
         }
       }
     }
+    console.log(`[findWorkingModel] no working model found for team ${team}`);
     return null;
-  } catch {
+  } catch (err) {
+    console.log(`[findWorkingModel] fatal: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
