@@ -1,5 +1,5 @@
 /**
- * lib/llm-endpoints.ts — مدیریت endpointهای LLM و «مدل هر تیم» در جدول settings سوپابیس.
+ * lib/llm-endpoints.ts: مدیریت endpointهای LLM و «مدل هر تیم» در جدول settings سوپابیس.
  *
  * دو کلید در جدول settings:
  *   - llm_endpoints: آرایه‌ی JSON از { id, name, baseUrl, apiKey }
@@ -77,7 +77,7 @@ export const TEAM_FA_NAMES: Record<TeamName, string> = {
 
 /** ماسک کلید: sk-...abcd */
 export function maskApiKey(key: string): string {
-  if (!key) return '—';
+  if (!key) return 'تنظیم نشده';
   const t = key.trim();
   if (t.length <= 8) return '••••';
   return `${t.slice(0, 3)}...${t.slice(-4)}`;

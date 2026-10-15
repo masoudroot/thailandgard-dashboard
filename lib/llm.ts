@@ -1,5 +1,5 @@
 /**
- * lib/llm.ts — Backend 10: LLM service
+ * lib/llm.ts: Backend 10: LLM service
  *
  * Thin wrapper around any OpenAI-compatible chat API.
  * - Endpoint/key/model can come from the per-team configuration in the
