@@ -74,7 +74,7 @@ export function UnhealthySavedWarning({
   const h = trimmed ? modelHealth[endpointId]?.[trimmed] : undefined;
   if (!h || h.ok) return null;
   return (
-    <p className="mt-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-6 text-foreground">
+    <p className="my-4 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs leading-6 text-foreground">
       هشدار: این مدل در آخرین تست سلامت «{faDigits(h.message)}» بود؛ تنظیم
       فعلی شما دست‌نخورده باقی مانده است. با «تست دوباره» می‌توانید دوباره
       بررسی کنید.
