@@ -44,6 +44,16 @@ function activeCycleSeed(runId = 'run-test-1') {
   };
 }
 
+function finishedCycleSeed(id = 'cycle-0', status = 'success') {
+  return {
+    id,
+    run_id: `run-old-${id}`,
+    status,
+    started_at: minAgoIso(120),
+    finished_at: minAgoIso(60),
+  };
+}
+
 function teamRun(team: string, status: string, startedMinAgo = 5) {
   return {
     id: `tr-${team}`,
@@ -115,13 +125,61 @@ after(async () => {
   await fake.close();
 });
 
-describe('تست ۱: بدون چرخه‌ی فعال، ورکر چرخه‌ی جدید نمی‌سازد', () => {
-  it('بدون آرگومان و بدون چرخه‌ی فعال → خروج تمیز و هیچ چرخه‌ای ساخته نمی‌شود', async () => {
+describe('تست ۱: بدون چرخه‌ی فعال → شروع خودکار چرخه‌ی بعدی', () => {
+  it('بدون هیچ چرخه‌ای → خروج تمیز و هیچ چرخه‌ای ساخته نمی‌شود (شروع اول دستی است)', async () => {
     await seed({ cycles: [], team_runs: [], agent_state: [] });
     const r = await runWorker([]);
     assert.equal(r.timedOut, false, `worker timed out. stderr: ${r.stderr.slice(0, 500)}`);
+    assert.match(r.stdout, /no previous cycle/);
     assert.match(r.stdout, /no active cycle/);
     assert.equal(r.tables.cycles.length, 0, 'نباید چرخه‌ی جدید ساخته شود');
+  });
+
+  it('آخرین چرخه success بود → خودکار چرخه‌ی جدید ساخته و همان تیک جلو می‌رود', async () => {
+    await seed({
+      cycles: [finishedCycleSeed('cycle-0', 'success')],
+      team_runs: [],
+      agent_state: [],
+    });
+    const r = await runWorker([]);
+    assert.equal(r.timedOut, false, `worker timed out. stderr: ${r.stderr.slice(0, 500)}`);
+    assert.match(r.stdout, /auto-started next cycle/);
+    assert.equal(r.tables.cycles.length, 2, 'باید دقیقاً یک چرخه‌ی تازه ساخته شود');
+    const fresh = r.tables.cycles.find((x: any) => x.id !== 'cycle-0');
+    assert.equal(fresh.status, 'running', 'چرخه‌ی تازه باید running باشد');
+    // همان تیک با چرخه‌ی تازه ادامه می‌دهد: اولین تیم موج ۱ اجرا می‌شود
+    const lines = runningTeamLines(r.stdout);
+    assert.equal(lines.length, 1, `باید دقیقاً یک تیم انتخاب شود، شد: ${JSON.stringify(lines)}`);
+    assert.match(lines[0], /running team artdir \(wave 1\)/);
+    const rows = r.tables.team_runs.filter((x: any) => x.cycle_id === fresh.id);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].team, 'artdir');
+  });
+
+  it('آخرین چرخه failed بود → چرخه‌ی جدید ساخته نمی‌شود (نیاز به توجه دارد)', async () => {
+    await seed({
+      cycles: [finishedCycleSeed('cycle-0', 'failed')],
+      team_runs: [],
+      agent_state: [],
+    });
+    const r = await runWorker([]);
+    assert.equal(r.timedOut, false);
+    assert.match(r.stdout, /not auto-starting/);
+    assert.equal(r.tables.cycles.length, 1, 'نباید چرخه‌ی تازه ساخته شود');
+    assert.equal(runningTeamLines(r.stdout).length, 0);
+  });
+
+  it('تنظیم auto_start_next_cycle=false → حتی با success قبلی، چرخه‌ی جدید ساخته نمی‌شود', async () => {
+    await seed({
+      cycles: [finishedCycleSeed('cycle-0', 'success')],
+      team_runs: [],
+      agent_state: [],
+      settings: [{ key: 'auto_start_next_cycle', value: false }],
+    });
+    const r = await runWorker([]);
+    assert.equal(r.timedOut, false);
+    assert.match(r.stdout, /auto-start disabled/);
+    assert.equal(r.tables.cycles.length, 1, 'نباید چرخه‌ی تازه ساخته شود');
   });
 
   it('با آرگومان start-cycle و بدون چرخه‌ی فعال → دقیقاً یک چرخه ساخته می‌شود', async () => {
@@ -366,5 +424,33 @@ describe('تست ۶: ترتیب موج‌ها و عدم اجرای تکراری 
       /heartbeat failed/,
       'نباید خطای heartbeat قفل دیده شود؛ heartbeat خراب حذف شده است',
     );
+  });
+});
+
+describe('تست ۷: توقف نرم — ورکر بعد از «توقف» کاربر هیچ تیمی را claim نمی‌کند', () => {
+  it('چرخه‌ی paused → بدون claim و بدون ردیف تازه', async () => {
+    await seed({
+      cycles: [{ ...activeCycleSeed(), status: 'paused' }],
+      team_runs: [],
+      agent_state: [],
+    });
+    const r = await runWorker([]);
+    assert.equal(r.timedOut, false);
+    assert.match(r.stdout, /is paused; skipping team claim/);
+    assert.equal(runningTeamLines(r.stdout).length, 0);
+    assert.equal(r.tables.team_runs.length, 0, 'نباید هیچ تیمی claim شود');
+  });
+
+  it('چرخه‌ی pausing → بدون claim و بدون ردیف تازه', async () => {
+    await seed({
+      cycles: [{ ...activeCycleSeed(), status: 'pausing' }],
+      team_runs: [],
+      agent_state: [],
+    });
+    const r = await runWorker([]);
+    assert.equal(r.timedOut, false);
+    assert.match(r.stdout, /is pausing; skipping team claim/);
+    assert.equal(runningTeamLines(r.stdout).length, 0);
+    assert.equal(r.tables.team_runs.length, 0, 'نباید هیچ تیمی claim شود');
   });
 });

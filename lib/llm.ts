@@ -739,7 +739,9 @@ async function postEmbeddings(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ model: normalizedModel, input }),
+      // مدل‌های امبدینگ گوگل پیش‌فرض ۳۰۷۲ بُعد می‌دهند؛ ستون دیتابیس vector(1536)
+      // است، پس بُعد را صریح می‌خواهیم تا بردار همیشه ۱۵۳۶ بُعدی برگردد.
+      body: JSON.stringify({ model: normalizedModel, input, dimensions: EXPECTED_EMBEDDING_DIM }),
       signal: controller.signal,
     });
     const body = (await res.json().catch(() => ({}))) as {

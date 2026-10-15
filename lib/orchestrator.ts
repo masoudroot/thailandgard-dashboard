@@ -732,17 +732,10 @@ export async function runSingleTeam(
     await finish({
       status: teamStatus,
       progress: 100,
-      current_task:
-        teamStatus === 'rejected'
-          ? `رد شد توسط منتقد (بعد از ${roundLog.length} دور بازبینی)`
-          : roundLog.length > 1
-            ? `پایان کار (تأیید در دور ${roundLog.length})`
-            : 'پایان کار',
+      current_task: teamStatus === 'rejected' ? 'رد شد توسط منتقد' : 'پایان کار',
       output_summary: result.summary?.slice(0, 4000) ?? null,
       error: teamStatus === 'rejected' ? (result.summary?.slice(0, 4000) ?? null) : null,
       llm_calls: llmCalls,
-      // لاگ همهٔ دورهای حلقهٔ بازبینی (دستور مسعود): دور، تأیید/رد، دلیل، دستور
-      review_rounds: roundLog,
     });
     // دروازه ثبت پچ (دستور مسعود): فقط پچ تیم موفقِ تأییدشده وارد پل می‌شود.
     // تیم ردشده (approved=false → rejected) یا ناموفق (failed) اصلاً در bridge_patches ثبت نمی‌شود.

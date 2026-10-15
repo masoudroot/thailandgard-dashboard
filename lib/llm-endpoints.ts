@@ -425,7 +425,9 @@ export function buildEmbeddingChain(
   const chain: ResolvedTeamLLM[] = [];
   const seen = new Set<string>();
   const push = (ep: LLMEndpoint, model: string) => {
-    const key = `${ep.baseUrl}||${model}`;
+    // یکتاسازی بر اساس endpointId، نه baseUrl: چند endpoint ممکن است آدرس
+    // یکسان ولی کلید متفاوت داشته باشند و نباید همدیگر را حذف کنند.
+    const key = `${ep.id}||${model}`;
     if (seen.has(key)) return;
     seen.add(key);
     chain.push({ baseUrl: ep.baseUrl, apiKey: ep.apiKey, model, endpointId: ep.id });
@@ -483,7 +485,8 @@ export async function testEmbedding(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${ep.apiKey}`,
       },
-      body: JSON.stringify({ model: cleanModel, input: text }),
+      // مثل مسیر تولید: بُعد ۱۵۳۶ را صریح می‌خواهیم تا نتیجه تست با رفتار واقعی یکی باشد
+      body: JSON.stringify({ model: cleanModel, input: text, dimensions: EXPECTED_EMBEDDING_DIM }),
       signal: controller.signal,
     });
     const body = (await res.json().catch(() => ({}))) as {

@@ -11,14 +11,21 @@ import { getSupabase } from '../lib/api';
 import { WAVES, type TeamName } from '../lib/types';
 import { findActiveCycle, finishCycle, runSingleTeam, beginCycle } from '../lib/orchestrator';
 import { claimTeam, type LockOwner } from '../lib/lock';
+import { getSetting } from '../lib/settings';
 
 const STUCK_TIMEOUT_MS = 15 * 60 * 1000;
+
+/** سقف پردازش پچ‌های یتیم در هر تیک، تا بودجه‌ی زمانی جاب خورده نشود. */
+const ORPHAN_SWEEP_LIMIT = 3;
+/** کلید تنظیمات شروع خودکار چرخه‌ی بعدی (مقادیر: true/false؛ پیش‌فرض روشن). */
+const AUTO_START_SETTING_KEY = 'auto_start_next_cycle';
 
 /**
  * جاروی پچ‌های یتیم پل اجرا.
  * هر پچ با وضعیت proposed را از طریق جریان خودکار
  * (دروازه ← کامیت ← مرج به dev) پردازش می‌کند.
  * دستور مسعود: بدون تأیید دستی. کاملاً best-effort.
+ * حداکثر ۳ پچ در هر تیک؛ فراخوانی‌اش در main بعد از تصمیم‌گیری تیم اصلی است، نه قبلش.
  */
 async function sweepOrphanedBridgePatches(): Promise<void> {
   try {
@@ -28,7 +35,7 @@ async function sweepOrphanedBridgePatches(): Promise<void> {
       .select('id, team')
       .eq('status', 'proposed')
       .order('created_at', { ascending: true })
-      .limit(10);
+      .limit(ORPHAN_SWEEP_LIMIT);
     if (error || !data || data.length === 0) return;
     const { processProposedPatch } = await import('../lib/bridge/propose');
     for (const row of data as Array<{ id: string; team: string }>) {
@@ -50,6 +57,41 @@ async function sweepOrphanedBridgePatches(): Promise<void> {
   }
 }
 
+/**
+ * شروع خودکار چرخه‌ی بعدی، وقتی چرخه‌ی فعالی نیست.
+ * اگر آخرین چرخه با success بسته شده و تنظیم auto_start_next_cycle مخالف
+ * صریح (false) نیست، خودکار beginCycle می‌زند تا سیستم تا دخالت دستی نخوابد.
+ * (دستور مسعود: سایت کاملاً خودکار باشد.)
+ * اگر آخرین چرخه failed بود، چرخه‌ی تازه نمی‌سازد — نیاز به توجه دارد.
+ * اگر اصلاً چرخه‌ای نبود هم هیچ‌چیز نمی‌سازد؛ شروع اول دستی است.
+ */
+async function autoStartNextCycleIfNeeded(): Promise<{ cycleId: string; runId: string } | null> {
+  const autoStart = await getSetting<boolean>(AUTO_START_SETTING_KEY, true);
+  if (autoStart === false) {
+    console.log('auto-start disabled by setting auto_start_next_cycle=false');
+    return null;
+  }
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from('cycles')
+    .select('id, status')
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) {
+    console.log('no previous cycle; waiting for manual start');
+    return null;
+  }
+  const last = data as { id: string; status: string };
+  if (last.status !== 'success') {
+    console.log(`last cycle ${last.id} ended with '${last.status}'; not auto-starting (needs attention)`);
+    return null;
+  }
+  const { cycleId, runId } = await beginCycle();
+  console.log(`auto-started next cycle: ${runId} (${cycleId})`);
+  return { cycleId, runId };
+}
+
 async function main(): Promise<void> {
   const sb = getSupabase();
   const action = process.argv[2];
@@ -66,18 +108,31 @@ async function main(): Promise<void> {
     return;
   }
 
-  const active = await findActiveCycle();
-  if (!active) {
-    console.log('no active cycle');
-    return;
+  // ابتدای تیک: خواندن وضعیت چرخه‌ی فعال. اگر توقف خواسته شده بود
+  // (pausing/paused)، هیچ تیمی claim نمی‌کنیم و بی‌صدا خارج می‌شویم —
+  // ورکر هرگز نباید بعد از «توقف» کاربر، تیم بعدی را شروع کند.
+  // اگر چرخه‌ی فعالی نیست، طبق قانون شروع خودکار، چرخه‌ی بعدی را می‌سازیم.
+  let cycleId: string;
+  let runId: string;
+  {
+    const active = await findActiveCycle();
+    if (!active) {
+      const auto = await autoStartNextCycleIfNeeded();
+      if (!auto) {
+        console.log('no active cycle');
+        return;
+      }
+      cycleId = auto.cycleId;
+      runId = auto.runId;
+    } else {
+      if (active.status === 'pausing' || active.status === 'paused') {
+        console.log(`cycle ${active.run_id} is ${active.status}; skipping team claim`);
+        return;
+      }
+      cycleId = active.id as string;
+      runId = (active.run_id as string) ?? 'worker';
+    }
   }
-  const cycleId = active.id as string;
-  const runId = (active.run_id as string) ?? 'worker';
-
-  // جاروی پچ‌های یتیم پل: پچ‌هایی که در proposed مانده‌اند
-  // (مثلاً از پیش از قابلیت خودکار، یا کرش بین ثبت و پردازش)
-  // را خودکار پردازش می‌کند. best-effort؛ هرگز چرخه را متوقف نمی‌کند.
-  await sweepOrphanedBridgePatches();
 
   // وضعیت تیم‌ها (مرتب‌سازی صعودی تا آخرین ردیف هر تیم، جدیدترین وضعیت باشد)
   const { data: runs } = await sb
@@ -173,8 +228,9 @@ async function main(): Promise<void> {
             timeoutMs: 15000,
           });
         } catch {
-          console.log(`proactive: team ${nextTeam} model unhealthy, finding replacement`);
-          // مدل خراب است؛ persistTeamModel در اولین فراخوانی موفق جایگزین می‌کند
+          // مدل خراب است؛ فقط لاگ می‌زنیم. جایگزینی خودکار مدل در این ورکر
+          // پیاده نشده؛ مدیر از پنل مدل سالم را جایگزین می‌کند.
+          console.log(`proactive: team ${nextTeam} model unhealthy`);
         }
       }
     } catch { /* نادیده */ }
@@ -187,6 +243,12 @@ async function main(): Promise<void> {
     console.error(`team ${nextTeam} crashed:`, err instanceof Error ? err.message : String(err));
     process.exitCode = 1;
   }
+
+  // جاروی پچ‌های یتیم پل: پچ‌هایی که در proposed مانده‌اند
+  // (مثلاً از پیش از قابلیت خودکار، یا کرش بین ثبت و پردازش)
+  // را خودکار پردازش می‌کند. best-effort؛ هرگز چرخه را متوقف نمی‌کند.
+  // عمداً بعد از تصمیم‌گیری و اجرای تیم اصلی می‌آید تا بودجه‌ی جاب را نخورد.
+  await sweepOrphanedBridgePatches();
 }
 
 main().catch((err) => {

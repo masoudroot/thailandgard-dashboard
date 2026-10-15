@@ -136,7 +136,9 @@ export async function tryEmbeddingCandidate(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${cfg.apiKey}`,
       },
-      body: JSON.stringify({ model: cfg.model, input: text }),
+      // مثل postEmbeddings: بُعد ۱۵۳۶ را صریح می‌خواهیم چون مدل‌های گوگل
+      // پیش‌فرض ۳۰۷۲ بُعد می‌دهند و ستون دیتابیس vector(1536) است.
+      body: JSON.stringify({ model: cfg.model, input: text, dimensions: EXPECTED_EMBEDDING_DIM }),
       signal: controller.signal,
     });
 
