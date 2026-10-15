@@ -150,17 +150,39 @@ export function ManagerApiPanel() {
             </p>
           )}
           {newToken && (
-            <div className="mt-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-3">
-              <p className="mb-2 text-xs font-bold text-foreground">
-                این توکن را به میرزا بدهید؛ دوباره دیده نمی‌شود.
-              </p>
-              <div className="flex items-center gap-2">
-                <code dir="ltr" className="flex-1 break-all rounded bg-background px-3 py-2 font-mono text-xs text-foreground">
+            <div className="mt-4 overflow-hidden rounded-xl border border-warning/40">
+              <div className="flex items-center gap-2 bg-warning/10 px-4 py-2.5">
+                <KeyRound size={16} strokeWidth={2} aria-hidden="true" className="shrink-0 text-warning" />
+                <p className="text-xs font-bold text-foreground">
+                  کلید تازه ساخته شد؛ این توکن را به میرزا بدهید. دوباره دیده نمی‌شود.
+                </p>
+              </div>
+              <div className="flex items-stretch gap-2 bg-zinc-950 p-3" dir="ltr">
+                <code className="flex-1 select-all break-all rounded-lg bg-zinc-900 px-3 py-2.5 font-mono text-xs leading-6 text-zinc-100">
                   {newToken}
                 </code>
-                <Button type="button" variant="outline" size="sm" onClick={handleCopy}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleCopy}
+                  className="shrink-0 self-center"
+                >
                   {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
                   {copied ? "کپی شد" : "کپی"}
+                </Button>
+              </div>
+              <div className="flex items-center justify-between gap-2 bg-warning/10 px-4 py-2.5">
+                <p className="text-[11px] leading-5 text-muted-foreground">
+                  بعد از بستن این باکس، توکن برای همیشه از دسترس خارج می‌شود.
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setNewToken(null)}
+                >
+                  بستن
                 </Button>
               </div>
             </div>
