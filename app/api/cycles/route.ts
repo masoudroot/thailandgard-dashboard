@@ -90,5 +90,17 @@ async function enrichCycle(cycle: Record<string, unknown>) {
   const doneCount = allTeams.filter((t) => ['success', 'failed', 'stopped'].includes(t.status)).length;
   const progress = allTeams.length > 0 ? Math.round((doneCount / allTeams.length) * 100) : 0;
   const activeTeam = allTeams.find((t) => t.status === 'running')?.team ?? '';
-  return { ...cycle, waves, currentWave, progress, activeTeam };
+  // شناسه خوانا: «۲۳ مهر · ۱۵:۵۷» از started_at
+  let displayLabel = String(cycle.id ?? '').slice(0, 8);
+  try {
+    const d = new Date(String(cycle.started_at ?? ''));
+    if (!Number.isNaN(d.getTime())) {
+      const datePart = d.toLocaleDateString('fa-IR', { day: 'numeric', month: 'long', timeZone: 'Asia/Tehran' });
+      const timePart = d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tehran' });
+      displayLabel = `${datePart} · ${timePart}`;
+    }
+  } catch {
+    /* نادیده */
+  }
+  return { ...cycle, waves, currentWave, progress, activeTeam, displayLabel };
 }

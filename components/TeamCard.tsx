@@ -20,6 +20,30 @@ export interface TeamCardProps {
   detailHref?: string;
 }
 
+/** ترجمه خطاهای فنی به فارسی روان برای نمایش. */
+function faError(error: string): string {
+  const e = error.toLowerCase();
+  if (e.includes('not valid json') || e.includes('invalid json')) {
+    return 'مدل پاسخ نامعتبر داد؛ در چرخهٔ بعد دوباره تلاش می‌شود.';
+  }
+  if (e.includes('timeout') || e.includes('timed out')) {
+    return 'پاسخ مدل طول کشید و قطع شد؛ در چرخهٔ بعد دوباره تلاش می‌شود.';
+  }
+  if (e.includes('429') || e.includes('rate limit')) {
+    return 'سهمیهٔ درگاه تمام شد؛ در چرخهٔ بعد دوباره تلاش می‌شود.';
+  }
+  if (e.includes('404')) {
+    return 'مدل روی درگاه پیدا نشد؛ نام مدل را در تنظیمات بررسی کنید.';
+  }
+  if (e.includes('401') || e.includes('403') || e.includes('unauthorized')) {
+    return 'کلید درگاه معتبر نیست؛ تنظیمات اتصال را بررسی کنید.';
+  }
+  if (e.includes('500') || e.includes('502') || e.includes('503')) {
+    return 'درگاه فعلاً پاسخ نمی‌دهد؛ در چرخهٔ بعد دوباره تلاش می‌شود.';
+  }
+  return error;
+}
+
 /**
  * کارت یک تیم ایجنتیک: نام فارسی، مأموریت، وضعیت آخرین اجرا،
  * خلاصه خروجی و تعداد فراخوانی LLM.
@@ -80,7 +104,7 @@ export default function TeamCard({
         )}
         {status === 'failed' && error && (
           <p className="mt-2 line-clamp-2 text-xs leading-6 text-destructive">
-            {error}
+            {faError(error)}
           </p>
         )}
       </div>
@@ -120,7 +144,7 @@ export default function TeamCard({
           <div>
             <p className="mb-1 text-xs font-bold text-muted-foreground">خطا</p>
             <p className="whitespace-pre-wrap text-sm leading-7 text-destructive">
-              {error}
+              {faError(error)}
             </p>
           </div>
         )}

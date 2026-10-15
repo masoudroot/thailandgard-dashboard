@@ -81,6 +81,7 @@ interface Wave {
 
 interface CycleSummary {
   id: string;
+  displayLabel?: string;
   status: "running" | "success" | "failed";
   progress: number;
   currentWave: number;
@@ -219,7 +220,7 @@ export default function DashboardHomePage() {
           {
             icon: Clock3,
             label: "آخرین چرخه",
-            value: faDigits(cycle.id.replace("CYC-", "")),
+            value: cycle.displayLabel ?? faDigits(cycle.id.slice(0, 8)),
             hint: cycle.startedAgo ? faDigits(cycle.startedAgo) : "",
             tint: "bg-brand/10 text-brand",
           },

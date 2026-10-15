@@ -65,7 +65,7 @@ export default function StatCard({
         </span>
         <div className="min-w-0 flex-1">
           <div
-            className="truncate text-3xl font-extrabold leading-tight"
+            className="truncate text-xl font-extrabold leading-tight"
             dir="auto"
           >
             {value}
