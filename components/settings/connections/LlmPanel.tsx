@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bot, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
+import { Bot, Plus, RefreshCw, Send, Sparkles, Trash2 } from "lucide-react";
 import { SkeletonLines } from "@/components/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { Input, Field } from "@/components/ui/Input";
@@ -73,6 +73,13 @@ export function LlmPanel() {
   const [endpoints, setEndpoints] = useState<MaskedEndpoint[]>([]);
   const [teamModels, setTeamModels] = useState<Record<string, TeamModelEntry>>({});
   const [defaultModel, setDefaultModel] = useState<TeamModelEntry | null>(null);
+  /* انتخاب خودکار مدل‌ها با هوش مصنوعی */
+  const [autoAssigning, setAutoAssigning] = useState(false);
+  const [autoError, setAutoError] = useState<string | null>(null);
+  const [autoResult, setAutoResult] = useState<{
+    assignments: { team: string; faName: string; endpointId: string; endpointName: string; model: string; reason: string }[];
+    skipped: { team: string; faName: string; reason: string }[];
+  } | null>(null);
   const [embeddingModel, setEmbeddingModel] = useState<TeamModelEntry | null>(null);
   const [modelsCache, setModelsCache] = useState<Record<string, string[]>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
@@ -319,6 +326,42 @@ export function LlmPanel() {
     const next = { ...teamModels, [team]: { ...entry, model } };
     setTeamModels(next);
     scheduleTeamSave(next);
+  }
+
+  /** انتخاب خودکار مدل هر تیم با مدل پیش‌فرض سامانه. */
+  async function handleAutoAssign() {
+    setAutoAssigning(true);
+    setAutoError(null);
+    setAutoResult(null);
+    try {
+      const res = await fetch("/api/settings/llm/auto-assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelsCache }),
+      });
+      const body = await res.json().catch(() => ({}));
+      const d = body?.data;
+      if (!res.ok || body?.ok === false) {
+        throw new Error(d?.message ?? body?.error?.message ?? "انتخاب خودکار انجام نشد؛ دوباره تلاش کنید.");
+      }
+      const assignments = Array.isArray(d?.assignments) ? d.assignments : [];
+      const skipped = Array.isArray(d?.skipped) ? d.skipped : [];
+      // سلکت‌ها را با همان چیزی که ذخیره شد به‌روز کن
+      const savedMap = d?.teamModels;
+      if (savedMap && typeof savedMap === "object") {
+        setTeamModels(savedMap as Record<string, TeamModelEntry>);
+      }
+      // کش مدل‌ها را با آنچه سرور خواند کامل کن تا فهرست مدل‌ها پر باشند
+      const fetched = d?.modelsFetched;
+      if (fetched && typeof fetched === "object") {
+        setModelsCache((m) => ({ ...m, ...(fetched as Record<string, string[]>) }));
+      }
+      setAutoResult({ assignments, skipped });
+    } catch (err) {
+      setAutoError(err instanceof Error ? err.message : "انتخاب خودکار انجام نشد؛ دوباره تلاش کنید.");
+    } finally {
+      setAutoAssigning(false);
+    }
   }
 
   async function handleDefaultSave(endpointId: string, model: string) {
@@ -779,6 +822,43 @@ export function LlmPanel() {
               واقعی مدل‌های آن درگاه برای انتخاب می‌آید؛ می‌توانید نام مدل را
               دستی هم تایپ کنید.
             </p>
+            <Button
+              variant="default"
+              onClick={handleAutoAssign}
+              disabled={autoAssigning}
+              aria-busy={autoAssigning || undefined}
+              className="mb-3"
+            >
+              <Sparkles size={16} strokeWidth={2} aria-hidden="true" />
+              {autoAssigning ? "در حال بررسی مدل‌ها…" : "انتخاب خودکار با هوش مصنوعی"}
+            </Button>
+            {autoError && (
+              <p className="mb-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs leading-6 text-destructive">
+                {autoError}
+              </p>
+            )}
+            {autoResult && (
+              <div className="mb-3 rounded-lg border border-border bg-card px-3 py-3">
+                <p className="mb-2 text-xs font-bold text-foreground">
+                  نتیجه انتخاب خودکار ({faDigits(autoResult.assignments.length)} تیم)
+                </p>
+                <ul className="space-y-2">
+                  {autoResult.assignments.map((a) => (
+                    <li key={a.team} className="text-xs leading-6">
+                      <span className="font-bold text-foreground">{a.faName}</span>
+                      <span className="text-muted-foreground"> ← {a.endpointName} ← </span>
+                      <span dir="ltr" className="font-mono text-foreground">{a.model}</span>
+                      <span className="block text-muted-foreground">{a.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+                {autoResult.skipped.length > 0 && (
+                  <p className="mt-2 text-xs leading-6 text-muted-foreground">
+                    رد شد: {autoResult.skipped.map((s) => `${s.faName} (${s.reason})`).join("؛ ")}
+                  </p>
+                )}
+              </div>
+            )}
             <ul className="space-y-3">
               {TEAMS.map((team) => {
                 const entry = teamModels[team];
