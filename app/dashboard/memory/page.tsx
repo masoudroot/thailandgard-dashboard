@@ -283,7 +283,7 @@ export default function MemoryPage() {
   }, [rows, query]);
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="w-full">
         <PageHeader
           icon={Brain}
           title="حافظه"
