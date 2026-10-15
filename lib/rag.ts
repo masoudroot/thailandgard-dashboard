@@ -112,6 +112,10 @@ export interface RetrievedChunk {
   chunk: string;
   similarity: number;
   usefulnessScore: number;
+  /** تیم مالک چانک (برای فیلتر دانش مشترک؛ داخلی). */
+  chunkTeam?: string | null;
+  /** دانش نیازمند بازبینی: در پرامپت با برچسب هشدار می‌آید. */
+  stale?: boolean;
 }
 
 /**
@@ -142,13 +146,90 @@ function withTimeout<T>(p: PromiseLike<T>): Promise<T> {
   ]);
 }
 
-function formatChunk(row: KnowledgeChunkRow, index: number): string {
+function formatChunk(row: KnowledgeChunkRow, index: number, stale = false): string {
   const meta: string[] = [`دانش ${index + 1}`];
+  if (stale) meta.push('هشدار: نیازمند بازبینی');
   if (row.title) meta.push(`عنوان: ${row.title}`);
   if (row.team) meta.push(`تیم: ${row.team}`);
   if (row.source) meta.push(`منبع: ${row.source}`);
   const body = (row.chunk ?? '').trim();
   return `[${meta.join(' | ')}]\n${body}`;
+}
+
+/**
+ * فیلتر دیده‌شدن دانش (تیم ۱۳):
+ * - فقط دانش‌های تازه (`freshness_status = 'fresh'`) از تیم خودی یا تیم‌های
+ *   مشترک (`related_teams` شامل تیم جاری) می‌مانند.
+ * - دانش آرشیوشده (`archived`) هرگز برنمی‌گردد.
+ * - اگر چانک تازه کم آمد، دانش نیازمند بازبینی (`stale`) با پرچم هشدار
+ *   به انتهای فهرست اضافه می‌شود.
+ *
+ * کاملاً fail-soft است: هر خطایی (کوئری، ستون ناموجود، دیتای قدیمی)
+ * چانک‌ها را بدون فیلتر برمی‌گرداند تا بازیابی دانش هیچ‌وقت خراب نشود.
+ */
+async function applyKnowledgeVisibilityFilter(
+  chunks: RetrievedChunk[],
+  team: string | null,
+): Promise<RetrievedChunk[]> {
+  try {
+    const knowledgeIds = Array.from(
+      new Set(chunks.map((c) => c.knowledgeId).filter((id): id is string => !!id)),
+    );
+    if (knowledgeIds.length === 0) return chunks;
+
+    const supabase = getSupabase();
+    const { data, error } = await withTimeout(
+      supabase
+        .from('team_knowledge')
+        .select('id, freshness_status, related_teams')
+        .in('id', knowledgeIds),
+    );
+    if (error) return chunks;
+
+    const visibility = new Map<
+      string,
+      { freshness: string | null; relatedTeams: string[] }
+    >();
+    for (const row of (data ?? []) as Array<{
+      id: string;
+      freshness_status: string | null;
+      related_teams: string[] | null;
+    }>) {
+      visibility.set(row.id, {
+        freshness: row.freshness_status ?? null,
+        relatedTeams: row.related_teams ?? [],
+      });
+    }
+
+    const fresh: RetrievedChunk[] = [];
+    const stale: RetrievedChunk[] = [];
+
+    for (const chunk of chunks) {
+      const parent = chunk.knowledgeId ? visibility.get(chunk.knowledgeId) : undefined;
+      // والد نامشخص (دیتای قدیمی یا حذف‌شده): fail-open، مثل رفتار قبلی نمایش بده.
+      if (chunk.knowledgeId && !parent) {
+        fresh.push(chunk);
+        continue;
+      }
+      // فیلتر تیم: تیم مالک چانک یا یکی از تیم‌های مشترکِ دانش.
+      if (team) {
+        const ownTeam = chunk.chunkTeam === team;
+        const shared = parent?.relatedTeams.includes(team) === true;
+        if (!ownTeam && !shared) continue;
+      }
+      const freshness = parent?.freshness ?? 'fresh';
+      if (freshness === 'archived') continue;
+      if (freshness === 'stale') {
+        stale.push({ ...chunk, stale: true });
+      } else {
+        fresh.push(chunk);
+      }
+    }
+
+    return [...fresh, ...stale];
+  } catch {
+    return chunks;
+  }
 }
 
 /**
@@ -173,10 +254,13 @@ export async function retrieveKnowledgeChunks(
 
     const teamFilter = team?.trim() ? team.trim() : null;
 
+    // فیلتر تیم در RPC اعمال نمی‌شود تا دانش مشترک تیم‌های دیگر هم بازیابی
+    // شود؛ فیلتر تیم/تازگی/اشتراک سمت کلاینت است (applyKnowledgeVisibilityFilter).
+    // match_count بزرگ‌تر می‌خواهیم چون بعد از فیلتر به limit می‌رسیم.
     const rpcParams: Record<string, unknown> = {
       query_embedding: embedding,
-      match_count: limit,
-      filter_team: teamFilter,
+      match_count: Math.min(Math.max(limit * 4, 12), 40),
+      filter_team: null,
     };
     // اگر RPC جدید max_age_days را پشتیبانی کند، می‌فرستیم؛ وگرنه نادیده گرفته می‌شود
     if (maxAgeDays !== null) rpcParams.max_age_days = maxAgeDays;
@@ -189,14 +273,19 @@ export async function retrieveKnowledgeChunks(
     const rows = (data ?? []) as KnowledgeChunkRow[];
     const chunks = rows.filter((r) => (r.chunk ?? '').trim().length > 0);
 
-    const result: RetrievedChunk[] = chunks.map((r) => ({
+    let result: RetrievedChunk[] = chunks.map((r) => ({
       id: r.id,
       knowledgeId: r.knowledge_id ?? null,
       title: r.title ?? null,
       chunk: (r.chunk ?? '').trim(),
       similarity: r.similarity ?? 0,
       usefulnessScore: r.usefulness_score ?? 0,
+      chunkTeam: r.team ?? null,
     }));
+
+    // فیلتر دیده‌شدن: فقط دانش تازهٔ تیم خودی یا مشترک؛ کمبود با stale پر می‌شود.
+    // fail-soft: در صورت خطا، همان چانک‌های بدون فیلتر برمی‌گردند.
+    result = await applyKnowledgeVisibilityFilter(result, teamFilter);
 
     // مرتب‌سازی سمت کلاینت (اگر RPC قدیمی بود و ترکیب را اعمال نکرد):
     // شباهت ۷۰٪ + امتیاز مفید بودن نرمال‌شده ۳۰٪
@@ -205,6 +294,8 @@ export async function retrieveKnowledgeChunks(
       const scoreB = b.similarity * 0.7 + Math.max(b.usefulnessScore, 0) / 10 * 0.3;
       return scoreB - scoreA;
     });
+
+    result = result.slice(0, limit);
 
     rememberRetrieval(team, result.map((r) => r.id));
     return result;
@@ -235,13 +326,14 @@ export async function retrieveKnowledge(
           id: c.id,
           knowledge_id: c.knowledgeId,
           source: null,
-          team: team ?? null,
+          team: c.chunkTeam ?? team ?? null,
           title: c.title,
           chunk: c.chunk,
           similarity: c.similarity,
           usefulness_score: c.usefulnessScore,
         },
         i,
+        c.stale === true,
       ),
     )
     .join('\n\n');

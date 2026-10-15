@@ -331,3 +331,109 @@ export const buildKnowledgePrompt = (team: TeamName, evaluation: TeamKnowledgeEv
     'فقط فارسی بنویس؛ هیچ عددی را که در آمار بالا نیست تخیلی نکن؛',
     'دسته‌ها و منابع را با نام واقعی‌شان از آمار بالا بیاور؛ جمله‌ها کوتاه و مشخص باشند.',
   ].join('\n');
+
+/* ============================================================
+ * چرخه حیات و تازگی دانش (بر اساس docs/knowledge-lifecycle.md)
+ * ============================================================ */
+
+/** عمر مجاز هر نوع دانش به روز؛ مبنای checkFreshness. */
+export const KNOWLEDGE_TTL_DAYS = {
+  technical: 30,
+  source_note: 90,
+  critic_lesson: 180,
+  principle: 365,
+} as const;
+
+/** نوع دانش (ستون knowledge_type در team_knowledge). */
+export type KnowledgeType = keyof typeof KNOWLEDGE_TTL_DAYS;
+
+/** مقدار پیش‌فرض نوع وقتی ستون یا مقدار نامعتبر است. */
+const DEFAULT_KNOWLEDGE_TYPE: KnowledgeType = 'source_note';
+
+function normalizeKnowledgeType(value: unknown): KnowledgeType {
+  return typeof value === 'string' && value in KNOWLEDGE_TTL_DAYS
+    ? (value as KnowledgeType)
+    : DEFAULT_KNOWLEDGE_TYPE;
+}
+
+/** ردیف حداقلی لازم برای سنجش تازگی. */
+interface FreshnessRow {
+  id: string;
+  knowledge_type?: string | null;
+  reviewed_at?: string | null;
+  updated_at: string;
+  created_at: string;
+}
+
+/** نتیجهٔ بررسی تازگی دانش یک تیم. */
+export interface FreshnessCheckResult {
+  /** نام تیم. */
+  team: TeamName;
+  /** لیست knowledge_id های نیازمند بازبینی. */
+  needsReview: string[];
+  /** تعداد دانش‌های بررسی‌شده. */
+  checked: number;
+  /** یادداشت (مثلاً وقتی ستون‌های چرخه حیات هنوز در دیتابیس نیستند). */
+  note: string | null;
+}
+
+/**
+ * دانش‌های نیازمند بازبینی یک تیم را پیدا می‌کند.
+ *
+ * قانون (docs/knowledge-lifecycle.md بخش ۳):
+ * - technical: ۳۰ روز | source_note: ۹۰ روز
+ * - critic_lesson: ۱۸۰ روز | principle: بازبینی سالانه (۳۶۵ روز)
+ * - نقطه شروع = reviewed_at وگرنه updated_at وگرنه created_at
+ *
+ * fail-soft: اگر ستون‌های چرخه حیات (knowledge_type/reviewed_at) هنوز
+ * مهاجرت نشده باشند، همهٔ دانش‌ها با TTL پیش‌فرض source_note سنجیده می‌شوند.
+ * دانش‌های آرشیوشده (freshness_status = 'archived') نادیده گرفته می‌شوند.
+ */
+export async function checkFreshness(team: TeamName): Promise<FreshnessCheckResult> {
+  const supabase = getSupabase();
+
+  let rows: FreshnessRow[] | null = null;
+  let note: string | null = null;
+
+  const primary = await supabase
+    .from('team_knowledge')
+    .select('id, knowledge_type, reviewed_at, updated_at, created_at')
+    .eq('team', team)
+    .neq('freshness_status', 'archived');
+
+  if (primary.error && /knowledge_type|reviewed_at/i.test(primary.error.message)) {
+    // ستون‌های چرخه حیات هنوز در دیتابیس نیستند؛ با ستون‌های پایه ادامه بده.
+    const fallback = await supabase
+      .from('team_knowledge')
+      .select('id, updated_at, created_at')
+      .eq('team', team)
+      .neq('freshness_status', 'archived');
+    if (fallback.error) {
+      throw new Error(`checkFreshness: خواندن team_knowledge ناموفق بود: ${fallback.error.message}`);
+    }
+    rows = ((fallback.data ?? []) as Array<Pick<FreshnessRow, 'id' | 'updated_at' | 'created_at'>>).map(
+      (r) => ({ ...r, knowledge_type: DEFAULT_KNOWLEDGE_TYPE, reviewed_at: null }),
+    );
+    note = 'ستون‌های knowledge_type و reviewed_at در دیتابیس نیست؛ همه با TTL پیش‌فرض source_note (۹۰ روز) سنجیده شدند.';
+  } else if (primary.error) {
+    throw new Error(`checkFreshness: خواندن team_knowledge ناموفق بود: ${primary.error.message}`);
+  } else {
+    rows = (primary.data ?? []) as FreshnessRow[];
+  }
+
+  const now = Date.now();
+  const needsReview: string[] = [];
+
+  for (const r of rows) {
+    const type = normalizeKnowledgeType(r.knowledge_type);
+    const ttlDays = KNOWLEDGE_TTL_DAYS[type];
+    const startTs = r.reviewed_at ?? r.updated_at ?? r.created_at;
+    const start = new Date(startTs).getTime();
+    if (Number.isNaN(start)) continue;
+    if (now - start > ttlDays * DAY_MS) {
+      needsReview.push(r.id);
+    }
+  }
+
+  return { team, needsReview, checked: rows.length, note };
+}

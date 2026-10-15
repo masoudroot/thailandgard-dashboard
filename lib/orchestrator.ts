@@ -12,6 +12,7 @@
  * خطای واضح fail می‌شود ولی بقیه‌ی تیم‌ها ادامه می‌دهند.
  */
 import { getSupabase } from './api';
+import { runKnowledgeSubagent } from './knowledge-subagent';
 import { runWithTeamContext } from './llm';
 import { notifyTeamReport } from './notify';
 import { listApprovedTasksForTeam } from './taskqueue';
@@ -550,6 +551,29 @@ export async function runSingleTeam(
 
   try {
     await reportProgress('شروع اجرا', 5);
+    // ساب‌ایجنت دانش: گردآوری نکته‌های تازه از منابع معتبر، قبل از سرپرست.
+    // fail-soft: هر خطایی نادیده گرفته می‌شود و تیم با دانش قبلی جلو می‌رود.
+    let knowledgeSnippet = '';
+    try {
+      await reportProgress('دانش: گردآوری', 8);
+      const knowledgeResult = await runKnowledgeSubagent(
+        team,
+        ctx.runId,
+        buildRagContext(ctx.previousWavesOutput),
+        reportProgress,
+      );
+      if (knowledgeResult.contextSnippet) {
+        knowledgeSnippet = `\n\nیافته‌های تازهٔ دانش این چرخه:\n${knowledgeResult.contextSnippet}`;
+      }
+      if (knowledgeResult.summary) {
+        console.log(`[orchestrator] ساب‌ایجنت دانش تیم ${team}: ${knowledgeResult.summary}`);
+      }
+    } catch (err) {
+      console.error(
+        `[orchestrator] ساب‌ایجنت دانش تیم ${team} خطا داد (نادیده گرفته شد):`,
+        err instanceof Error ? err.message : err,
+      );
+    }
     const { resetLLMStats, getLLMStats } = await import('./llm');
     resetLLMStats();
     const runTeam = await loadRunTeam(team);
@@ -570,7 +594,7 @@ export async function runSingleTeam(
     const input: TeamInput = {
       cycleId,
       runId: ctx.runId,
-      ragContext: buildRagContext(ctx.previousWavesOutput) + approvedContext,
+      ragContext: buildRagContext(ctx.previousWavesOutput) + approvedContext + knowledgeSnippet,
       memory,
       previousWavesOutput: { ...ctx.previousWavesOutput },
       reportProgress,
