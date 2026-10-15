@@ -24,11 +24,7 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
     const { cycleId, runId } = await beginCycle();
-    waitUntil(
-      runAllWaves(cycleId, runId).catch((err) => {
-        console.error(`[api/manager/cycle/start] background cycle ${runId} crashed:`, err);
-      }),
-    );
+    // اجرا با ورکر گیت‌هاب اکشنز است؛ ورسل فقط رکورد را می‌سازد.
     return ok({ run_id: runId, cycle_id: cycleId }, 202);
   } catch (err) {
     if (err instanceof CycleLockedError) return fail(err.message, 409);
