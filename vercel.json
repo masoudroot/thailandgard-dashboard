@@ -1,1 +1,6 @@
-{"$schema":"https://openapi.vercel.sh/vercel.json","buildCommand":"next build","crons":[{"path":"/api/cron/cycle-tick","schedule":"*/2 * * * *"}],"framework":"nextjs","outputDirectory":".next"}
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "next build",
+  "framework": "nextjs",
+  "outputDirectory": ".next"
+}

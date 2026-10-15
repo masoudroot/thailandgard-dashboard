@@ -1,11 +1,9 @@
 import { fail, getSupabase, ok } from '../../../lib/api';
-import { waitUntil } from '@vercel/functions';
 import { WAVES } from '../../../lib/types';
 import {
   beginCycle,
   CycleLockedError,
   findActiveCycle,
-  runAllWaves,
 } from '../../../lib/orchestrator';
 
 /** GET /api/cycles: فهرست چرخه‌ها (جدیدترین اول) با خلاصه غنی‌شده برای داشبورد. */
@@ -30,7 +28,7 @@ export async function GET(): Promise<Response> {
  * اگر چرخهٔ فعالی (در حال اجرا، در آستانهٔ توقف، یا متوقف‌شده) هست، 409 برمی‌گردد؛
  * اول باید همان چرخه لغو شود یا ادامه یابد. قفل ارکستراتور هم همین را تضمین می‌کند.
  * قفل و ردیف cycles هم‌زمان ساخته می‌شود و run_id برمی‌گردد (202)؛
- * اجرای موج‌ها در پس‌زمینه ادامه می‌یابد تا درخواست HTTP بلوکه نماند.
+ * اجرای تیم‌ها با ورکر گیت‌هاب اکشنز انجام می‌شود؛ ورسل فقط رکورد را می‌سازد.
  */
 export async function POST(): Promise<Response> {
   try {
@@ -42,12 +40,7 @@ export async function POST(): Promise<Response> {
       );
     }
     const { cycleId, runId } = await beginCycle();
-    // waitUntil: اجرا در پس‌زمینه حتی بعد از ارسال پاسخ؛ fire-and-forget خالی روی ورسل یخ می‌زند
-    waitUntil(
-      runAllWaves(cycleId, runId).catch((err) => {
-        console.error(`[api/cycles] background cycle ${runId} crashed:`, err);
-      }),
-    );
+    // اجرا با ورکر گیت‌هاب اکشنز است؛ ورسل فقط رکورد را می‌سازد.
     return ok({ run_id: runId, cycle_id: cycleId }, 202);
   } catch (err) {
     if (err instanceof CycleLockedError) return fail(err.message, 409);

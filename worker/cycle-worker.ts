@@ -37,26 +37,29 @@ async function main(): Promise<void> {
   const cycleId = active.id as string;
   const runId = (active.run_id as string) ?? 'worker';
 
-  // وضعیت تیم‌ها
+  // وضعیت تیم‌ها (مرتب‌سازی صعودی تا آخرین ردیف هر تیم، جدیدترین وضعیت باشد)
   const { data: runs } = await sb
     .from('team_runs')
-    .select('team, status, started_at, current_task')
-    .eq('cycle_id', cycleId);
+    .select('team, status, started_at, updated_at, current_task')
+    .eq('cycle_id', cycleId)
+    .order('started_at', { ascending: true });
   const teamStatus: Record<string, string> = {};
-  const teamStarted: Record<string, number> = {};
-  for (const r of (runs ?? []) as { team: string; status: string; started_at: string }[]) {
+  const teamHeartbeat: Record<string, number> = {};
+  for (const r of (runs ?? []) as { team: string; status: string; started_at: string; updated_at?: string }[]) {
     teamStatus[r.team] = r.status;
-    teamStarted[r.team] = new Date(r.started_at).getTime();
+    // ضربان: آخرین به‌روزرسانی پیشرفت؛ اگر نبود، زمان شروع
+    teamHeartbeat[r.team] = new Date(r.updated_at ?? r.started_at).getTime();
   }
 
-  // تایم‌اوت تیم‌های گیرکرده (ضربان قدیمی)
+  // تایم‌اوت تیم‌های گیرکرده: فقط اگر بیش از ۱۵ دقیقه هیچ پیشرفتی
+  // گزارش نکرده باشند (مبنای مرگ، ضربان است نه زمان شروع)
   const now = Date.now();
   for (const [team, status] of Object.entries(teamStatus)) {
-    if (status === 'running' && now - (teamStarted[team] ?? 0) > STUCK_TIMEOUT_MS) {
-      console.log(`timing out stuck team: ${team}`);
+    if (status === 'running' && now - (teamHeartbeat[team] ?? 0) > STUCK_TIMEOUT_MS) {
+      console.log(`timing out stuck team (no heartbeat for 15m): ${team}`);
       await sb
         .from('team_runs')
-        .update({ status: 'failed', error: 'تایم‌اوت ورکر: بیش از ۱۵ دقیقه بدون پیشرفت', finished_at: new Date().toISOString() })
+        .update({ status: 'failed', error: 'تایم‌اوت ورکر: بیش از ۱۵ دقیقه بدون هیچ پیشرفتی', finished_at: new Date().toISOString() })
         .eq('cycle_id', cycleId)
         .eq('team', team);
       teamStatus[team] = 'failed';

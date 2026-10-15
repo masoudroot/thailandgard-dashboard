@@ -3,13 +3,11 @@
  * احراز: Bearer token مدیر. منطق دقیقاً همان /api/cycles است.
  */
 import { fail, ok } from '../../../../../lib/api';
-import { waitUntil } from '@vercel/functions';
 import { requireManagerAuth } from '../../../../../lib/manager-auth';
 import {
   beginCycle,
   CycleLockedError,
   findActiveCycle,
-  runAllWaves,
 } from '../../../../../lib/orchestrator';
 
 export async function POST(request: Request): Promise<Response> {

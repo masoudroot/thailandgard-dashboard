@@ -1,10 +1,14 @@
 /**
- * ارکستراتور چرخه: اجرای ۱۵ تیم در ۶ موج پشت سر هم.
+ * ارکستراتور چرخه: مدیریت چرخه‌های ۱۵ تیم در ۶ موج.
+ *
+ * معماری: ورسل فقط داشبورد و API مدیریتی است. اجرای تیم‌ها با
+ * ورکر گیت‌هاب اکشنز (worker/cycle-worker.ts) انجام می‌شود که در هر
+ * اجرا فقط یک تیم را اجرا می‌کند (runSingleTeam).
  *
  * جریان یک چرخه:
  *   1. beginCycle: ساخت run_id یکتا + گرفتن قفل سراسری (agent_state)
  *      + ساخت ردیف cycles
- *   2. runAllWaves: اجرای موج‌به‌موج (داخل هر موج، تیم‌ها موازی با سقف ۳ هم‌زمان)
+ *   2. ورکر گیت‌هاب: اجرای تک‌تک تیم‌ها (runSingleTeam)
  *   3. finishCycle: آزاد کردن قفل + ثبت وضعیت نهایی cycles
  *
  * هر تیم با تابع runTeam از ماژول lib/teams/<team>.ts (ایمپورت داینامیک)
@@ -31,16 +35,8 @@ import {
 const LOCK_KEY = 'orchestrator:lock';
 /** A lock counts as "someone else is running" only while running and younger than this. */
 const LOCK_TTL_MINUTES = 150;
-/** Max teams running concurrently inside one wave. */
-const WAVE_CONCURRENCY = 3;
 /** How often a paused cycle re-reads its status while waiting for resume/cancel. */
 const PAUSE_POLL_MS = 5000;
-/**
- * A lock younger than this while a cycle is paused means the in-process
- * pause-wait loop is still alive (it touches the lock on every poll).
- * Older than this => the server process died; resume must take over.
- */
-const PAUSE_LOOP_ALIVE_MS = 10 * 60 * 1000;
 
 export class CycleLockedError extends Error {}
 
@@ -271,22 +267,15 @@ export async function resumeCycle(cycleId: string): Promise<void> {
   }
   await setCycleStatus(cycleId, 'running');
 
-  // آیا حلقه‌ی درون‌حافظه‌ای هنوز زنده و در انتظار است؟
-  const lock = await readLock();
-  const lockAgeMs = lock
-    ? Date.now() - new Date(lock.updated_at).getTime()
-    : Number.POSITIVE_INFINITY;
-  const loopAlive =
-    lock?.state?.status === 'running' &&
-    lock.state.cycle_id === cycleId &&
-    lockAgeMs < PAUSE_LOOP_ALIVE_MS;
-
-  if (!loopAlive) {
-    // سرور ری‌استارت شده یا حلقه مرده است: موج‌های باقی‌مانده را در پس‌زمینه ادامه می‌دهیم.
-    void resumeRemainingWaves(cycleId).catch((err) => {
-      console.error(`[orchestrator] background resume of cycle ${cycleId} crashed:`, err);
-    });
-  }
+  // قفل را تازه می‌کنیم تا ورکر گیت‌هاب اکشنز در تیک بعدی چرخه را ادامه دهد.
+  // اجرا روی ورسل انجام نمی‌شود؛ ورسل فقط داشبورد و API مدیریتی است.
+  await writeLock({
+    status: 'running',
+    run_id: row.run_id,
+    cycle_id: cycleId,
+    resumed_at: new Date().toISOString(),
+    started_at: new Date().toISOString(),
+  });
 }
 
 /** لغو چرخهٔ فعال: وضعیت canceled + آزاد شدن قفل. حلقه‌ی اجرا در اولین ایست‌بازرسی می‌ایستد. */
@@ -656,153 +645,9 @@ export async function runSingleTeam(
   }
 }
 
-/** اجرای موازی با سقف هم‌زمانی. */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i]);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
 
-/** اجرای یک موج: تیم‌های موج موازی (سقف ۳ هم‌زمان)، ثبت در team_runs. */
-export async function runWave(
-  cycleId: string,
-  wave: number,
-  ctx?: WaveCtx,
-  skip?: Set<string>,
-): Promise<void> {
-  const def = WAVES.find((w) => w.wave === wave);
-  if (!def) throw new Error(`unknown wave ${wave}; valid waves: ${WAVES.map((w) => w.wave).join(', ')}`);
-  const context: WaveCtx = ctx ?? { runId: 'unknown', previousWavesOutput: {} };
-  const teams = skip ? def.teams.filter((t) => !skip.has(`${wave}:${t}`)) : def.teams;
-  if (teams.length === 0) return;
-  const results = await mapWithConcurrency(teams, WAVE_CONCURRENCY, (team) =>
-    runSingleTeam(cycleId, team, wave, context),
-  );
-  teams.forEach((team, i) => {
-    context.previousWavesOutput[team] = results[i];
-  });
-}
 
-/** اجرای همه‌ی موج‌ها پشت سر هم + بستن چرخه. */
-export async function runAllWaves(
-  cycleId: string,
-  runId: string,
-  opts?: RunWavesOptions,
-): Promise<void> {
-  const ctx: WaveCtx = { runId, previousWavesOutput: {} };
-  let fatal: unknown = null;
-  let canceledByUser = false;
-  try {
-    for (const def of WAVES) {
-      // زمینه‌ی موج‌های از قبل تمام‌شده (در ادامهٔ چرخه) فقط تا قبل از موج جاری.
-      if (opts?.prefill) {
-        opts.prefill.forEach((p, team) => {
-          if (p.wave < def.wave && !(team in ctx.previousWavesOutput)) {
-            ctx.previousWavesOutput[team] = p.result;
-          }
-        });
-      }
-      // ایست‌بازرسی توقف/لغو: تیم‌های موج جاری تمام می‌شوند، موج بعدی شروع نمی‌شود.
-      const decision = await checkpointBeforeWave(cycleId, runId);
-      if (decision === 'canceled') {
-        canceledByUser = true;
-        break;
-      }
-      await runWave(cycleId, def.wave, ctx, opts?.skip);
-    }
-  } catch (err) {
-    fatal = err;
-  }
-  if (canceledByUser) {
-    await finishCycle(cycleId, 'canceled', 'لغو شده توسط کاربر');
-    return;
-  }
-  const { data: runs } = await getSupabase()
-    .from('team_runs')
-    .select('status')
-    .eq('cycle_id', cycleId);
-  const failed = (runs ?? []).filter((r) =>
-    ['failed', 'stopped'].includes((r as { status: string }).status),
-  ).length;
-  const status: CycleStatus = fatal || failed > 0 ? 'failed' : 'success';
-  const errorMsg =
-    failed > 0
-      ? `${failed} team run(s) failed${fatal ? `; fatal: ${String(fatal)}` : ''}`
-      : fatal
-        ? String(fatal)
-        : undefined;
-  await finishCycle(cycleId, status, errorMsg);
-  if (fatal) throw fatal;
-}
 
-/**
- * ادامهٔ موج‌های باقی‌ماندهٔ یک چرخهٔ متوقف‌شده (وقتی حلقه‌ی درون‌حافظه‌ای
- * زنده نیست، مثلاً بعد از ری‌استارت سرور). موج‌هایی که همه‌ی تیم‌هایشان
- * success/failed شده‌اند رد می‌شوند؛ بقیه از همان نقطه اجرا می‌شوند.
- */
-export async function resumeRemainingWaves(cycleId: string): Promise<void> {
-  const sb = getSupabase();
-  const { data: cycle, error: cycleErr } = await sb
-    .from('cycles')
-    .select('run_id, status')
-    .eq('id', cycleId)
-    .maybeSingle();
-  if (cycleErr || !cycle) throw new Error('چرخه پیدا نشد.');
-  const row = cycle as { run_id: string; status: string };
-  if (normalizeCycleStatus(row.status) !== 'running') {
-    throw new Error('چرخه برای ادامه در وضعیت مناسبی نیست.');
-  }
-
-  const { data: runs } = await sb
-    .from('team_runs')
-    .select('team, wave, status, output_summary')
-    .eq('cycle_id', cycleId);
-  const skip = new Set<string>();
-  const prefill = new Map<string, { wave: number; result: TeamResult | null }>();
-  for (const r of (runs ?? []) as {
-    team: string;
-    wave: number;
-    status: string;
-    output_summary: string | null;
-  }[]) {
-    if (r.status === 'success' || r.status === 'failed') {
-      skip.add(`${r.wave}:${r.team}`);
-      prefill.set(r.team, {
-        wave: r.wave,
-        result: r.output_summary
-          ? {
-              team: r.team as TeamName,
-              summary: r.output_summary,
-              blockers: [],
-              tasks: [],
-              approved: r.status === 'success',
-            }
-          : null,
-      });
-    }
-  }
-
-  // تصاحب قفل: حلقه‌ی قبلی مرده است، پس قفل را تازه می‌کنیم.
-  await writeLock({
-    status: 'running',
-    run_id: row.run_id,
-    cycle_id: cycleId,
-    resumed_at: new Date().toISOString(),
-    started_at: new Date().toISOString(),
-  });
-  await runAllWaves(cycleId, row.run_id, { skip, prefill });
-}
 
 /** بستن چرخه: ثبت وضعیت نهایی + آمار + آزاد کردن قفل. */
 export async function finishCycle(
@@ -860,12 +705,3 @@ export async function finishCycle(
   }
 }
 
-/**
- * شروع یک چرخه‌ی کامل: run_id یکتا + قفل + ردیف cycles + اجرای موج‌به‌موج تیم‌ها.
- * در پایان run_id را برمی‌گرداند. اگر قفل running و تازه باشد، CycleLockedError می‌دهد.
- */
-export async function startCycle(): Promise<string> {
-  const { cycleId, runId } = await beginCycle();
-  await runAllWaves(cycleId, runId);
-  return runId;
-}
