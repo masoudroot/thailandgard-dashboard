@@ -1,6 +1,7 @@
 import Nav from "@/components/Nav";
 import MobileNav from "@/components/MobileNav";
 import PageTransition from "@/components/PageTransition";
+import KnowledgeNavLink from "./KnowledgeNavLink";
 
 /**
  * لی‌اوت داشبورد: سایدبار راست (نخستین فرزند در فلکس، یعنی سمت شروع در راست‌چین)
@@ -28,6 +29,8 @@ export default function DashboardLayout({
                 داشبورد ایجنتیک تایلندگرد
               </span>
             </h1>
+            {/* لینک «دانش» در هدر؛ هم موبایل هم دسکتاپ (تیم ۵، پروژه دانش) */}
+            <KnowledgeNavLink />
           </div>
         </header>
 
