@@ -60,20 +60,20 @@ export function LlmGatewaysPanel() {
       ) : (
         <div className="space-y-6">
           {/* ── درگاه‌ها ── */}
-          <div>
-            <h3 className="mb-2 text-sm font-bold text-foreground">درگاه‌ها</h3>
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold text-foreground">درگاه‌ها</h3>
             {s.endpoints.length === 0 ? (
               <p className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
                 هنوز درگاهی ثبت نشده است. اولین درگاه را با فرم پایین اضافه کنید.
               </p>
             ) : (
-              <ul className="space-y-3">
+              <ul className="space-y-4">
                 {s.endpoints.map((ep) => {
                   const r = s.testResults[ep.id];
                   return (
                     <li
                       key={ep.id}
-                      className="rounded-lg border border-border bg-background px-3 py-3"
+                      className="space-y-3 rounded-lg border border-border bg-background px-3 py-3"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -94,14 +94,14 @@ export function LlmGatewaysPanel() {
                         </Badge>
                       </div>
                       {r && (
-                        <div className="mt-2">
+                        <div>
                           <ResultNote
                             ok={r.ok}
                             text={r.message + (r.latencyMs != null ? ` (${faDigits(r.latencyMs)} میلی‌ثانیه)` : "")}
                           />
                         </div>
                       )}
-                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <div className="flex flex-col gap-2 sm:flex-row">
                         <Button
                           variant="outline"
                           onClick={() => s.handleTest(ep.id)}
@@ -144,12 +144,12 @@ export function LlmGatewaysPanel() {
           </div>
 
           {/* ── افزودن درگاه ── */}
-          <div className="rounded-lg border border-border bg-card px-3 py-4">
-            <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-foreground">
+          <div className="space-y-4 rounded-lg border border-border bg-card px-3 py-4">
+            <h3 className="flex items-center gap-1.5 text-sm font-bold text-foreground">
               <Plus size={15} strokeWidth={2} aria-hidden="true" />
               افزودن درگاه
             </h3>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-3">
               <Field label="نام" htmlFor="llm-ep-name">
                 <Input
                   id="llm-ep-name"
@@ -181,7 +181,7 @@ export function LlmGatewaysPanel() {
                 />
               </Field>
             </div>
-            <Button variant="default" size="lg" onClick={s.handleAdd} disabled={s.adding} className="mt-3">
+            <Button variant="default" size="lg" onClick={s.handleAdd} disabled={s.adding}>
               {s.adding ? "در حال ذخیره…" : "افزودن درگاه"}
             </Button>
           </div>
@@ -189,7 +189,7 @@ export function LlmGatewaysPanel() {
           {s.errorMsg && <ResultNote ok={false} text={s.errorMsg} />}
         </div>
       )}
-      <div className="mt-4">
+      <div>
         <WhereGuide
           steps={[
             "یک درگاه سازگار با OpenAI لازم دارید (مثلاً OpenAI، یا درگاه‌های مشابه).",

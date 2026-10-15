@@ -86,13 +86,15 @@ export function LlmModelsPanel() {
       ) : (
         <div className="space-y-6">
           {/* ── مدل پیش‌فرض سامانه ── */}
-          <div className="rounded-lg border border-border bg-card px-3 py-4">
-            <h3 className="mb-1 text-sm font-bold text-foreground">مدل پیش‌فرض سامانه</h3>
-            <p className="mb-3 text-xs leading-6 text-muted-foreground">
-              تیم‌هایی که مدل اختصاصی ندارند از این درگاه و مدل استفاده می‌کنند.
-            </p>
+          <div className="space-y-4 rounded-lg border border-border bg-card px-3 py-4">
+            <div>
+              <h3 className="text-sm font-bold text-foreground">مدل پیش‌فرض سامانه</h3>
+              <p className="mt-1 text-xs leading-6 text-muted-foreground">
+                تیم‌هایی که مدل اختصاصی ندارند از این درگاه و مدل استفاده می‌کنند.
+              </p>
+            </div>
             {s.defaultModel?.endpointId && (
-              <p className="mb-3 rounded-lg bg-muted px-3 py-2 text-xs leading-6 text-foreground">
+              <p className="rounded-lg bg-muted px-3 py-2 text-xs leading-6 text-foreground">
                 انتخاب فعلی: درگاه {s.epName(s.defaultModel.endpointId)} | مدل{" "}
                 <span dir="ltr" className="font-mono">
                   {s.defaultModel.model || "انتخاب نشده"}
@@ -106,7 +108,7 @@ export function LlmModelsPanel() {
                 modelHealth={s.modelHealth}
               />
             )}
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field label="درگاه">
                 <ValueLabelCombobox
                   value={s.defaultModel?.endpointId ?? ""}
@@ -138,7 +140,7 @@ export function LlmModelsPanel() {
                 />
               </Field>
             </div>
-            <div className="mt-2 flex items-center gap-3">
+            <div className="flex items-center gap-3">
               <SaveNote state={s.defaultSave} />
               {s.defaultModel?.endpointId && s.defaultModel?.model?.trim() && (
                 <ModelTestButton
@@ -150,14 +152,16 @@ export function LlmModelsPanel() {
           </div>
 
           {/* ── مدل امبدینگ ── */}
-          <div className="rounded-lg border border-border bg-card px-3 py-4">
-            <h3 className="mb-1 text-sm font-bold text-foreground">مدل امبدینگ</h3>
-            <p className="mb-3 text-xs leading-6 text-muted-foreground">
-              برای جست‌وجوی معنایی در حافظه تیم‌ها. فهرست مدل‌ها فقط مدل‌های
-              امبدینگ همان درگاه را نشان می‌دهد.
-            </p>
+          <div className="space-y-4 rounded-lg border border-border bg-card px-3 py-4">
+            <div>
+              <h3 className="text-sm font-bold text-foreground">مدل امبدینگ</h3>
+              <p className="mt-1 text-xs leading-6 text-muted-foreground">
+                برای جست‌وجوی معنایی در حافظه تیم‌ها. فهرست مدل‌ها فقط مدل‌های
+                امبدینگ همان درگاه را نشان می‌دهد.
+              </p>
+            </div>
             {s.embeddingModel?.endpointId && (
-              <p className="mb-3 rounded-lg bg-muted px-3 py-2 text-xs leading-6 text-foreground">
+              <p className="rounded-lg bg-muted px-3 py-2 text-xs leading-6 text-foreground">
                 انتخاب فعلی: درگاه {s.epName(s.embeddingModel.endpointId)} | مدل{" "}
                 <span dir="ltr" className="font-mono">
                   {s.embeddingModel.model || "انتخاب نشده"}
@@ -171,7 +175,7 @@ export function LlmModelsPanel() {
                 modelHealth={s.modelHealth}
               />
             )}
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field label="درگاه">
                 <ValueLabelCombobox
                   value={s.embeddingModel?.endpointId ?? ""}
@@ -207,11 +211,11 @@ export function LlmModelsPanel() {
               </Field>
             </div>
             {s.embeddingModel?.endpointId && embCached && (embOnly?.length ?? 0) === 0 && !s.loadingModels[s.embeddingModel.endpointId] && (
-              <p className="mt-2 text-xs leading-6 text-muted-foreground">
+              <p className="text-xs leading-6 text-muted-foreground">
                 در فهرست این درگاه مدل امبدینگ پیدا نشد؛ می‌توانید نام مدل را دستی تایپ کنید.
               </p>
             )}
-            <div className="mt-2 flex items-center gap-3">
+            <div className="flex items-center gap-3">
               <SaveNote state={s.embeddingSave} />
               {s.embeddingModel?.endpointId && s.embeddingModel?.model?.trim() && (
                 <ModelTestButton
@@ -223,37 +227,38 @@ export function LlmModelsPanel() {
           </div>
 
           {/* ── مدل هر تیم ── */}
-          <div>
-            <div className="mb-1 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold text-foreground">مدل هر تیم</h3>
-              <SaveNote state={s.saveState} />
-            </div>
-            <p className="mb-3 text-xs leading-6 text-muted-foreground">
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-bold text-foreground">مدل هر تیم</h3>
+                <SaveNote state={s.saveState} />
+              </div>
+              <p className="mt-1 text-xs leading-6 text-muted-foreground">
               تغییر هر ردیف بلافاصله ذخیره می‌شود. بعد از انتخاب درگاه، فهرست
               واقعی مدل‌های آن درگاه برای انتخاب می‌آید؛ می‌توانید نام مدل را
               دستی هم تایپ کنید.
             </p>
+            </div>
             <Button
               variant="default"
               onClick={s.handleAutoAssign}
               disabled={s.autoAssigning}
               aria-busy={s.autoAssigning || undefined}
-              className="mb-3"
             >
               <Sparkles size={16} strokeWidth={2} aria-hidden="true" />
               {s.autoAssigning ? "در حال بررسی مدل‌ها…" : "انتخاب خودکار با هوش مصنوعی"}
             </Button>
             {s.autoError && (
-              <p className="mb-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs leading-6 text-destructive">
+              <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs leading-6 text-destructive">
                 {s.autoError}
               </p>
             )}
             {s.autoResult && (
-              <div className="mb-3 rounded-lg border border-border bg-card px-3 py-3">
+              <div className="rounded-lg border border-border bg-card px-3 py-3">
                 <p className="mb-2 text-xs font-bold text-foreground">
                   نتیجه انتخاب خودکار ({faDigits(s.autoResult.assignments.length)} تیم)
                 </p>
-                <ul className="space-y-2">
+                <ul className="space-y-3">
                   {s.autoResult.assignments.map((a) => (
                     <li key={a.team} className="text-xs leading-6">
                       <span className="font-bold text-foreground">{a.faName}</span>
@@ -264,13 +269,13 @@ export function LlmModelsPanel() {
                   ))}
                 </ul>
                 {s.autoResult.skipped.length > 0 && (
-                  <p className="mt-2 text-xs leading-6 text-muted-foreground">
+                  <p className="text-xs leading-6 text-muted-foreground">
                     رد شد: {s.autoResult.skipped.map((x) => `${x.faName} (${x.reason})`).join("؛ ")}
                   </p>
                 )}
               </div>
             )}
-            <ul className="space-y-3">
+            <ul className="space-y-4">
               {TEAMS.map((team) => {
                 const entry = s.teamModels[team];
                 const epId = entry?.endpointId ?? "";
@@ -280,12 +285,12 @@ export function LlmModelsPanel() {
                 return (
                   <li
                     key={team}
-                    className="rounded-lg border border-border bg-background px-3 py-3"
+                    className="space-y-3 rounded-lg border border-border bg-background px-3 py-3"
                   >
-                    <p className="mb-2 text-sm font-bold text-foreground">
+                    <p className="text-sm font-bold text-foreground">
                       {meta?.faName ?? team}
                     </p>
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-4 sm:grid-cols-2">
                       <Field label="درگاه">
                         <ValueLabelCombobox
                           value={epId}
@@ -323,7 +328,7 @@ export function LlmModelsPanel() {
                       <UnhealthySavedWarning endpointId={epId} model={entry?.model ?? ""} modelHealth={s.modelHealth} />
                     )}
                     {epId && entry?.model?.trim() && (
-                      <div className="mt-2">
+                      <div>
                         <ModelTestButton endpointId={epId} model={entry.model} />
                       </div>
                     )}
@@ -334,13 +339,15 @@ export function LlmModelsPanel() {
           </div>
 
           {/* ── تست واقعی ── */}
-          <div className="rounded-lg border border-border bg-card px-3 py-4">
-            <h3 className="mb-1 text-sm font-bold text-foreground">تست واقعی</h3>
-            <p className="mb-3 text-xs leading-6 text-muted-foreground">
-              یک پرامپت کوتاه به درگاه و مدل انتخاب‌شده می‌فرستد و پاسخ واقعی را
-              نشان می‌دهد.
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-4 rounded-lg border border-border bg-card px-3 py-4">
+            <div>
+              <h3 className="text-sm font-bold text-foreground">تست واقعی</h3>
+              <p className="mt-1 text-xs leading-6 text-muted-foreground">
+                یک پرامپت کوتاه به درگاه و مدل انتخاب‌شده می‌فرستد و پاسخ واقعی را
+                نشان می‌دهد.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field label="درگاه">
                 <ValueLabelCombobox
                   value={s.ptEndpoint}
@@ -379,7 +386,7 @@ export function LlmModelsPanel() {
                 />
               </Field>
             </div>
-            <Field label="پرامپت آزمایشی" htmlFor="llm-pt-prompt" className="mt-3">
+            <Field label="پرامپت آزمایشی" htmlFor="llm-pt-prompt">
               <Textarea
                 id="llm-pt-prompt"
                 rows={2}
@@ -392,7 +399,6 @@ export function LlmModelsPanel() {
               size="lg"
               onClick={s.handlePromptTest}
               disabled={s.ptSending || !s.ptEndpoint || !s.ptModel.trim() || !s.ptPrompt.trim()}
-              className="mt-3"
             >
               <Send strokeWidth={2} aria-hidden="true" />
               {s.ptSending ? "در حال ارسال…" : "ارسال تست"}
