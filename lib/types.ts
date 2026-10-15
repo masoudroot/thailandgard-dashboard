@@ -43,7 +43,7 @@ export function normalizeCycleStatus(status: string | null | undefined): CycleSt
 export type TeamRunStatus = 'pending' | 'running' | 'success' | 'failed' | 'rejected' | 'skipped' | 'stopped';
 
 /** وضعیت ساب‌ایجنت (مرحله‌ی خط لوله‌ی یک تیم). */
-export type SubagentStatus = 'pending' | 'running' | 'paused' | 'stopped' | 'success' | 'failed';
+export type SubagentStatus = 'pending' | 'running' | 'paused' | 'stopped' | 'success' | 'failed' | 'rejected';
 
 /** سیگنال کنترلی ساب‌ایجنت؛ ارکستر آن را در مرز مرحله‌ها اعمال می‌کند. */
 export type SubagentControl = 'run' | 'pause' | 'stop';
@@ -118,6 +118,12 @@ export interface TeamResult {
   blockers: string[];
   tasks: QueuedTask[];
   approved: boolean;
+  /**
+   * پچ واقعی تولیدشده توسط تیم (اختیاری).
+   * هر آیتم: مسیر نسبی فایل + محتوای کامل جدید فایل.
+   * تیم dev این را پر می‌کند؛ لایهٔ اعمال (applyPatchViaGithub) جداگانه آن را کامیت می‌کند.
+   */
+  patch?: Array<{ path: string; content: string }>;
 }
 
 export interface MemoryEntry {

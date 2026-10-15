@@ -48,7 +48,8 @@ const SUBAGENT_STATUS_LABEL: Record<Subagent['status'], string> = {
   paused: 'متوقف‌شده',
   stopped: 'متوقف شد',
   success: 'موفق',
-  failed: 'ناموفق',
+  failed: 'خطای سیستمی',
+  rejected: 'رد شده توسط منتقد',
 };
 
 /** دکمه‌ی کنترل ساب‌ایجنت. */
