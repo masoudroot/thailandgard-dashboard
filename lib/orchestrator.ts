@@ -391,17 +391,24 @@ export async function runSingleTeam(
   team: TeamName,
   wave: number,
   ctx: WaveCtx,
+  teamRunId?: string,
 ): Promise<TeamResult | null> {
   const sb = getSupabase();
-  const { data: runRow, error: insertErr } = await sb
-    .from('team_runs')
-    .insert({ cycle_id: cycleId, team, wave, status: 'running' })
-    .select('id')
-    .single();
-  if (insertErr || !runRow) {
-    throw new Error(`failed to create team_runs row for ${team}: ${insertErr?.message}`);
+  let runRowId: string;
+  if (teamRunId) {
+    // ردیف از قبل با claimTeam اتمیک ساخته شده؛ فقط استفاده کن
+    runRowId = teamRunId;
+  } else {
+    const { data: runRow, error: insertErr } = await sb
+      .from('team_runs')
+      .insert({ cycle_id: cycleId, team, wave, status: 'running' })
+      .select('id')
+      .single();
+    if (insertErr || !runRow) {
+      throw new Error(`failed to create team_runs row for ${team}: ${insertErr?.message}`);
+    }
+    runRowId = runRow.id as string;
   }
-  const runRowId = runRow.id as string;
 
   const finish = async (patch: Record<string, unknown>) => {
     const { error } = await sb

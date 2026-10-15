@@ -10,6 +10,7 @@
 import { getSupabase } from '../lib/api';
 import { WAVES, type TeamName } from '../lib/types';
 import { findActiveCycle, finishCycle, runSingleTeam, beginCycle } from '../lib/orchestrator';
+import { claimTeam, startHeartbeat, type LockOwner } from '../lib/lock';
 
 const STUCK_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -99,6 +100,21 @@ async function main(): Promise<void> {
   }
 
   console.log(`running team ${nextTeam} (wave ${currentWaveDef.wave})`);
+
+  // claim اتمیک تیم: اگر ورکر دیگری هم‌زمان همین تیم را برداشت، ما عقب می‌نشینیم
+  const owner: LockOwner = {
+    engine: 'github-actions',
+    runId: process.env.GITHUB_RUN_ID ?? `worker-${Date.now()}`,
+  };
+  const teamRunId = await claimTeam(cycleId, nextTeam, currentWaveDef.wave, owner);
+  if (!teamRunId) {
+    console.log(`team ${nextTeam} already claimed by another worker; skipping`);
+    return;
+  }
+
+  // heartbeat در حین اجرای تیم تا قفل stale نشود
+  const stopHeartbeat = startHeartbeat(owner);
+
   try {
     // چک پیش‌دستانه: مدل تیم سالم است؟ اگر نه، قبل از شروع عوضش کن
     try {
@@ -121,11 +137,13 @@ async function main(): Promise<void> {
     await runSingleTeam(cycleId, nextTeam, currentWaveDef.wave, {
       runId,
       previousWavesOutput: {},
-    });
+    }, teamRunId);
     console.log(`team ${nextTeam} done`);
   } catch (err) {
     console.error(`team ${nextTeam} crashed:`, err instanceof Error ? err.message : String(err));
     process.exitCode = 1;
+  } finally {
+    stopHeartbeat();
   }
 }
 
