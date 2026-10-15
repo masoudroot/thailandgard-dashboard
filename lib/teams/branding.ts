@@ -165,7 +165,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         : 'این الگو مردود است؛ در چرخه‌های بعد از آن پرهیز شود.',
     ].join('\n');
     await indexKnowledge(
-      `branding-lesson-${input.runId}`,
+      crypto.randomUUID(),
       TEAM,
       knowledgeTitle,
       knowledgeContent,

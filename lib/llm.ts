@@ -129,6 +129,57 @@ function fallbackModel(primary: string): string {
   return primary === hardFallback ? "qwen3.8-flash" : hardFallback;
 }
 
+/**
+ * جست‌وجوی هوشمند مدل جایگزین: مدل‌های سالم درگاه تیم را در لحظه تست می‌کند
+ * و اولین مدلی که پاسخ می‌دهد را برمی‌گرداند.
+ */
+async function findWorkingModel(
+  team: string,
+  base: string,
+  apiKey: string,
+  failedModel: string,
+): Promise<{ model: string; endpointId: string } | null> {
+  try {
+    const { getModelsHealth, getTeamModelMap } = await import('./llm-endpoints');
+    const map = await getTeamModelMap();
+    const entry = (map as Record<string, { endpointId: string; model: string }>)[team];
+    if (!entry?.endpointId) return null;
+    const health = await getModelsHealth(entry.endpointId, [], {});
+    const healthyModels = Object.entries(health)
+      .filter(([m, h]) => h.ok && m !== failedModel)
+      .map(([m]) => m)
+      .slice(0, 5);
+    for (const m of healthyModels) {
+      try {
+        // تست سبک در لحظه
+        await postChatCompletions(base, apiKey, m, 'سلام', {
+          maxTokens: 8,
+          temperature: 0,
+          timeoutMs: 15000,
+        });
+        return { model: m, endpointId: entry.endpointId };
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** ذخیره مدل جدید برای تیم در تنظیمات. */
+async function persistTeamModel(team: string, endpointId: string, model: string): Promise<void> {
+  try {
+    const { getTeamModelMap, saveTeamModelMap } = await import('./llm-endpoints');
+    const map = await getTeamModelMap();
+    (map as Record<string, { endpointId: string; model: string }>)[team] = { endpointId, model };
+    await saveTeamModelMap(map);
+  } catch {
+    /* نادیده */
+  }
+}
+
 export class LLMError extends Error {
   status?: number;
   retried: boolean;
@@ -300,11 +351,17 @@ export async function callLLM(
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     if (isRetryable(err)) {
-      const fallback = fallbackModel(model);
+      // جست‌وجوی هوشمند: مدل‌های سالم درگاه را در لحظه تست کن و بهترین را انتخاب کن
+      const smartFallback = team ? await findWorkingModel(team, base, apiKey, model) : null;
+      const fallback = smartFallback?.model ?? fallbackModel(model);
       try {
         const text = await postChatCompletions(base, apiKey, fallback, prompt, callOpts);
         stats.success += 1;
         stats.fallback += 1;
+        // اگر مدل جدید کار کرد، برای این تیم ذخیره‌اش کن
+        if (smartFallback && team) {
+          await persistTeamModel(team, smartFallback.endpointId, fallback).catch(() => {});
+        }
         return text;
       } catch (fallbackErr) {
         const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);

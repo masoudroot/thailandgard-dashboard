@@ -20,7 +20,7 @@ export async function POST(request: Request): Promise<Response> {
     const content = body.content?.trim() ?? '';
     if (!team) return fail('تیم لازم است.', 400);
     if (!content) return fail('متن دانش لازم است.', 400);
-    const knowledgeId = `manager-${team}-${Date.now()}`;
+    const knowledgeId = crypto.randomUUID();
     await indexKnowledge(knowledgeId, team, title, content);
     return ok({ knowledge_id: knowledgeId });
   } catch (err) {
