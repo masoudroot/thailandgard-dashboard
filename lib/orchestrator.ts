@@ -396,7 +396,7 @@ export interface RunWavesOptions {
 }
 
 /** اجرای یک تیم و ثبت نتیجه در team_runs. خطا => team_run=failed، ولی موج ادامه می‌یابد. */
-async function runSingleTeam(
+export async function runSingleTeam(
   cycleId: string,
   team: TeamName,
   wave: number,
