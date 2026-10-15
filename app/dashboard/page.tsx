@@ -247,7 +247,7 @@ export default function DashboardHomePage() {
             <h1 className="text-3xl font-extrabold">
               داشبورد ایجنتیک تایلندگرد
             </h1>
-            <p className="mt-3 max-w-2xl text-lg text-muted-foreground">
+            <p className="mt-3 text-justify text-lg leading-8 text-muted-foreground">
               پانزده تیم هوش مصنوعی در شش موج، پشت سر هم برای رشد تایلندگرد کار می‌کنند.
               این‌جا می‌بینید هر تیم کجای کار است و چرخهٔ بعدی را از همین‌جا شروع می‌کنید.
             </p>
