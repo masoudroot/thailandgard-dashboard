@@ -550,6 +550,8 @@ export async function runSingleTeam(
 
   try {
     await reportProgress('شروع اجرا', 5);
+    const { resetLLMStats, getLLMStats } = await import('./llm');
+    resetLLMStats();
     const runTeam = await loadRunTeam(team);
     const memory = await loadTeamMemory(team);
     // کارهای تأییدشدهٔ این تیم («برود در چرخه») در اولویت زمینهٔ اجرا قرار می‌گیرند.
@@ -576,13 +578,16 @@ export async function runSingleTeam(
     // Ambient team context: every callLLM inside runTeam automatically uses
     // this team's configured endpoint + model (settings: llm_endpoints/team_models).
     const result = await runWithTeamContext(team, () => runTeam(input));
-    await closeSubagents('success');
+    const llmCalls = getLLMStats().total;
+    await closeSubagents(result.approved === false ? 'failed' : 'success');
+    const teamStatus = result.approved === false ? 'failed' : 'success';
     await finish({
-      status: 'success',
+      status: teamStatus,
       progress: 100,
-      current_task: 'پایان کار',
+      current_task: teamStatus === 'failed' ? 'خطا در اجرا' : 'پایان کار',
       output_summary: result.summary?.slice(0, 4000) ?? null,
-      llm_calls: 0,
+      error: teamStatus === 'failed' ? (result.summary?.slice(0, 4000) ?? null) : null,
+      llm_calls: llmCalls,
     });
     // گزارش دوگانه: ثبت در پنل + ارسال به تلگرام (best-effort، مسدودکننده نیست).
     await notifyTeamReport({
