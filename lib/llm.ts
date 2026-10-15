@@ -140,26 +140,34 @@ async function findWorkingModel(
   failedModel: string,
 ): Promise<{ model: string; endpointId: string } | null> {
   try {
-    const { getModelsHealth, getTeamModelMap } = await import('./llm-endpoints');
+    const { getModelsHealth, getTeamModelMap, listEndpoints } = await import('./llm-endpoints');
     const map = await getTeamModelMap();
     const entry = (map as Record<string, { endpointId: string; model: string }>)[team];
-    if (!entry?.endpointId) return null;
-    const health = await getModelsHealth(entry.endpointId, [], {});
-    const healthyModels = Object.entries(health)
-      .filter(([m, h]) => h.ok && m !== failedModel)
-      .map(([m]) => m)
-      .slice(0, 5);
-    for (const m of healthyModels) {
-      try {
-        // تست سبک در لحظه
-        await postChatCompletions(base, apiKey, m, 'سلام', {
-          maxTokens: 8,
-          temperature: 0,
-          timeoutMs: 15000,
-        });
-        return { model: m, endpointId: entry.endpointId };
-      } catch {
-        continue;
+    const endpoints = await listEndpoints();
+    // اول درگاه خود تیم، بعد بقیه درگاه‌ها (برای وقتی کل پرووایدر خوابیده)
+    const orderedEndpoints = [
+      ...(entry?.endpointId ? [entry.endpointId] : []),
+      ...endpoints.map((e) => e.id).filter((id) => id !== entry?.endpointId),
+    ];
+    for (const epId of orderedEndpoints) {
+      const ep = endpoints.find((e) => e.id === epId);
+      if (!ep?.apiKey) continue;
+      const health = await getModelsHealth(epId, [], {}).catch(() => ({}));
+      const healthyModels = Object.entries(health)
+        .filter(([m, h]) => (h as { ok: boolean }).ok && m !== failedModel)
+        .map(([m]) => m)
+        .slice(0, 3);
+      for (const m of healthyModels) {
+        try {
+          await postChatCompletions(ep.baseUrl, ep.apiKey, m, 'سلام', {
+            maxTokens: 8,
+            temperature: 0,
+            timeoutMs: 15000,
+          });
+          return { model: m, endpointId: epId };
+        } catch {
+          continue;
+        }
       }
     }
     return null;
@@ -351,11 +359,24 @@ export async function callLLM(
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     if (isRetryable(err)) {
-      // جست‌وجوی هوشمند: مدل‌های سالم درگاه را در لحظه تست کن و بهترین را انتخاب کن
+      // جست‌وجوی هوشمند: مدل‌های سالم همه درگاه‌ها را در لحظه تست کن
       const smartFallback = team ? await findWorkingModel(team, base, apiKey, model) : null;
       const fallback = smartFallback?.model ?? fallbackModel(model);
+      // اگر مدل از درگاه دیگری آمد، از کلید و آدرس همان درگاه استفاده کن
+      let fbBase = base;
+      let fbKey = apiKey;
+      if (smartFallback) {
+        try {
+          const { getEndpoint } = await import('./llm-endpoints');
+          const ep = await getEndpoint(smartFallback.endpointId);
+          if (ep?.baseUrl && ep?.apiKey) {
+            fbBase = ep.baseUrl;
+            fbKey = ep.apiKey;
+          }
+        } catch { /* نادیده */ }
+      }
       try {
-        const text = await postChatCompletions(base, apiKey, fallback, prompt, callOpts);
+        const text = await postChatCompletions(fbBase, fbKey, fallback, prompt, callOpts);
         stats.success += 1;
         stats.fallback += 1;
         // اگر مدل جدید کار کرد، برای این تیم ذخیره‌اش کن
