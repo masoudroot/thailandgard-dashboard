@@ -1,12 +1,17 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Brain, History, Search, SearchX, WifiOff, X } from 'lucide-react';
+import { Brain, History, SearchX, WifiOff } from 'lucide-react';
 import { TEAMS, type TeamName } from '@/lib/types';
 import EmptyState from '@/components/EmptyState';
 import PageHeader from '@/components/PageHeader';
 import { SkeletonLines, SkeletonPanel } from '@/components/Skeleton';
 import { faDigits } from "@/lib/format";
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { Select } from '@/components/ui/Select';
+import { Field } from '@/components/ui/Input';
+import { SearchInput } from '@/components/ui/search-input';
 
 /** نام‌های فارسی خوانا برای ۱۵ تیم */
 const TEAM_LABELS: Record<TeamName, string> = {
@@ -91,7 +96,7 @@ function faLabel(key: string): string {
 
 /** نمایش یک مقدار ساده */
 function PlainValue({ value }: { value: unknown }) {
-  if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>;
+  if (value === null || value === undefined) return <span className="text-muted-foreground">-</span>;
   if (typeof value === 'boolean')
     return (
       <span className={value ? 'font-medium text-success' : 'font-medium text-destructive'}>
@@ -290,49 +295,28 @@ export default function MemoryPage() {
         />
 
         <div className="mb-6 flex flex-col gap-3 sm:flex-row">
-          <label className="flex flex-1 flex-col gap-1.5">
-            <span className="text-sm font-medium text-muted-foreground">تیم</span>
-            <select
+          <Field label="تیم" className="flex-1">
+            <Select
               value={team}
               onChange={(e) => setTeam(e.target.value as TeamFilter)}
-              className="rounded-xl border border-input bg-card px-3 py-2.5 text-foreground outline-none focus:border-ring"
-            >
-              <option value="all">همهٔ تیم‌ها</option>
-              {TEAMS.map((t) => (
-                <option key={t} value={t}>
-                  {TEAM_LABELS[t]} ({t})
-                </option>
-              ))}
-            </select>
-          </label>
+              options={[
+                { value: 'all', label: 'همهٔ تیم‌ها' },
+                ...TEAMS.map((t) => ({
+                  value: t,
+                  label: `${TEAM_LABELS[t]} (${t})`,
+                })),
+              ]}
+            />
+          </Field>
 
-          <label className="flex flex-1 flex-col gap-1.5">
-            <span className="text-sm font-medium text-muted-foreground">جست‌وجو در متن</span>
-            <span className="relative block">
-              <Search
-                size={16}
-                strokeWidth={2}
-                aria-hidden="true"
-                className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-              />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="کلید یا محتوای مقدار…"
-                className={`w-full rounded-xl border border-input bg-card py-2.5 ps-9 text-start text-foreground outline-none placeholder:text-muted-foreground focus:border-ring ${query ? 'pe-12' : 'pe-3'}`}
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery('')}
-                  aria-label="پاک کردن جست‌وجو"
-                  className="absolute end-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  <X size={16} strokeWidth={2} aria-hidden="true" />
-                </button>
-              )}
-            </span>
-          </label>
+          <Field label="جست‌وجو در متن" className="flex-1">
+            <SearchInput
+              value={query}
+              onChange={setQuery}
+              placeholder="کلید یا محتوای مقدار…"
+              aria-label="جست‌وجو در متن حافظه"
+            />
+          </Field>
         </div>
 
         {state === 'loading' && (
@@ -349,13 +333,9 @@ export default function MemoryPage() {
             title="به پایگاه داده متصل نیست"
             description="حافظه بارگذاری نشد. اتصال را بررسی کنید و دوباره تلاش کنید. هیچ دادهٔ نمایشی نشان داده نمی‌شود."
             action={
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-control transition-colors hover:opacity-90"
-              >
+              <Button variant="default" onClick={() => window.location.reload()}>
                 تلاش دوباره
-              </button>
+              </Button>
             }
           />
         )}
@@ -368,13 +348,9 @@ export default function MemoryPage() {
                 title="چیزی با این عبارت پیدا نشد"
                 description="در کلیدها و متن مقدارها جست‌وجو شد. عبارت دیگری را امتحان کنید یا جست‌وجو را پاک کنید."
                 action={
-                  <button
-                    type="button"
-                    onClick={() => setQuery('')}
-                    className="inline-flex min-h-11 items-center justify-center rounded-xl border border-border bg-card px-5 py-2 text-sm font-medium text-card-foreground shadow-control transition-colors hover:bg-accent"
-                  >
+                  <Button variant="outline" onClick={() => setQuery('')}>
                     پاک کردن جست‌وجو
-                  </button>
+                  </Button>
                 }
               />
             ) : (
@@ -387,10 +363,10 @@ export default function MemoryPage() {
             )
           ) : (
             <>
-              <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
+              <Badge variant="secondary" className="mb-3">
                 {faDigits(filtered.length)} رکورد
                 {team !== 'all' && ` در حافظه ${TEAM_LABELS[team as TeamName]}`}
-              </p>
+              </Badge>
               <ul className="space-y-4">
                 {filtered.map((row) => (
                   <MemoryCard key={`${row.team}:${row.key}`} row={row} />
