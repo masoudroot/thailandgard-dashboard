@@ -1,0 +1,105 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { validatePatch, type PatchFile } from "./gate.ts";
+
+function file(path: string, content = "export const value = 1;\n"): PatchFile {
+  return { path, content };
+}
+
+/** محتوای نحویِ سالم با حجم تقریبی دلخواه (کیلوبایت) */
+function bigContent(kilobytes: number): string {
+  return "/*" + "x".repeat(kilobytes * 1024) + "*/\n";
+}
+
+test("پچ سالم با پسوندهای مجاز قبول می‌شود", () => {
+  const result = validatePatch([
+    file("lib/a.ts"),
+    file("site/b.tsx", "export function App() {\n  return <div>سلام</div>;\n}\n"),
+    file("styles/c.css", ".box {\n  color: red;\n}\n"),
+    file("docs/d.md", "# راهنما\n\nمتن\n"),
+    file("data/e.json", '{"a": 1}\n'),
+  ]);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.errors, []);
+});
+
+test("پچ خالی سالم است", () => {
+  const result = validatePatch([]);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.errors, []);
+});
+
+test("مسیر دارای «..» رد می‌شود", () => {
+  const result = validatePatch([file("../escape.ts")]);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("«..»")), JSON.stringify(result.errors));
+});
+
+test("مسیر «..» پنهان‌شده با بک‌اسلش هم رد می‌شود", () => {
+  const result = validatePatch([file("..\\escape.ts")]);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("«..»")), JSON.stringify(result.errors));
+});
+
+test("مسیر مطلق رد می‌شود", () => {
+  const result = validatePatch([file("/etc/app.ts")]);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("مطلق")), JSON.stringify(result.errors));
+});
+
+test("مسیر شروع‌شونده با «.git» رد می‌شود", () => {
+  const result = validatePatch([file(".git/hooks/commit.ts")]);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes(".git")), JSON.stringify(result.errors));
+});
+
+test("فایل «.env» رد می‌شود", () => {
+  const result = validatePatch([file(".env"), file("config/.env.local")]);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.every((e) => e.includes(".env")), JSON.stringify(result.errors));
+});
+
+test("فایل بزرگ‌تر از ۱۰۰ کیلوبایت رد می‌شود", () => {
+  const result = validatePatch([file("lib/big.ts", bigContent(101))]);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("بیشتر است")), JSON.stringify(result.errors));
+});
+
+test("مجموع بیشتر از ۵۰۰ کیلوبایت رد می‌شود", () => {
+  const files = Array.from({ length: 6 }, (_, i) => file(`lib/chunk${i}.ts`, bigContent(90)));
+  const result = validatePatch(files);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("مجموع")), JSON.stringify(result.errors));
+});
+
+test("بیش از ۱۰ فایل رد می‌شود", () => {
+  const files = Array.from({ length: 11 }, (_, i) => file(`lib/f${i}.ts`));
+  const result = validatePatch(files);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("حداکثر")), JSON.stringify(result.errors));
+});
+
+test("پسوندهای غیرمجاز و فایل بدون پسوند رد می‌شوند", () => {
+  const result = validatePatch([file("run.sh"), file("app.js"), file("config.yml"), file("README")]);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors.length, 4);
+  assert.ok(result.errors.every((e) => e.includes("مجاز")), JSON.stringify(result.errors));
+});
+
+test("نحوی خراب در ts رد می‌شود", () => {
+  const result = validatePatch([file("lib/bad.ts", "const broken = ;\n")]);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("نحوی")), JSON.stringify(result.errors));
+});
+
+test("نحوی خراب در tsx رد می‌شود", () => {
+  const result = validatePatch([file("site/bad.tsx", "export const el = <div>;\n")]);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("نحوی")), JSON.stringify(result.errors));
+});
+
+test("خطاهای چند فایل یک‌جا جمع می‌شوند", () => {
+  const result = validatePatch([file("../a.ts"), file("run.sh"), file("lib/ok.ts")]);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors.length, 2);
+});

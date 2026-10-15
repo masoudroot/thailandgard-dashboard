@@ -121,9 +121,30 @@ export interface TeamResult {
   /**
    * پچ واقعی تولیدشده توسط تیم (اختیاری).
    * هر آیتم: مسیر نسبی فایل + محتوای کامل جدید فایل.
-   * تیم dev این را پر می‌کند؛ لایهٔ اعمال (applyPatchViaGithub) جداگانه آن را کامیت می‌کند.
+   * تیم‌های کدنویس (design، dev و...) این را پر می‌کنند؛
+   * لایهٔ اعمال (applyPatchViaGithub در lib/github.ts) جداگانه آن را کامیت می‌کند.
    */
-  patch?: Array<{ path: string; content: string }>;
+  patches?: PatchFile[];
+  /**
+   * پچ پیشنهادی تیم برای پل «تیم → سایت» (اختیاری).
+   * شکل PatchFile در همین فایل تعریف شده — همان {path, content} در
+   * lib/github.ts است، ولی از آنجا ایمپورت نمی‌شود چون github.ts از
+   * همین types ایمپورت می‌کند (چرخه‌ای می‌شد).
+   * ارکستر آن را در جدول bridge_patches با وضعیت proposed ثبت می‌کند؛
+   * اعمال واقعی (کامیت روی شاخه) کار لایهٔ جداگانه است.
+   */
+  patch?: PatchFile[];
+}
+
+/**
+ * یک فایل در پچ: مسیر نسبی + محتوای کامل جدید.
+ * (همان شکل PatchFile در lib/github.ts؛ این‌جا تعریف شده تا تیم‌ها بدون وابستگی به لایهٔ گیت‌هاب استفاده کنند.)
+ */
+export interface PatchFile {
+  /** مسیر نسبی فایل در ریپو، مثل site/components/Header.tsx */
+  path: string;
+  /** محتوای کامل جدید فایل. */
+  content: string;
 }
 
 export interface MemoryEntry {

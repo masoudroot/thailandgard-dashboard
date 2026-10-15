@@ -26,6 +26,7 @@ import {
   WAVES,
   type CycleStatus,
   type MemoryEntry,
+  type PatchFile,
   type ProgressReporter,
   type SubagentControl,
   type TeamName,
@@ -386,6 +387,63 @@ export interface RunWavesOptions {
   prefill?: Map<string, { wave: number; result: TeamResult | null }>;
 }
 
+/**
+ * ثبت پچ پیشنهادی تیم در جدول bridge_patches با وضعیت proposed.
+ * طرح جدول (ساختهٔ مهندس دیتابیس، supabase/migrations/20261015200000_bridge_patches.sql):
+ * یک ردیف برای هر تیم در هر چرخه؛ files آرایهٔ JSON از {path, content} است.
+ * اگر جدول هنوز اعمال نشده (خطای 42P01)، فقط در لاگ ثبت می‌شود؛
+ * این قدم هرگز نتیجهٔ تیم را خراب نمی‌کند.
+ */
+async function registerProposedPatches(
+  sb: ReturnType<typeof getSupabase>,
+  opts: {
+    team: TeamName;
+    cycleId: string;
+    runId: string;
+    summary: string;
+    patches: PatchFile[] | undefined;
+  },
+): Promise<void> {
+  const files = (opts.patches ?? [])
+    .filter(
+      (p) =>
+        p &&
+        typeof p.path === 'string' &&
+        p.path.trim().length > 0 &&
+        typeof p.content === 'string',
+    )
+    .map((p) => ({
+      path: p.path.trim().replace(/^\/+/, ''),
+      content: p.content,
+    }));
+  if (files.length === 0) return;
+  const { error } = await sb.from('bridge_patches').insert({
+    team: opts.team,
+    cycle_id: opts.cycleId,
+    summary: opts.summary.slice(0, 2000),
+    files,
+    status: 'proposed',
+  });
+  if (error) {
+    if (error.code === '42P01') {
+      console.error(
+        `[orchestrator][DB-ENGINEER] جدول bridge_patches هنوز اعمال نشده؛ ` +
+          `${files.length} فایل پیشنهادی تیم ${opts.team} در چرخه ${opts.runId} ثبت نشد. ` +
+          `مهندس دیتابیس: مایگریشن supabase/migrations/20261015200000_bridge_patches.sql را اعمال کن.`,
+      );
+    } else {
+      console.error(
+        `[orchestrator] ثبت bridge_patches برای تیم ${opts.team} خطا داد:`,
+        error.message,
+      );
+    }
+    return;
+  }
+  console.log(
+    `[orchestrator] پچ پیشنهادی تیم ${opts.team} (${files.length} فایل) در bridge_patches با وضعیت proposed ثبت شد.`,
+  );
+}
+
 /** اجرای یک تیم و ثبت نتیجه در team_runs. خطا => team_run=failed، ولی موج ادامه می‌یابد. */
 export async function runSingleTeam(
   cycleId: string,
@@ -624,6 +682,22 @@ export async function runSingleTeam(
       error: teamStatus === 'rejected' ? (result.summary?.slice(0, 4000) ?? null) : null,
       llm_calls: llmCalls,
     });
+    // پچ پیشنهادی تیم → جدول bridge_patches (وضعیت proposed)؛
+    // best-effort: هرگز نتیجهٔ تیم را خراب نمی‌کند.
+    try {
+      await registerProposedPatches(sb, {
+        team,
+        cycleId,
+        runId: ctx.runId,
+        summary: result.summary ?? '',
+        patches: result.patch,
+      });
+    } catch (err) {
+      console.error(
+        `[orchestrator] خطای غیرمنتظره در ثبت bridge_patches تیم ${team}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
     // گزارش دوگانه: ثبت در پنل + ارسال به تلگرام (best-effort، مسدودکننده نیست).
     await notifyTeamReport({
       team,

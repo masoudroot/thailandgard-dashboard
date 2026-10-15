@@ -39,12 +39,8 @@ export interface GithubCommit {
   date: string;
 }
 
-export interface PatchFile {
-  /** مسیر نسبی فایل در ریپو، مثل app/dashboard/page.tsx */
-  path: string;
-  /** محتوای کامل جدید فایل. */
-  content: string;
-}
+import type { PatchFile } from './types';
+export type { PatchFile } from './types';
 
 const NOT_CONNECTED_MESSAGE =
   'گیت‌هاب متصل نیست. برای اتصال خودکار، توکن شخصی گیت‌هاب را در صفحهٔ تنظیمات وارد کنید؛ تا آن‌موقع فیکس به‌صورت قابل کپی داده می‌شود.';
