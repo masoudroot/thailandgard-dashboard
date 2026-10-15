@@ -19,6 +19,7 @@ import {
   Activity,
   type LucideIcon,
 } from "lucide-react";
+import { Button } from "./ui/Button";
 
 export type NavItem = {
   href: string;
@@ -103,14 +104,14 @@ export function LogoutButton({ onNavigate }: { onNavigate?: () => void }) {
   }
 
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
       onClick={handleLogout}
-      className="flex min-h-11 w-full items-center gap-3 rounded-lg px-4 py-2.5 text-base leading-6 text-destructive transition-colors duration-200 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
+      className="min-h-11 w-full justify-start gap-3 rounded-lg px-4 py-2.5 text-base leading-6 text-destructive hover:bg-destructive/10 hover:text-destructive"
     >
       <LogOut className="h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
       <span>خروج</span>
-    </button>
+    </Button>
   );
 }
 

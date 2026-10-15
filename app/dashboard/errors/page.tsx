@@ -12,7 +12,7 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import PageHeader from '../../../components/PageHeader';
-import EmptyState from '../../../components/EmptyState';
+import { EmptyState } from '../../../components/ui/empty-state';
 import StatusBadge from '../../../components/dataviz/StatusBadge';
 import { Button } from '../../../components/ui/Button';
 import { Select } from '../../../components/ui/Select';
@@ -209,7 +209,6 @@ export default function ErrorsPage() {
                   icon={CheckCircle2}
                   title="خطایی ثبت نشده"
                   description="در حال حاضر هیچ تیمی ران ناموفق یا گیرکرده ندارد. این لیست فقط از دادهٔ واقعی team_runs ساخته می‌شود."
-                  tint="bg-success/10 text-success"
                 />
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">

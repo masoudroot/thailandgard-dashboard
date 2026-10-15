@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Brain, History, SearchX, WifiOff } from 'lucide-react';
 import { TEAMS, type TeamName } from '@/lib/types';
-import EmptyState from '@/components/EmptyState';
+import { EmptyState } from '@/components/ui/empty-state';
 import PageHeader from '@/components/PageHeader';
 import { SkeletonLines, SkeletonPanel } from '@/components/Skeleton';
 import { faDigits } from "@/lib/format";
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Select } from '@/components/ui/Select';
 import { Field } from '@/components/ui/Input';
 import { SearchInput } from '@/components/ui/search-input';
+import { Collapsible } from '@/components/ui/collapsible';
 
 /** نام‌های فارسی خوانا برای ۱۵ تیم */
 const TEAM_LABELS: Record<TeamName, string> = {
@@ -171,44 +172,39 @@ function MemoryCard({ row }: { row: MemoryRow }) {
 
   return (
     <li className="overflow-hidden rounded-xl border border-border bg-card shadow-surface">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-start"
+      <Collapsible
+        open={open}
+        onOpenChange={setOpen}
+        className="px-4 py-3"
+        trigger={
+          <span className="flex w-full items-center justify-between gap-3 text-start">
+            <span className="min-w-0">
+              <span className="block truncate font-mono text-sm font-semibold text-foreground" dir="ltr">
+                {row.key}
+              </span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                {TEAM_LABELS[row.team]} · {jalaliFormatter.format(new Date(row.updated_at))}
+              </span>
+            </span>
+          </span>
+        }
       >
-        <span className="min-w-0">
-          <span className="block truncate font-mono text-sm font-semibold text-foreground" dir="ltr">
-            {row.key}
-          </span>
-          <span className="mt-0.5 block text-xs text-muted-foreground">
-            {TEAM_LABELS[row.team]} · {jalaliFormatter.format(new Date(row.updated_at))}
-          </span>
-        </span>
-        <span className={`shrink-0 text-xs text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true">
-          ▾
-        </span>
-      </button>
-
-      {open && (
         <div className="border-t border-border bg-muted/40 px-4 py-3">
           <MemoryValue value={row.value} />
           <div className="border-t border-border px-4 py-3">
-            <button
-              type="button"
-              onClick={() => {
-                const next = !historyOpen;
+            <Collapsible
+              open={historyOpen}
+              onOpenChange={(next) => {
                 setHistoryOpen(next);
                 if (next) void loadHistory();
               }}
-              aria-expanded={historyOpen}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-brand hover:underline"
+              trigger={
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-brand">
+                  <History size={14} strokeWidth={2} aria-hidden="true" />
+                  {historyOpen ? 'بستن تاریخچه' : 'مشاهدهٔ تاریخچهٔ این رکورد'}
+                </span>
+              }
             >
-              <History size={14} strokeWidth={2} aria-hidden="true" />
-              {historyOpen ? 'بستن تاریخچه' : 'مشاهدهٔ تاریخچهٔ این رکورد'}
-            </button>
-
-            {historyOpen && (
               <div className="mt-3 space-y-2">
                 {historyLoading && (<div aria-busy="true"><SkeletonLines lines={2} /><span className="sr-only">در حال بارگذاری…</span></div>)}
                 {!historyLoading && history !== null && history.length === 0 && (
@@ -227,10 +223,10 @@ function MemoryCard({ row }: { row: MemoryRow }) {
                     </div>
                   ))}
               </div>
-            )}
+            </Collapsible>
           </div>
         </div>
-      )}
+      </Collapsible>
     </li>
   );
 }
@@ -358,7 +354,6 @@ export default function MemoryPage() {
                 icon={Brain}
                 title="رکوردی ثبت نشده است"
                 description="بعد از اولین اجرای تیم‌ها در چرخه، حافظهٔ بلندمدت همین‌جا نمایش داده می‌شود."
-                tint="bg-brand/10 text-brand"
               />
             )
           ) : (

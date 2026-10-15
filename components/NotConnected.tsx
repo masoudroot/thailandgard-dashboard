@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { PlugZap } from 'lucide-react';
-import EmptyState from './EmptyState';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/Button';
 
 interface NotConnectedProps {
@@ -18,13 +18,13 @@ interface NotConnectedProps {
  * در پروداکشن فقط پیام تمیز + اقدام.
  */
 export default function NotConnected({ onRetry, retrying = false }: NotConnectedProps) {
+  const router = useRouter();
   return (
     <div dir="rtl">
       <EmptyState
         icon={PlugZap}
         title="به پایگاه داده متصل نیست"
         description="داشبورد به پایگاه داده وصل نشده است و داده‌ای نمایش داده نمی‌شود."
-        tint="bg-warning/10 text-warning"
         action={
           <>
             {onRetry ? (
@@ -35,12 +35,9 @@ export default function NotConnected({ onRetry, retrying = false }: NotConnected
                 {retrying ? 'در حال تلاش…' : 'تلاش دوباره'}
               </Button>
             ) : undefined}
-            <Link
-              href="/dashboard/settings"
-              className="inline-flex min-h-11 items-center justify-center rounded-xl border border-border bg-card px-6 py-2 text-sm font-medium text-foreground hover:bg-muted"
-            >
+            <Button variant="outline" onClick={() => router.push('/dashboard/settings')}>
               رفتن به تنظیمات
-            </Link>
+            </Button>
           </>
         }
       />

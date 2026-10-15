@@ -4,7 +4,7 @@ import { TEAM_META } from "@/lib/team-meta";
 import { isValidTeam } from "@/lib/knowledge";
 import { scoreTeamKnowledge } from "@/lib/knowledge-score";
 import PageHeader from "@/components/PageHeader";
-import EmptyState from "@/components/EmptyState";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui";
 import TeamKnowledgePage from "@/components/knowledge/TeamKnowledgePage";
 

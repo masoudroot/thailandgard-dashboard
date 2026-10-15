@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronLeft, FileText, FolderOpen } from 'lucide-react';
 import { faNum } from '../TeamCard';
-import EmptyState from '../EmptyState';
+import { EmptyState } from '../ui/empty-state';
 
 /** آیتم دانش؛ همان شکل `GET /api/knowledge/[team]` */
 export interface KnowledgeTreeItem {
@@ -130,6 +130,7 @@ export default function CategoryTree({
 
     return (
       <div key={category.id}>
+        {/* گره درخت دسته‌بندی؛ رجیستری کامپوننت درخت ندارد. فقط با توکن‌های تم. */}
         <button
           type="button"
           onClick={() => handleCategoryClick(category.id)}
@@ -168,6 +169,7 @@ export default function CategoryTree({
               <ul className={INDENT_CLASS[Math.min(depth + 1, 3)] ?? ''}>
                 {category.items.map((item) => (
                   <li key={item.id}>
+                    {/* آیتم درخت؛ مثل گره بالا معادل رجیستری ندارد. */}
                     <button
                       type="button"
                       onClick={() => onSelectItem?.(item.id)}

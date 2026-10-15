@@ -12,13 +12,13 @@ import {
   Palette,
   Send,
   TriangleAlert,
-  Unplug,
   Wrench,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
-import EmptyState from "@/components/EmptyState";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Accordion } from "@/components/ui/accordion";
 
 type RegistryBadgeVariant =
   | "default"
@@ -254,7 +254,6 @@ export default function DebugPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ session: Session; diagnosis: Diagnosis; context: ContextSummary } | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [github, setGithub] = useState<GithubInfo | null>(null);
   const [appliedMsg, setAppliedMsg] = useState<string | null>(null);
 
@@ -329,35 +328,6 @@ export default function DebugPage() {
         title="دستیار فنی"
         subtitle="باگ را توصیف کنید؛ با زمینهٔ واقعی (خطاهای team_runs و کامیت‌های گیت‌هاب) تحلیل می‌شود. هیچ دادهٔ نمایشی در کار نیست."
       />
-
-      {/* وضعیت اتصال‌ها */}
-      <div
-        className={`flex items-start gap-2.5 rounded-xl border p-3 text-sm leading-6 ${
-          github?.connected
-            ? "border-success/30 bg-success/5 text-foreground"
-            : "border-warning/30 bg-warning/5 text-foreground"
-        }`}
-      >
-        {github?.connected ? (
-          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success" aria-hidden="true" />
-        ) : (
-          <Unplug className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
-        )}
-        <div>
-          <p className="font-semibold">
-            {github ? github.message : "در حال بررسی اتصال گیت‌هاب…"}
-          </p>
-          {!github?.connected && github && (
-            <p className="mt-1 text-muted-foreground">
-              برای اتصال، در صفحه‌ی{" "}
-              <a href="/dashboard/settings" className="font-medium text-brand underline underline-offset-4">
-                تنظیمات
-              </a>{" "}
-              توکن شخصی گیت‌هاب را وارد کنید.
-            </p>
-          )}
-        </div>
-      </div>
 
       {/* فرم چت */}
       <Card className="p-4 sm:p-6">
@@ -536,51 +506,46 @@ export default function DebugPage() {
             description="هنوز باگی برای تحلیل ثبت نشده است؛ اولین شرح را بالا بنویسید."
           />
         ) : (
-          <ul className="space-y-2">
-            {sessions.map((s) => {
-              const open = expanded === s.id;
+          <Accordion
+            items={sessions.map((s) => {
               const d = s.diagnosis as (Partial<Diagnosis> & Record<string, unknown>) | undefined;
-              return (
-                <li key={s.id} className="rounded-xl border border-border bg-card">
-                  <button
-                    type="button"
-                    onClick={() => setExpanded(open ? null : s.id)}
-                    className="flex w-full items-center justify-between gap-3 p-3 text-start"
-                    aria-expanded={open}
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium leading-6">{s.bug_desc}</p>
-                      <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{faDate(s.created_at)}</p>
-                    </div>
+              return {
+                id: String(s.id),
+                title: (
+                  <span className="flex w-full items-center justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium leading-6">{s.bug_desc}</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{faDate(s.created_at)}</span>
+                    </span>
                     <Badge variant="secondary" className="shrink-0">
                       {STATUS_LABEL[s.status] ?? s.status}
                     </Badge>
-                  </button>
-                  {open && d && (
-                    <div className="space-y-2 border-t border-border p-3 text-sm leading-7">
-                      {d.root_cause && (
-                        <p>
-                          <strong>علت:</strong> {String(d.root_cause).slice(0, 300)}
-                          {String(d.root_cause).length > 300 ? "..." : ""}
-                        </p>
-                      )}
-                      {d.fix_summary && (
-                        <p>
-                          <strong>راه‌حل:</strong> {String(d.fix_summary).slice(0, 300)}
-                          {String(d.fix_summary).length > 300 ? "..." : ""}
-                        </p>
-                      )}
-                      {Array.isArray(d.needs_info) && d.needs_info.length > 0 && (
-                        <p className="text-warning">
-                          <strong>اطلاعات لازم:</strong> {(d.needs_info as string[]).join("؛ ")}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </li>
-              );
+                  </span>
+                ),
+                content: d ? (
+                  <div className="space-y-2 text-sm leading-7">
+                    {d.root_cause && (
+                      <p>
+                        <strong>علت:</strong> {String(d.root_cause).slice(0, 300)}
+                        {String(d.root_cause).length > 300 ? "..." : ""}
+                      </p>
+                    )}
+                    {d.fix_summary && (
+                      <p>
+                        <strong>راه‌حل:</strong> {String(d.fix_summary).slice(0, 300)}
+                        {String(d.fix_summary).length > 300 ? "..." : ""}
+                      </p>
+                    )}
+                    {Array.isArray(d.needs_info) && d.needs_info.length > 0 && (
+                      <p className="text-warning">
+                        <strong>اطلاعات لازم:</strong> {(d.needs_info as string[]).join("؛ ")}
+                      </p>
+                    )}
+                  </div>
+                ) : null,
+              };
             })}
-          </ul>
+          />
         )}
       </section>
     </div>

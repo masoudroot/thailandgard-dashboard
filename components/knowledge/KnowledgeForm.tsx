@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
-import { Modal, Button, Input, Select, Field, cx } from "../ui";
+import { Modal, Button, Input, Select, Field, Textarea, cx } from "../ui";
 
 export type KnowledgeCategoryOption = {
   id: string;
@@ -226,7 +226,7 @@ export function KnowledgeForm({
             >
               متن دانش
             </label>
-            <textarea
+            <Textarea
               id="knowledge-content"
               rows={8}
               value={content}
@@ -235,13 +235,8 @@ export function KnowledgeForm({
               aria-describedby={contentError ? "knowledge-content-error" : undefined}
               placeholder="متن کامل دانش را این‌جا بنویسید. هر چه دقیق‌تر و ساخت‌یافته‌تر، پاسخ‌های بهتری می‌گیرید."
               className={cx(
-                "min-h-40 w-full rounded-md border bg-background px-3 py-2.5 text-base leading-7 text-foreground transition-soft sm:text-sm",
-                "placeholder:text-muted-foreground",
-                "focus:outline-none focus:ring-2",
-                "disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60",
-                contentError
-                  ? "border-destructive focus:border-destructive focus:ring-destructive/30"
-                  : "border-input focus:border-ring focus:ring-ring/30",
+                "min-h-40 text-base leading-7 sm:text-sm",
+                contentError && "border-destructive focus:border-destructive focus:ring-destructive/30",
               )}
             />
             {contentError && (

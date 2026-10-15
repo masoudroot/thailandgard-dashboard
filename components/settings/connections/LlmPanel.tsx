@@ -8,6 +8,7 @@ import { Input, Field } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
 import { AlertDialog } from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { TEAMS } from "@/lib/types";
 import { TEAM_META } from "@/lib/team-meta";
 import { faDigits } from "@/lib/format";
@@ -61,10 +62,6 @@ function SaveNote({ state }: { state: SaveState }) {
     </p>
   );
 }
-
-/** استایل textarea (در رجیستری هنوز Textarea نیست؛ هم‌خانوادهٔ Input) */
-const textareaClass =
-  "min-h-11 w-full rounded-field border border-input bg-field px-3 py-2.5 text-sm text-foreground shadow-field placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60";
 
 /**
  * کارت «مدل‌های هوش مصنوعی»: درگاه‌های OpenAI + مدل پیش‌فرض سامانه +
@@ -900,12 +897,11 @@ export function LlmPanel() {
               </Field>
             </div>
             <Field label="پرامپت آزمایشی" htmlFor="llm-pt-prompt" className="mt-3">
-              <textarea
+              <Textarea
                 id="llm-pt-prompt"
                 rows={2}
                 value={ptPrompt}
                 onChange={(e) => setPtPrompt(e.target.value)}
-                className={textareaClass}
               />
             </Field>
             <Button

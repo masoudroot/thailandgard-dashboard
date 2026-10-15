@@ -13,7 +13,7 @@ import {
   SearchX,
 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
-import EmptyState from '@/components/EmptyState';
+import { EmptyState } from '@/components/ui/empty-state';
 import { SkeletonPanel } from '@/components/Skeleton';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Button } from '@/components/ui/Button';

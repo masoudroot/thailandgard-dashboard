@@ -16,7 +16,7 @@ import type { TeamName } from "@/lib/types";
 import { formatJalali } from "@/lib/jalali";
 import { faNum } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
-import EmptyState from "@/components/EmptyState";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonLines } from "@/components/Skeleton";
 import { Badge, Button, Card, CardContent, Modal } from "@/components/ui";
 import KnowledgeSearch from "./KnowledgeSearch";

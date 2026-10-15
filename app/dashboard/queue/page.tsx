@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { TEAMS } from '@/lib/types';
-import EmptyState from '@/components/ui/empty-state';
+import { EmptyState } from '@/components/ui/empty-state';
 import NotConnected from '@/components/NotConnected';
 import PageHeader from '@/components/PageHeader';
 import { SkeletonPanel } from '@/components/Skeleton';

@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import type { Cycle, TeamName, TeamRun } from '@/lib/types';
 import { normalizeCycleStatus } from '@/lib/types';
-import EmptyState from '@/components/EmptyState';
+import { EmptyState } from '@/components/ui/empty-state';
 import NotConnected from '@/components/NotConnected';
 import StatusBadge from '@/components/dataviz/StatusBadge';
 import ProgressBar from '@/components/dataviz/ProgressBar';
@@ -225,16 +225,16 @@ export default function CycleDetailPage() {
               {/* دکمه‌های کنترل واقعی چرخه */}
               {isActive && (
                 <div className="mt-5 flex flex-wrap items-center gap-2.5 border-t border-border pt-5">
-                  {/* توقفِ هشداررنگ می‌ماند: رجیستری Button واریانت warning ندارد؛ فقط با توکن‌های تم. */}
-                  <button
+                  <Button
+                    variant="outline"
                     onClick={() => sendAction('pause')}
                     disabled={!isRunning || acting !== null}
                     title={pauseHint}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-warning/40 bg-warning/10 px-5 py-2 text-sm font-semibold text-warning transition-soft hover:bg-warning/20 disabled:pointer-events-none disabled:opacity-40"
+                    className="border-warning/40 bg-warning/10 text-warning hover:bg-warning/20 hover:text-warning"
                   >
                     <Pause size={16} strokeWidth={2} aria-hidden="true" />
                     {acting === 'pause' ? 'در حال توقف…' : 'توقف چرخه'}
-                  </button>
+                  </Button>
                   <Button
                     variant="default"
                     onClick={() => sendAction('resume')}
@@ -265,16 +265,16 @@ export default function CycleDetailPage() {
                       </Button>
                     </>
                   ) : (
-                    /* لغوِ کم‌رنگِ مرحلهٔ اول هم می‌ماند تا تشدید مرحلهٔ دوم معنا داشته باشد. */
-                    <button
+                    <Button
+                      variant="outline"
                       onClick={() => setConfirmCancel(true)}
                       disabled={!isActive || acting !== null}
                       title="لغو چرخه؛ دیگر ادامه نمی‌یابد"
-                      className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-destructive/40 bg-destructive/10 px-5 py-2 text-sm font-semibold text-destructive transition-soft hover:bg-destructive/20 disabled:pointer-events-none disabled:opacity-40"
+                      className="border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
                     >
                       <XCircle size={16} strokeWidth={2} aria-hidden="true" />
                       لغو چرخه
-                    </button>
+                    </Button>
                   )}
                 </div>
               )}

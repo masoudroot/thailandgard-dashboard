@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Inbox, KeyRound, Repeat2 } from 'lucide-react';
 import type { Cycle } from '@/lib/types';
 import { normalizeCycleStatus } from '@/lib/types';
-import EmptyState from '@/components/EmptyState';
+import { EmptyState } from '@/components/ui/empty-state';
 import NotConnected from '@/components/NotConnected';
 import PageHeader from '@/components/PageHeader';
 import LoadMore, { useVisibleCount } from '@/components/LoadMore';
@@ -228,7 +228,6 @@ export default function CyclesPage() {
             icon={Inbox}
             title="هنوز چرخه‌ای ثبت نشده است"
             description="اولین چرخه را بسازید تا پانزده تیم هوش مصنوعی در شش موج وارد صف اجرا شوند."
-            tint="bg-brand/10 text-brand"
             action={
               <Button
                 variant="default"

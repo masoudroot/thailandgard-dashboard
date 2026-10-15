@@ -4,12 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Activity, Pause, Play, Square, WifiOff, MoonStar } from 'lucide-react';
 import PageHeader from '../../../components/PageHeader';
-import EmptyState from '../../../components/EmptyState';
+import { EmptyState } from '../../../components/ui/empty-state';
 import StatusBadge from '../../../components/dataviz/StatusBadge';
 import { SkeletonTeamCard } from '../../../components/Skeleton';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Card } from '../../../components/ui/Card';
+import { Collapsible } from '../../../components/ui/collapsible';
 import { TEAMS, type Cycle, type Subagent, type TeamName, type TeamRun } from '../../../lib/types';
 import { faNum } from '../../../lib/format';
 import { TEAM_META, WAVE_TITLES } from '../../../lib/team-meta';
@@ -214,23 +215,17 @@ function LiveTeamCard({
       </div>
 
       <div className="mt-4 border-t border-border pt-3">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          className="flex w-full items-center justify-between py-1 text-sm font-medium text-card-foreground"
+        <Collapsible
+          open={open}
+          onOpenChange={setOpen}
+          trigger={
+            <span>
+              ساب‌ایجنت‌ها{' '}
+              <span className="text-xs font-normal text-muted-foreground">({faNum(subagents.length)})</span>
+            </span>
+          }
         >
-          <span>
-            ساب‌ایجنت‌ها{' '}
-            <span className="text-xs font-normal text-muted-foreground">({faNum(subagents.length)})</span>
-          </span>
-          <span className={`text-xs text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true">
-            ▾
-          </span>
-        </button>
-
-        {open && (
-          <div className="mt-2 space-y-2">
+          <div className="space-y-2">
             {!subagentsReady ? (
               <p className="text-xs leading-6 text-muted-foreground">
                 جدول ساب‌ایجنت‌ها هنوز در پایگاه داده ساخته نشده است؛ کنترل زنده بعد
@@ -300,7 +295,7 @@ function LiveTeamCard({
               کنترل از مرز مرحله‌ی بعدی اعمال می‌شود؛ روی مرحله‌ای که هم‌اکنون در حال اجراست اثر فوری ندارد.
             </p>
           </div>
-        )}
+        </Collapsible>
       </div>
     </article>
   );

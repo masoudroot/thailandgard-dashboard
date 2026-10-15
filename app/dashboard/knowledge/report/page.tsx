@@ -11,7 +11,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
-import EmptyState from '@/components/EmptyState';
+import { EmptyState } from '@/components/ui/empty-state';
 import { SkeletonPanel } from '@/components/Skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';

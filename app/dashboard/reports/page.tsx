@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FileText, FileX2 } from 'lucide-react';
 import type { Cycle, TeamName } from '@/lib/types';
-import EmptyState from '@/components/EmptyState';
+import { EmptyState } from '@/components/ui/empty-state';
 import NotConnected from '@/components/NotConnected';
 import PageHeader from '@/components/PageHeader';
 import { SkeletonPanel, SkeletonStat } from '@/components/Skeleton';
@@ -205,6 +205,8 @@ export default function ReportsPage() {
                 const active = r.id === selectedId;
                 return (
                   <li key={r.id} className="w-60 shrink-0 sm:w-64 lg:w-auto">
+                    {/* کارتِ قابل انتخاب؛ معادل رجیستری ندارد (Button برای کنش است نه کارتِ انتخاب).
+                        فقط با توکن‌های تم. */}
                     <button
                       type="button"
                       onClick={() => setSelectedId(r.id)}

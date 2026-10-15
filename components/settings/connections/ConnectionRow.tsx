@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Check, ChevronDown, X, type LucideIcon } from "lucide-react";
+import { Check, X, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { Collapsible } from "@/components/ui/collapsible";
 
 export type ConnState = "loading" | "ok" | "fail" | "unknown";
 
@@ -27,28 +28,25 @@ export function ConnectionRow({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="rounded-xl border border-border bg-card">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-start"
+    <div className="rounded-xl border border-border bg-card px-4 py-3">
+      <Collapsible
+        open={open}
+        onOpenChange={setOpen}
+        trigger={
+          <span className="flex w-full items-center gap-3 text-start">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <Icon size={18} strokeWidth={1.75} aria-hidden="true" className="text-brand" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold text-foreground">{title}</span>
+              <span className="block truncate text-xs text-muted-foreground">{hint}</span>
+            </span>
+            <StatusBadge state={state} text={statusText} />
+          </span>
+        }
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <Icon size={18} strokeWidth={1.75} aria-hidden="true" className="text-brand" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold text-foreground">{title}</span>
-          <span className="block truncate text-xs text-muted-foreground">{hint}</span>
-        </span>
-        <StatusBadge state={state} text={statusText} />
-        <ChevronDown
-          size={18}
-          aria-hidden="true"
-          className={`shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-      {open && <div className="border-t border-border px-4 py-4">{children}</div>}
+        <div className="border-t border-border px-4 py-4">{children}</div>
+      </Collapsible>
     </div>
   );
 }

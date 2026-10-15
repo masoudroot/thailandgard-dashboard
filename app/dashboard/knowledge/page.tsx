@@ -12,7 +12,7 @@ import {
   Star,
 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
-import EmptyState from '@/components/EmptyState';
+import { EmptyState } from '@/components/ui/empty-state';
 import NotConnected from '@/components/NotConnected';
 import { Skeleton } from '@/components/Skeleton';
 import { faNum } from '@/lib/format';

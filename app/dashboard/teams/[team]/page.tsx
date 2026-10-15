@@ -5,11 +5,12 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowRight, FileText, LayoutGrid, ScrollText, Send, WifiOff } from 'lucide-react';
 import PageHeader from '../../../../components/PageHeader';
-import EmptyState from '../../../../components/EmptyState';
+import { EmptyState } from '../../../../components/ui/empty-state';
 import StatusBadge from '../../../../components/dataviz/StatusBadge';
 import { SkeletonPanel } from '../../../../components/Skeleton';
 import { Button } from '../../../../components/ui/Button';
 import { Card } from '../../../../components/ui/Card';
+import { SegmentedControl } from '../../../../components/ui/segmented-control';
 import { TEAMS, type TeamName, type TeamRun } from '../../../../lib/types';
 import { TEAM_META, WAVE_TITLES } from '../../../../lib/team-meta';
 
@@ -192,32 +193,26 @@ export default function TeamDetailPage() {
         />
 
         {/* تب‌ها */}
-        <div className="mb-6 flex gap-1 rounded-xl border border-border bg-card p-1" role="tablist" aria-label="بخش‌های صفحهٔ تیم">
-          {(
-            [
-              { id: 'overview', label: 'نمای کلی' },
-              { id: 'reports', label: 'گزارش‌های تیم' },
-            ] as { id: Tab; label: string }[]
-          ).map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
-                tab === t.id
-                  ? 'bg-brand/10 text-brand'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              }`}
-            >
-              {t.label}
-              {t.id === 'reports' && detail && (
-                <span className="ms-1.5 text-xs font-normal">({faNum(detail.runs.length)})</span>
-              )}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          fullWidth
+          aria-label="بخش‌های صفحهٔ تیم"
+          value={tab}
+          onChange={(v) => setTab(v as Tab)}
+          options={[
+            { value: 'overview', label: 'نمای کلی' },
+            {
+              value: 'reports',
+              label: (
+                <>
+                  گزارش‌های تیم
+                  {detail && (
+                    <span className="ms-1.5 text-xs font-normal">({faNum(detail.runs.length)})</span>
+                  )}
+                </>
+              ),
+            },
+          ]}
+        />
 
         {state === 'loading' && (
           <div className="space-y-3">

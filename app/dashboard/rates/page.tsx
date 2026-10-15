@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, TrendingUp, Settings2 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
-import EmptyState from '@/components/EmptyState';
+import { EmptyState } from '@/components/ui/empty-state';
 import { SkeletonLines } from '@/components/Skeleton';
 import { Switch } from '@/components/ui/Switch';
 import { Button } from '@/components/ui/Button';
