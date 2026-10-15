@@ -3,6 +3,7 @@
  * احراز: Bearer token مدیر. منطق دقیقاً همان /api/cycles است.
  */
 import { fail, ok } from '../../../../../lib/api';
+import { waitUntil } from '@vercel/functions';
 import { requireManagerAuth } from '../../../../../lib/manager-auth';
 import {
   beginCycle,
@@ -23,9 +24,11 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
     const { cycleId, runId } = await beginCycle();
-    void runAllWaves(cycleId, runId).catch((err) => {
-      console.error(`[api/manager/cycle/start] background cycle ${runId} crashed:`, err);
-    });
+    waitUntil(
+      runAllWaves(cycleId, runId).catch((err) => {
+        console.error(`[api/manager/cycle/start] background cycle ${runId} crashed:`, err);
+      }),
+    );
     return ok({ run_id: runId, cycle_id: cycleId }, 202);
   } catch (err) {
     if (err instanceof CycleLockedError) return fail(err.message, 409);

@@ -1,4 +1,5 @@
 import { fail, getSupabase, ok } from '../../../lib/api';
+import { waitUntil } from '@vercel/functions';
 import {
   beginCycle,
   CycleLockedError,
@@ -38,11 +39,12 @@ export async function POST(): Promise<Response> {
       );
     }
     const { cycleId, runId } = await beginCycle();
-    // fire-and-forget: موج‌ها در پس‌زمینه اجرا می‌شوند؛ خطا در لاگ می‌ماند
-    // و finishCycle وضعیت cycles را به‌روز می‌کند.
-    void runAllWaves(cycleId, runId).catch((err) => {
-      console.error(`[api/cycles] background cycle ${runId} crashed:`, err);
-    });
+    // waitUntil: اجرا در پس‌زمینه حتی بعد از ارسال پاسخ؛ fire-and-forget خالی روی ورسل یخ می‌زند
+    waitUntil(
+      runAllWaves(cycleId, runId).catch((err) => {
+        console.error(`[api/cycles] background cycle ${runId} crashed:`, err);
+      }),
+    );
     return ok({ run_id: runId, cycle_id: cycleId }, 202);
   } catch (err) {
     if (err instanceof CycleLockedError) return fail(err.message, 409);
