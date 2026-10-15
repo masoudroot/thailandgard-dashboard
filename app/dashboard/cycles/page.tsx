@@ -204,7 +204,7 @@ export default function CyclesPage() {
             title="خواندن چرخه‌ها ناموفق بود"
             description="پایگاه داده متصل است ولی دریافت فهرست چرخه‌ها خطا داد. دوباره تلاش کنید."
             action={
-              <Button variant="default" onClick={load}>
+              <Button variant="outline" onClick={load}>
                 تلاش دوباره
               </Button>
             }

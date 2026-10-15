@@ -29,6 +29,7 @@ export default function NotConnected({ onRetry, retrying = false }: NotConnected
           <>
             {onRetry ? (
               <Button
+                variant="outline"
                 onClick={onRetry}
                 disabled={retrying}
               >

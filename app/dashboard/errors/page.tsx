@@ -377,7 +377,7 @@ export default function ErrorsPage() {
                         </p>
                       </div>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
                         className="shrink-0"
                         disabled={retryingId === item.id}

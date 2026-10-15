@@ -293,7 +293,7 @@ export default function ChangesPage() {
             {error.message}
           </p>
           <Button
-            variant="default"
+            variant="outline"
             onClick={() => fetchCommits(page, team, since, until)}
             className="mt-4"
           >
@@ -340,7 +340,7 @@ export default function ChangesPage() {
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
                         onClick={() => toggleFiles(c.sha)}
                         aria-expanded={open}

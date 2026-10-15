@@ -560,7 +560,7 @@ export function LlmPanel() {
           <p className="mx-auto mt-1 max-w-md text-sm leading-7 text-muted-foreground">
             برای مدیریت مدل‌ها باید پایگاه داده وصل باشد. اتصال را بررسی کنید و دوباره تلاش کنید.
           </p>
-          <Button variant="default" size="lg" onClick={() => window.location.reload()} className="mt-4">
+          <Button variant="outline" size="lg" onClick={() => window.location.reload()} className="mt-4">
             تلاش دوباره
           </Button>
         </div>

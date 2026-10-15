@@ -165,7 +165,7 @@ export function TelegramPanel() {
             بررسی دوباره
           </Button>
           {status?.source === "settings" && (
-            <Button variant="outline" onClick={() => setConfirmDelete(true)}>
+            <Button variant="destructive" onClick={() => setConfirmDelete(true)}>
               <Trash2 strokeWidth={1.75} aria-hidden="true" />
               حذف
             </Button>

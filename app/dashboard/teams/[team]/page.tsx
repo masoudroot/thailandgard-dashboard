@@ -165,7 +165,7 @@ export default function TeamDetailPage() {
           description="چنین تیمی در داشبورد تعریف نشده است."
           action={
             <Link href="/dashboard/teams">
-              <Button variant="default">بازگشت به تیم‌ها</Button>
+              <Button variant="outline">بازگشت به تیم‌ها</Button>
             </Link>
           }
         />
@@ -228,7 +228,7 @@ export default function TeamDetailPage() {
             title="به پایگاه داده متصل نیست"
             description="اطلاعات تیم بارگذاری نشد. اتصال را بررسی کنید و دوباره تلاش کنید."
             action={
-              <Button variant="default" onClick={() => window.location.reload()}>
+              <Button variant="outline" onClick={() => window.location.reload()}>
                 تلاش دوباره
               </Button>
             }

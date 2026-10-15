@@ -42,7 +42,7 @@ export default function LoadMore({ visible, total, onShowMore }: LoadMoreProps) 
       <p className="text-xs text-muted-foreground" aria-live="polite">
         نمایش {faNum(visible)} از {faNum(total)}
       </p>
-      <Button variant="outline" onClick={onShowMore}>
+      <Button variant="ghost" onClick={onShowMore}>
         <ChevronDown size={16} strokeWidth={2} aria-hidden="true" />
         نمایش بیشتر
       </Button>

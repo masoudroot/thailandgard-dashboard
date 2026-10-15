@@ -266,11 +266,10 @@ export default function CycleDetailPage() {
                     </>
                   ) : (
                     <Button
-                      variant="outline"
+                      variant="destructive"
                       onClick={() => setConfirmCancel(true)}
                       disabled={!isActive || acting !== null}
                       title="لغو چرخه؛ دیگر ادامه نمی‌یابد"
-                      className="border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
                     >
                       <XCircle size={16} strokeWidth={2} aria-hidden="true" />
                       لغو چرخه

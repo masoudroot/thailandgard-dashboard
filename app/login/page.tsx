@@ -28,7 +28,7 @@ function ThemeToggle() {
 
   return (
     <Button
-      variant="outline"
+      variant="ghost"
       size="icon"
       className="rounded-full"
       onClick={toggle}

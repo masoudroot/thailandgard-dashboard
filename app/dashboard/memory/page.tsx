@@ -329,7 +329,7 @@ export default function MemoryPage() {
             title="به پایگاه داده متصل نیست"
             description="حافظه بارگذاری نشد. اتصال را بررسی کنید و دوباره تلاش کنید. هیچ دادهٔ نمایشی نشان داده نمی‌شود."
             action={
-              <Button variant="default" onClick={() => window.location.reload()}>
+              <Button variant="outline" onClick={() => window.location.reload()}>
                 تلاش دوباره
               </Button>
             }

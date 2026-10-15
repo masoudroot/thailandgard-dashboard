@@ -386,7 +386,7 @@ export default function LivePage() {
             }
             action={
               <Button
-                variant="default"
+                variant="outline"
                 onClick={() => {
                   setState('loading');
                   void fetchLive();
