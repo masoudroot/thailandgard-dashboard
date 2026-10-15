@@ -348,7 +348,7 @@ function shortUrl(url: string): string {
 
 async function fetchSources(): Promise<Source[] | null> {
   try {
-    const res = await fetch('/api/knowledge/sources', { cache: 'no-store' });
+    const res = await fetch('/api/manager/knowledge/sources', { cache: 'no-store' });
     if (!res.ok) return null;
     const json = await res.json().catch(() => null);
     if (!json || json.ok === false) return null;
@@ -362,7 +362,7 @@ async function fetchSources(): Promise<Source[] | null> {
 
 async function fetchSourceStats(): Promise<{ active: number; records: number; stale: number; avgFreshDays: number } | null> {
   try {
-    const res = await fetch('/api/knowledge/sources/stats', { cache: 'no-store' });
+    const res = await fetch('/api/manager/knowledge/sources/stats', { cache: 'no-store' });
     if (!res.ok) return null;
     const json = await res.json().catch(() => null);
     if (!json || json.ok === false) return null;
@@ -511,7 +511,7 @@ function SourceDialog({
         is_active: form.is_active,
       };
       const res = await fetch(
-        initial ? `/api/knowledge/sources/${initial.id}` : '/api/knowledge/sources',
+        initial ? `/api/manager/knowledge/sources/${initial.id}` : '/api/manager/knowledge/sources',
         {
           method: initial ? 'PATCH' : 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -945,7 +945,7 @@ function SourcesTab({ registerAdd }: { registerAdd: (fn: () => void) => void }) 
     const prev = s.is_active;
     setSources((list) => list?.map((x) => (x.id === s.id ? { ...x, is_active: !prev } : x)) ?? null);
     try {
-      const res = await fetch(`/api/knowledge/sources/${s.id}`, {
+      const res = await fetch(`/api/manager/knowledge/sources/${s.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: !prev }),
@@ -962,7 +962,7 @@ function SourcesTab({ registerAdd }: { registerAdd: (fn: () => void) => void }) 
     setTestingId(s.id);
     try {
       const started = Date.now();
-      const res = await fetch(`/api/knowledge/sources/${s.id}/test`, { method: 'POST' });
+      const res = await fetch(`/api/manager/knowledge/sources/${s.id}/test`, { method: 'POST' });
       const ms = Date.now() - started;
       if (!res.ok) throw new Error('test failed');
       toast({ title: 'اتصال برقرار شد', description: `${faNum(ms)} میلی‌ثانیه`, variant: 'success' });
@@ -976,7 +976,7 @@ function SourcesTab({ registerAdd }: { registerAdd: (fn: () => void) => void }) 
   const refreshSource = async (s: Source) => {
     setRefreshingId(s.id);
     try {
-      const res = await fetch(`/api/knowledge/sources/${s.id}/refresh`, { method: 'POST' });
+      const res = await fetch(`/api/manager/knowledge/sources/${s.id}/refresh`, { method: 'POST' });
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error('refresh failed');
       const count = (json as { data?: { new_records?: number } })?.data?.new_records ?? 0;
@@ -995,7 +995,7 @@ function SourcesTab({ registerAdd }: { registerAdd: (fn: () => void) => void }) 
   const confirmDelete = async () => {
     if (!deleting) return;
     try {
-      const res = await fetch(`/api/knowledge/sources/${deleting.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/manager/knowledge/sources/${deleting.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('delete failed');
       toast({ title: 'منبع حذف شد', variant: 'success' });
       reload();
