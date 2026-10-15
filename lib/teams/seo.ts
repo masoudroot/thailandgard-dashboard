@@ -326,7 +326,7 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
   for (const slug of slugs) {
     const guide = guides.find((g) => g.slug === slug);
     if (!guide) continue;
-    const item = await callLLMJson<SeoItem>(
+    const rawItem = await callLLMJson<SeoItem>(
       [
         `اسلاگ: ${slug}`,
         `تیتر صفحه: ${guide.title}`,
@@ -342,6 +342,12 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
       ].join('\n'),
       { system: SYSTEM_WORKER, temperature: 0.5, maxTokens: 800 },
     );
+    // خروجی LLM ممکن است آبجکت نباشد (مثلاً عدد)؛ قبل از مقداردهی اعتبارسنجی می‌کنیم
+    if (!rawItem || typeof rawItem !== 'object' || Array.isArray(rawItem)) {
+      console.warn(`[seo] خروجی نامعتبر LLM برای اسلاگ ${slug}:`, String(rawItem).slice(0, 100));
+      continue;
+    }
+    const item: SeoItem = rawItem;
     item.slug = slug;
     item.title = guide.title;
     item.h1 = sanitizePersian(item.h1);
