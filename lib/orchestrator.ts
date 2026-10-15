@@ -30,6 +30,7 @@ import {
   type SubagentControl,
   type TeamName,
   type TeamResult,
+  type TeamRunStatus,
 } from './types';
 
 const LOCK_KEY = 'orchestrator:lock';
@@ -599,8 +600,12 @@ export async function runSingleTeam(
     // this team's configured endpoint + model (settings: llm_endpoints/team_models).
     const result = await runWithTeamContext(team, () => runTeam(input));
     const llmCalls = getLLMStats().total;
-    await closeSubagents(result.approved === false ? 'failed' : 'success');
-    const teamStatus = result.approved === false ? 'failed' : 'success';
+    // تفکیک «رد منتقد» از «خطای سیستمی» (دستور مسعود):
+    // - approved=false یعنی تیم بدون خطای سیستمی اجرایش را تمام کرد ولی منتقد خروجی را رد کرد → 'rejected'
+    // - 'failed' فقط برای خطای واقعی (exception، تایم‌اوت، خطای LLM) در بلوک catch پایین می‌ماند
+    const teamStatus: TeamRunStatus = result.approved === false ? 'rejected' : 'success';
+    // ساب‌ایجنت‌ها کارشان را تمام کرده‌اند؛ رد منتقد خطای آن‌ها نیست
+    await closeSubagents('success');
     // تیم ۹: ردیابی استفاده از دانش — کدام چانک‌ها تزریق شدند و آیا مفید بودند؟
     try {
       const { getLastRetrievedChunkIds, recordKnowledgeUsage } = await import('./rag');
@@ -614,9 +619,9 @@ export async function runSingleTeam(
     await finish({
       status: teamStatus,
       progress: 100,
-      current_task: teamStatus === 'failed' ? 'خطا در اجرا' : 'پایان کار',
+      current_task: teamStatus === 'rejected' ? 'رد شد توسط منتقد' : 'پایان کار',
       output_summary: result.summary?.slice(0, 4000) ?? null,
-      error: teamStatus === 'failed' ? (result.summary?.slice(0, 4000) ?? null) : null,
+      error: teamStatus === 'rejected' ? (result.summary?.slice(0, 4000) ?? null) : null,
       llm_calls: llmCalls,
     });
     // گزارش دوگانه: ثبت در پنل + ارسال به تلگرام (best-effort، مسدودکننده نیست).
@@ -678,6 +683,7 @@ export async function finishCycle(
       total_teams: rows.length,
       success: rows.filter((r) => r.status === 'success').length,
       failed: rows.filter((r) => r.status === 'failed').length,
+      rejected: rows.filter((r) => r.status === 'rejected').length,
       llm_calls: rows.reduce((sum, r) => sum + (r.llm_calls ?? 0), 0),
     };
     if (cycle) {

@@ -40,7 +40,7 @@ export function normalizeCycleStatus(status: string | null | undefined): CycleSt
   return (status ?? 'failed') as CycleStatus;
 }
 
-export type TeamRunStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'stopped';
+export type TeamRunStatus = 'pending' | 'running' | 'success' | 'failed' | 'rejected' | 'skipped' | 'stopped';
 
 /** وضعیت ساب‌ایجنت (مرحله‌ی خط لوله‌ی یک تیم). */
 export type SubagentStatus = 'pending' | 'running' | 'paused' | 'stopped' | 'success' | 'failed';

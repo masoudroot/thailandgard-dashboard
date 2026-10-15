@@ -67,7 +67,8 @@ async function main(): Promise<void> {
     }
   }
 
-  const isDone = (s: string) => ['success', 'failed', 'stopped'].includes(s);
+  // تیم «ردشده توسط منتقد» موج را بلاک نمی‌کند؛ کارش را انجام داده و در چرخه بعد دوباره تلاش می‌کند
+  const isDone = (s: string) => ['success', 'failed', 'stopped', 'rejected'].includes(s);
 
   // اگر همه موج‌ها تمام شدند، چرخه را ببند
   const allDone = WAVES.every((w) => w.teams.every((t) => isDone(teamStatus[t] ?? 'pending')));

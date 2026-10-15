@@ -17,6 +17,7 @@ export type VizStatus =
   | 'paused'
   | 'success'
   | 'failed'
+  | 'rejected'
   | 'pending'
   | 'canceled'
   | 'skipped'
@@ -27,7 +28,8 @@ const STATUS_LABEL: Record<VizStatus, string> = {
   pausing: 'در حال توقف…',
   paused: 'متوقف‌شده',
   success: 'موفق',
-  failed: 'ناموفق',
+  failed: 'خطای سیستمی',
+  rejected: 'رد شده توسط منتقد',
   pending: 'در انتظار',
   canceled: 'لغو شد',
   skipped: 'صرف‌نظر شده',
@@ -41,6 +43,7 @@ const STATUS_VARIANT: Record<VizStatus, RegistryBadgeVariant> = {
   paused: 'secondary',
   success: 'success',
   failed: 'destructive',
+  rejected: 'warning',
   pending: 'secondary',
   canceled: 'secondary',
   skipped: 'secondary',

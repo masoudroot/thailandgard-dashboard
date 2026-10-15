@@ -17,7 +17,7 @@ import {
 } from '@/lib/types';
 import { TEAM_META, WAVE_TITLES } from '@/lib/team-meta';
 
-const STATUS_ORDER: TeamRunStatus[] = ['success', 'running', 'failed', 'pending', 'skipped'];
+const STATUS_ORDER: TeamRunStatus[] = ['success', 'running', 'rejected', 'failed', 'pending', 'skipped'];
 
 function isTeamRun(value: unknown): value is TeamRun {
   if (typeof value !== 'object' || value === null) return false;
@@ -55,7 +55,8 @@ async function tryFetch(url: string): Promise<TeamRun[] | null> {
 const SUMMARY_LABEL: Record<TeamRunStatus, string> = {
   success: 'موفق',
   running: 'در حال اجرا',
-  failed: 'ناموفق',
+  failed: 'خطای سیستمی',
+  rejected: 'رد شده توسط منتقد',
   pending: 'در انتظار',
   skipped: 'صرف‌نظر شده',
   stopped: 'متوقف شد',

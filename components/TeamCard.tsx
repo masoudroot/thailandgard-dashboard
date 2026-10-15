@@ -107,6 +107,11 @@ export default function TeamCard({
             {faError(error)}
           </p>
         )}
+        {status === 'rejected' && error && (
+          <p className="mt-2 line-clamp-2 text-xs leading-6 text-amber-600 dark:text-amber-400">
+            {error}
+          </p>
+        )}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
@@ -140,11 +145,19 @@ export default function TeamCard({
             </p>
           </div>
         )}
-        {error && (
+        {error && status !== 'rejected' && (
           <div>
             <p className="mb-1 text-xs font-bold text-muted-foreground">خطا</p>
             <p className="whitespace-pre-wrap text-sm leading-7 text-destructive">
               {faError(error)}
+            </p>
+          </div>
+        )}
+        {error && status === 'rejected' && (
+          <div>
+            <p className="mb-1 text-xs font-bold text-muted-foreground">دلیل رد منتقد</p>
+            <p className="whitespace-pre-wrap text-sm leading-7 text-card-foreground">
+              {error}
             </p>
           </div>
         )}

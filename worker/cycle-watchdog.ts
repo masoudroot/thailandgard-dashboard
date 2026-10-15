@@ -99,7 +99,11 @@ function buildAlertMessage(info: StallInfo): string {
     `مدت توقف: ${faDuration(info.stallMinutes)}`,
   ];
   if (info.lastTeam) {
-    const statusFa = info.lastTeamStatus === 'success' ? 'موفق' : info.lastTeamStatus === 'failed' ? 'ناموفق' : info.lastTeamStatus;
+    const statusFa =
+      info.lastTeamStatus === 'success' ? 'موفق'
+      : info.lastTeamStatus === 'failed' ? 'خطای سیستمی'
+      : info.lastTeamStatus === 'rejected' ? 'رد شده توسط منتقد'
+      : info.lastTeamStatus;
     lines.push(`آخرین فعالیت: تیم ${info.lastTeam} (${statusFa})`);
   } else {
     lines.push('آخرین فعالیت: هیچ تیمی هنوز اجرا نشده است');

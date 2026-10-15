@@ -353,7 +353,7 @@ export default function CycleDetailPage() {
               {waves.map((wave) => {
                 const waveRuns = teamRuns.filter((r) => r.wave === wave);
                 const doneRuns = waveRuns.filter(
-                  (r) => r.status === 'success' || r.status === 'failed',
+                  (r) => r.status === 'success' || r.status === 'failed' || r.status === 'rejected',
                 );
                 const wavePct =
                   waveRuns.length > 0
