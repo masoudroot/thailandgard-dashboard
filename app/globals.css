@@ -2,11 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-/* توکن‌های طراحی: روشن (پیش‌فرض) و تیره (کلاس dark روی html) */
+/* توکن‌های طراحی: روشن (پیش‌فرض) و تیره (کلاس dark روی html)
+   قانون: همهٔ رنگ‌ها فقط از همین توکن‌ها می‌آیند؛ hex مستقیم در کد ممنوع. */
 :root {
+  /* پس‌زمینهٔ گرم و استخوانی؛ هرگز سفید سرد */
   --background: 251 250 247;
   --foreground: 62 57 50;
-  --card: 255 255 255;
+  /* کارت: سفیدِ گرمِ مایل به کرم، نه سفید خالص */
+  --card: 255 254 250;
   --card-foreground: 62 57 50;
   --primary: 62 57 50;
   --primary-foreground: 251 250 247;
@@ -29,23 +32,22 @@
   --warning-foreground: 255 255 255;
   --info: 13 148 136;
   --info-foreground: 255 255 255;
-  /* گوشه‌ها: مقیاس یکدست sm تا xl؛ --radius همان md است */
+  /* گوشه‌ها: یکدست ۸/۱۲px. --radius همان md است.
+     shape-lg و shape-xl فقط نامِ سازگاری‌اند و هم‌ارز md نگه داشته شده‌اند. */
   --radius: 12px;
   --shape-sm: 8px;
   --shape-md: 12px;
-  --shape-lg: 16px;
-  --shape-xl: 20px;
-  /* سایه‌های لایه‌ای: sm کنترل‌ها، md کارت، lg هاور/بالا‌آمدن، xl مودال */
-  --shadow-sm: 0 1px 2px rgb(62 57 50 / 0.06);
+  --shape-lg: 12px;
+  --shape-xl: 12px;
+  /* سایه‌ها: حداکثر ۰.۰۴ opacity یا هیچ. سایه‌های سنگین حذف شدند؛
+     تفکیک لایه‌ها با بوردر ۱px و رنگ پس‌زمینه انجام می‌شود، نه با سایه.
+     shadow-lg و shadow-xl نامِ سازگاری‌اند و هم‌ارز md نگه داشته شده‌اند. */
+  --shadow-sm: 0 1px 2px rgb(62 57 50 / 0.04);
   --shadow-md:
-    0 1px 2px rgb(62 57 50 / 0.05),
-    0 4px 12px rgb(62 57 50 / 0.07);
-  --shadow-lg:
-    0 2px 4px rgb(62 57 50 / 0.06),
-    0 12px 28px rgb(62 57 50 / 0.12);
-  --shadow-xl:
-    0 4px 8px rgb(62 57 50 / 0.06),
-    0 24px 56px rgb(62 57 50 / 0.18);
+    0 1px 2px rgb(62 57 50 / 0.03),
+    0 4px 12px rgb(62 57 50 / 0.04);
+  --shadow-lg: var(--shadow-md);
+  --shadow-xl: var(--shadow-md);
   /* نام‌های قدیمی: نگهداری برای سازگاری */
   --shadow-control: var(--shadow-sm);
   --shadow-surface: var(--shadow-md);
@@ -53,41 +55,39 @@
 }
 
 .dark {
-  --background: 24 24 27;
+  /* زغالیِ گرم؛ هرگز مشکی خالص یا خاکستری سرد */
+  --background: 26 24 21;
   --foreground: 245 243 239;
-  --card: 33 33 38;
+  --card: 38 36 32;
   --card-foreground: 245 243 239;
   --primary: 245 243 239;
-  --primary-foreground: 24 24 27;
-  --secondary: 44 44 51;
+  --primary-foreground: 26 24 21;
+  --secondary: 46 44 40;
   --secondary-foreground: 245 243 239;
-  --muted: 38 38 44;
-  --muted-foreground: 168 162 152;
-  --accent: 44 44 51;
+  --muted: 40 38 34;
+  --muted-foreground: 172 164 152;
+  --accent: 46 44 40;
   --accent-foreground: 245 243 239;
-  --border: 56 56 64;
-  --input: 56 56 64;
+  --border: 62 58 52;
+  --input: 62 58 52;
   --ring: 240 176 60;
   --brand: 240 176 60;
-  --brand-foreground: 24 24 27;
+  --brand-foreground: 26 24 21;
   --destructive: 239 100 100;
-  --destructive-foreground: 24 24 27;
+  --destructive-foreground: 26 24 21;
   --success: 74 200 120;
-  --success-foreground: 24 24 27;
+  --success-foreground: 26 24 21;
   --warning: 245 178 60;
-  --warning-foreground: 24 24 27;
+  --warning-foreground: 26 24 21;
   --info: 45 212 191;
-  --info-foreground: 24 24 27;
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --info-foreground: 26 24 21;
+  /* سایه‌ها: حداکثر ۰.۰۴ opacity؛ سایه‌های سنگین حذف شدند */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04);
   --shadow-md:
-    0 1px 2px rgb(0 0 0 / 0.3),
-    0 8px 24px rgb(0 0 0 / 0.35);
-  --shadow-lg:
-    0 2px 6px rgb(0 0 0 / 0.35),
-    0 16px 40px rgb(0 0 0 / 0.45);
-  --shadow-xl:
-    0 8px 16px rgb(0 0 0 / 0.4),
-    0 32px 64px rgb(0 0 0 / 0.5);
+    0 1px 2px rgb(0 0 0 / 0.03),
+    0 4px 12px rgb(0 0 0 / 0.04);
+  --shadow-lg: var(--shadow-md);
+  --shadow-xl: var(--shadow-md);
   --shadow-control: var(--shadow-sm);
   --shadow-surface: var(--shadow-md);
   color-scheme: dark;
@@ -110,36 +110,41 @@
     overscroll-behavior-y: none;
   }
 
-  /* مقیاس تایپ fluid: در موبایل کوچک‌تر، در دسکتاپ بزرگ‌تر */
+  /* مقیاس تایپ fluid: در موبایل کوچک‌تر، در دسکتاپ بزرگ‌تر.
+     تیترها بولد با کنتراست کامل بدنه (foreground)؛ کنتراست از وزن و اندازه می‌آید، نه از رنگ دوم.
+     text-wrap: balance برای تعادل خط‌های تیتر. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    text-wrap: balance;
+  }
   h1 {
     font-size: clamp(1.4rem, 5vw, 2rem);
     line-height: 1.4;
-    letter-spacing: 0;
     font-weight: 700;
   }
   h2 {
     font-size: clamp(1.25rem, 4vw, 1.6rem);
     line-height: 1.4;
-    letter-spacing: 0;
     font-weight: 700;
   }
   h3 {
     font-size: clamp(1.125rem, 3.4vw, 1.35rem);
     line-height: 1.4;
-    letter-spacing: 0;
     font-weight: 700;
   }
   h4 {
     font-size: clamp(1rem, 3vw, 1.15rem);
     line-height: 1.4;
-    letter-spacing: 0;
     font-weight: 700;
   }
   h5,
   h6 {
     font-size: 1rem;
     line-height: 1.4;
-    letter-spacing: 0;
     font-weight: 700;
   }
 
