@@ -143,10 +143,12 @@ function LiveTeamCard({
     run && !working && run.status === 'success'
       ? 'آخرین اجرا موفق بود.'
       : run && !working && run.status === 'failed'
-        ? 'آخرین اجرا ناموفق بود.'
-        : run && !working && run.status === 'stopped'
-          ? 'آخرین اجرا توسط کاربر متوقف شد.'
-          : null;
+        ? 'آخرین اجرا خطای سیستمی داشت.'
+        : run && !working && run.status === 'rejected'
+          ? 'آخرین اجرا توسط منتقد رد شد.'
+          : run && !working && run.status === 'stopped'
+            ? 'آخرین اجرا توسط کاربر متوقف شد.'
+            : null;
 
   const pct = Math.max(0, Math.min(100, Math.round(run?.progress ?? 0)));
 

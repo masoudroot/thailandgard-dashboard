@@ -71,7 +71,7 @@ async function enrichCycle(cycle: Record<string, unknown>) {
   // موج جاری: اولین موجی که تیم ناتمام دارد
   let currentWave = 1;
   for (const w of waves) {
-    const done = w.teams.every((t) => ['success', 'failed', 'stopped'].includes(t.status));
+    const done = w.teams.every((t) => ['success', 'failed', 'stopped', 'rejected'].includes(t.status));
     if (!done) {
       currentWave = w.wave;
       break;
@@ -80,7 +80,7 @@ async function enrichCycle(cycle: Record<string, unknown>) {
   }
   if (currentWave > WAVES.length) currentWave = WAVES.length;
   const allTeams = waves.flatMap((w) => w.teams);
-  const doneCount = allTeams.filter((t) => ['success', 'failed', 'stopped'].includes(t.status)).length;
+  const doneCount = allTeams.filter((t) => ['success', 'failed', 'stopped', 'rejected'].includes(t.status)).length;
   const progress = allTeams.length > 0 ? Math.round((doneCount / allTeams.length) * 100) : 0;
   const activeTeam = allTeams.find((t) => t.status === 'running')?.team ?? '';
   // شناسه خوانا: «۲۳ مهر · ۱۵:۵۷» از started_at
