@@ -89,24 +89,50 @@ export async function enqueueTask(
   task: QueuedTask & { team: string; cycleId?: string; llm?: TaskLLMSelection },
 ): Promise<string> {
   if (task.llm) await validateTaskLLM(task.llm);
-  const { data, error } = await getSupabase()
-    .from('build_queue')
-    .insert({
-      team: task.team,
-      run_id: task.cycleId ?? null,
-      title: task.title,
-      description: task.description,
-      files_hint: task.files_hint ? [task.files_hint] : [],
-      priority: task.priority ?? 'medium',
-      status: 'pending',
-      llm_endpoint_id: task.llm?.endpointId ?? null,
-      llm_model: task.llm?.model.trim() ?? null,
-    })
-    .select('id')
-    .single();
-
-  if (error) throw new Error(`enqueueTask failed: ${error.message}`);
-  return data.id as string;
+  const row = {
+    team: task.team,
+    run_id: task.cycleId ?? null,
+    title: task.title,
+    description: task.description,
+    files_hint: task.files_hint ? [task.files_hint] : [],
+    priority: task.priority ?? 'medium',
+    status: 'pending',
+    llm_endpoint_id: task.llm?.endpointId ?? null,
+    llm_model: task.llm?.model.trim() ?? null,
+  };
+  const insertRow = async (withLLM: boolean): Promise<string> => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { llm_endpoint_id, llm_model, ...rest } = row;
+    const payload = withLLM ? row : rest;
+    const { data, error } = await getSupabase()
+      .from('build_queue')
+      .insert(payload)
+      .select('id')
+      .single();
+    if (error) throw error;
+    return data.id as string;
+  };
+  try {
+    return await insertRow(true);
+  } catch (err) {
+    // ستون‌های llm هنوز migrate نشده‌اند (کد 42703): بدون آن‌ها ثبت کن تا
+    // جریان فعلی ثبت کار نشکند؛ انتخاب مدل آن کار نادیده گرفته می‌شود.
+    const msg = err instanceof Error ? err.message : String(err);
+    const code = (err as { code?: string })?.code;
+    if (code === '42703' || /llm_endpoint_id|llm_model/.test(msg)) {
+      console.warn(
+        '[taskqueue] build_queue misses llm columns; enqueueing without per-task model. Apply migration 20261015080000_build_queue_llm.sql.',
+      );
+      try {
+        return await insertRow(false);
+      } catch (retryErr) {
+        throw new Error(
+          `enqueueTask failed: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
+        );
+      }
+    }
+    throw new Error(`enqueueTask failed: ${msg}`);
+  }
 }
 
 /** Reads the queue, newest first. Optionally filtered by status. */
