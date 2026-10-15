@@ -15,8 +15,23 @@ import {
 import PageHeader from '@/components/PageHeader';
 import EmptyState from '@/components/EmptyState';
 import { SkeletonPanel } from '@/components/Skeleton';
+import { DatePicker } from '@/components/ui/date-picker';
 import { faNum } from '@/lib/format';
 import { ALL_TEAM_SLUGS, teamFa } from '@/lib/github-teams';
+
+/** «YYYY-MM-DD» به Date محلی؛ خالی → null. */
+function ymdToDate(ymd: string): Date | null {
+  if (!ymd) return null;
+  const d = new Date(`${ymd}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Date به «YYYY-MM-DD» محلی؛ null → رشته خالی. */
+function dateToYmd(d: Date | null): string {
+  if (!d) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 /* ------------------------------------------------------------------ */
 /* کمک‌کننده‌های فارسی‌سازی                                          */
@@ -219,31 +234,25 @@ export default function ChangesPage() {
           </select>
         </div>
         <div>
-          <label htmlFor="changes-since" className="mb-1.5 block text-sm font-medium text-foreground">
+          <label className="mb-1.5 block text-sm font-medium text-foreground">
             از تاریخ
           </label>
-          <input
-            id="changes-since"
-            type="date"
-            dir="ltr"
-            value={since}
-            max={until || undefined}
-            onChange={(e) => applyFilter({ since: e.target.value })}
-            className={`${inputClass} w-full`}
+          <DatePicker
+            value={ymdToDate(since)}
+            max={ymdToDate(until) ?? undefined}
+            onChange={(d) => applyFilter({ since: dateToYmd(d) })}
+            placeholder="از تاریخ"
           />
         </div>
         <div>
-          <label htmlFor="changes-until" className="mb-1.5 block text-sm font-medium text-foreground">
+          <label className="mb-1.5 block text-sm font-medium text-foreground">
             تا تاریخ
           </label>
-          <input
-            id="changes-until"
-            type="date"
-            dir="ltr"
-            value={until}
-            min={since || undefined}
-            onChange={(e) => applyFilter({ until: e.target.value })}
-            className={`${inputClass} w-full`}
+          <DatePicker
+            value={ymdToDate(until)}
+            min={ymdToDate(since) ?? undefined}
+            onChange={(d) => applyFilter({ until: dateToYmd(d) })}
+            placeholder="تا تاریخ"
           />
         </div>
         <div className="flex items-end">

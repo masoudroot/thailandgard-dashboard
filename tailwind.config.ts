@@ -48,6 +48,7 @@ const config: Config = {
         "warning-foreground": "rgb(var(--warning-foreground) / <alpha-value>)",
         info: "rgb(var(--info) / <alpha-value>)",
         "info-foreground": "rgb(var(--info-foreground) / <alpha-value>)",
+        field: "var(--field)",
       },
       borderRadius: {
         DEFAULT: "var(--radius)",
@@ -55,9 +56,11 @@ const config: Config = {
         md: "var(--radius)",
         lg: "var(--shape-overlay)",
         xl: "var(--shape-surface)",
+        field: "var(--shape-field)",
       },
       boxShadow: {
         control: "var(--depth-control)",
+        field: "var(--depth-field)",
         surface: "var(--depth-surface)",
         overlay: "var(--depth-overlay)",
         sm: "0 0 #0000",
