@@ -108,8 +108,6 @@
     line-height: 1.8;
     letter-spacing: 0;
     overscroll-behavior-y: none;
-    /* محافظ اورژانسی: هیچ‌وقت اسکرول افقی نده */
-    overflow-x: clip;
   }
 
   /* مقیاس تایپ fluid: در موبایل کوچک‌تر، در دسکتاپ بزرگ‌تر */
