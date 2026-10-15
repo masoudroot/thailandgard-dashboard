@@ -16,6 +16,7 @@
  * خطای واضح fail می‌شود ولی بقیه‌ی تیم‌ها ادامه می‌دهند.
  */
 import { getSupabase } from './api';
+import { faDigits } from './format';
 import { runKnowledgeSubagent } from './knowledge-subagent';
 import { runWithTeamContext } from './llm';
 import { notifyTeamReport } from './notify';
@@ -59,6 +60,12 @@ const PROGRESS_MIN_INTERVAL_MS = 2000;
 const CONTROL_POLL_MS = 5000;
 /** سقف انتظار برای ادامه‌یافتن (resume) یک ساب‌ایجنت متوقف‌شده: ۳۰ دقیقه. */
 const PAUSE_TIMEOUT_MS = 30 * 60_000;
+/**
+ * حداکثر دورهای اجرای یک تیم در حلقهٔ بازبینی منتقد (دستور مسعود):
+ * دور ۱ اجرای اول؛ اگر منتقد رد کرد، دور ۲ و ۳ بازاجرا با دستور دقیق منتقد.
+ * دور ۳ پایانی است: منتقد فقط نظر می‌دهد و دیگر رد نمی‌کند.
+ */
+const MAX_REVIEW_ROUNDS = 3;
 
 /** ورودی استاندارد هر تیم. */
 export interface TeamInput {
@@ -76,6 +83,17 @@ export interface TeamInput {
    * را مدیریت می‌کند.
    */
   reportProgress: ProgressReporter;
+  /**
+   * دور جاری اجرای تیم در حلقهٔ بازبینی منتقد (۱ = اجرای اول).
+   * ارکستر وقتی منتقد رد می‌کند، تیم را با همین ورودی ولی دور بالاتر
+   * دوباره اجرا می‌کند. حداکثر ۳ دور.
+   */
+  round?: number;
+  /**
+   * دستور دقیق منتقد از دور قبلی (دلیل رد + کار خواسته‌شده، مثل پرامپت).
+   * فقط از دور ۲ به بعد پر است. تیم‌ها آن را در ابتدای زمینه می‌بینند.
+   */
+  reviewDirective?: string;
 }
 
 type RunTeamFn = (input: TeamInput) => Promise<TeamResult>;
@@ -701,18 +719,85 @@ export async function runSingleTeam(
     } catch (err) {
       console.error(`[orchestrator] failed to load approved tasks for ${team}:`, err instanceof Error ? err.message : err);
     }
-    const input: TeamInput = {
-      cycleId,
-      runId: ctx.runId,
-      ragContext: buildRagContext(ctx.previousWavesOutput) + approvedContext + knowledgeSnippet,
-      memory,
-      previousWavesOutput: { ...ctx.previousWavesOutput },
-      reportProgress,
+    const baseRagContext =
+      buildRagContext(ctx.previousWavesOutput) + approvedContext + knowledgeSnippet;
+    // حلقهٔ بازبینی منتقد (دستور مسعود): حداکثر ۳ دور، بدون حلقهٔ بی‌نهایت.
+    // دور ۱: اجرای عادی. اگر منتقد رد کرد ← دستور دقیقش (مثل پرامپت) به تیم برمی‌گردد و دور ۲ اجرا می‌شود.
+    // دور ۳ پایانی است: منتقد فقط نظر می‌دهد و دیگر رد نمی‌کند؛ اگر باز هم ایراد بود، rejected ثبت و چرخه ادامه می‌یابد.
+    const extractRejectReason = (r: TeamResult): string => {
+      const fromBlockers = (r.blockers ?? []).join(' ').trim();
+      return (fromBlockers || r.summary || 'دلیلی ثبت نشد').slice(0, 2000);
     };
-    // Ambient team context: every callLLM inside runTeam automatically uses
-    // this team's configured endpoint + model (settings: llm_endpoints/team_models).
-    const result = await runWithTeamContext(team, () => runTeam(input));
+    let result: TeamResult | null = null;
+    let reviewDirective: string | undefined;
+    const roundLog: Array<{ round: number; approved: boolean; reason: string; directive?: string }> = [];
+    for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
+      const directivePrefix =
+        round === 1
+          ? ''
+          : round < MAX_REVIEW_ROUNDS
+            ? `\n\nدستور منتقد برای دور ${faDigits(round)} از ${faDigits(MAX_REVIEW_ROUNDS)} (خروجی دور قبل رد شد):\n${reviewDirective}\n`
+            : `\n\nدور ${faDigits(round)} از ${faDigits(MAX_REVIEW_ROUNDS)} (دور پایانی): منتقد فقط نظر نهایی می‌دهد و خروجی را رد نمی‌کند؛ ایرادهای باقی‌مانده را به‌صورت نظر ثبت کن.\n${reviewDirective ? `آخرین دستور منتقد:\n${reviewDirective}\n` : ''}`;
+      const input: TeamInput = {
+        cycleId,
+        runId: ctx.runId,
+        ragContext: directivePrefix + baseRagContext,
+        memory,
+        previousWavesOutput: { ...ctx.previousWavesOutput },
+        reportProgress,
+        round,
+        reviewDirective,
+      };
+      if (round > 1) {
+        await reportProgress(`دور ${faDigits(round)} از ${faDigits(MAX_REVIEW_ROUNDS)}: اجرای مجدد با دستور منتقد`, 5 + round * 5);
+      }
+      // Ambient team context: every callLLM inside runTeam automatically uses
+      // this team's configured endpoint + model (settings: llm_endpoints/team_models).
+      const roundResult = await runWithTeamContext(team, () => runTeam(input));
+      const approved = roundResult.approved !== false;
+      roundLog.push({
+        round,
+        approved,
+        reason: approved ? 'تأیید شد' : extractRejectReason(roundResult),
+        ...(reviewDirective ? { directive: reviewDirective.slice(0, 2000) } : {}),
+      });
+      result = roundResult;
+      if (approved) break;
+      if (round >= MAX_REVIEW_ROUNDS) break;
+      // دستور دقیق برای دور بعد — مثل پرامپت: دلیل رد + کار خواسته‌شده
+      const reason = extractRejectReason(roundResult);
+      reviewDirective =
+        `دلیل رد دور ${faDigits(round)}: ${reason}\n` +
+        `دستور: دقیقاً همین ایراد را برطرف کن و خروجی کامل را از نو تولید کن. ` +
+        `اگر بخشی از خروجی درست بود، همان را نگه دار و فقط بخش ردشده را اصلاح کن. ` +
+        `خروجی این دور باید بدون نیاز به اصلاح دیگری، آمادهٔ تحویل باشد.`;
+    }
+    if (!result) {
+      throw new Error(`حلقهٔ بازبینی تیم ${team} هیچ نتیجه‌ای تولید نکرد`);
+    }
     const llmCalls = getLLMStats().total;
+    // ثبت درس ردوبدل‌های منتقد در دانش تیم (دستور مسعود) — best-effort.
+    // (جزئیات هر دور را ماژول دانش با recordFeedbackRound ثبت می‌کند.)
+    if (roundLog.some((r) => !r.approved)) {
+      try {
+        const { extractCriticKnowledge } = await import('./knowledge/critic-knowledge');
+        const rejectedRounds = roundLog.filter((r) => !r.approved);
+        const verdictText =
+          `حلقهٔ بازبینی ${roundLog.length} دور طول کشید. ` +
+          rejectedRounds.map((r) => `دور ${r.round} رد شد: ${r.reason}`).join(' ');
+        await extractCriticKnowledge(
+          team,
+          {
+            approved: roundLog[roundLog.length - 1]?.approved ?? false,
+            reason: verdictText.slice(0, 2000),
+            domain: `حلقه بازبینی ${team}`,
+          },
+          ctx.runId,
+        );
+      } catch {
+        // خطای ثبت دانش نباید نتیجهٔ تیم را خراب کند
+      }
+    }
     // تفکیک «رد منتقد» از «خطای سیستمی» (دستور مسعود):
     // - approved=false یعنی تیم بدون خطای سیستمی اجرایش را تمام کرد ولی منتقد خروجی را رد کرد → 'rejected'
     // - 'failed' فقط برای خطای واقعی (exception، تایم‌اوت، خطای LLM) در بلوک catch پایین می‌ماند
@@ -732,10 +817,17 @@ export async function runSingleTeam(
     await finish({
       status: teamStatus,
       progress: 100,
-      current_task: teamStatus === 'rejected' ? 'رد شد توسط منتقد' : 'پایان کار',
+      current_task:
+        teamStatus === 'rejected'
+          ? `رد شد توسط منتقد (بعد از ${faDigits(roundLog.length)} دور بازبینی)`
+          : roundLog.length > 1
+            ? `پایان کار (تأیید در دور ${faDigits(roundLog.length)})`
+            : 'پایان کار',
       output_summary: result.summary?.slice(0, 4000) ?? null,
       error: teamStatus === 'rejected' ? (result.summary?.slice(0, 4000) ?? null) : null,
       llm_calls: llmCalls,
+      // لاگ همهٔ دورهای حلقهٔ بازبینی (دستور مسعود): دور، تأیید/رد، دلیل، دستور
+      review_rounds: roundLog,
     });
     // دروازه ثبت پچ (دستور مسعود): فقط پچ تیم موفقِ تأییدشده وارد پل می‌شود.
     // تیم ردشده (approved=false → rejected) یا ناموفق (failed) اصلاً در bridge_patches ثبت نمی‌شود.
