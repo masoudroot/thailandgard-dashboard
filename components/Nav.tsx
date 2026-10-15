@@ -81,6 +81,9 @@ function NavRow({
   const { href, label, icon: Icon, children } = item;
   const selfActive = isNavActive(pathname, href);
   const childActive = children?.some((c) => isNavActive(pathname, c.href)) ?? false;
+  const parentExact = pathname === href;
+  // هایلایت قوی والد فقط وقتی خودش دقیقاً فعال است؛ اگر فرزند فعال است والد فقط نشانه ملایم می‌گیرد
+  const parentStrong = parentExact && !childActive;
   const active = selfActive || childActive;
   // اگر خود والد یا یکی از فرزندان فعال است، زیرمنو باز می‌ماند
   const [open, setOpen] = React.useState(active);
@@ -88,13 +91,15 @@ function NavRow({
     if (active) setOpen(true);
   }, [active]);
 
-  const linkClass = (isActive: boolean) =>
+  const linkClass = (isActive: boolean, subtle = false) =>
     [
       "flex min-h-11 items-center gap-3 rounded-lg px-4 py-2.5 text-base leading-6 transition-colors duration-200 motion-reduce:transition-none",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
       isActive
         ? "bg-brand/10 font-semibold text-brand"
-        : "text-foreground/80 hover:bg-accent hover:text-foreground",
+        : subtle
+          ? "text-brand/80 hover:bg-accent hover:text-foreground"
+          : "text-foreground/80 hover:bg-accent hover:text-foreground",
     ].join(" ");
 
   if (!children || children.length === 0) {
@@ -129,13 +134,13 @@ function NavRow({
       <div className="flex items-center gap-1">
         <Link
           href={href}
-          aria-current={selfActive && !childActive ? "page" : undefined}
+          aria-current={parentStrong ? "page" : undefined}
           onClick={onNavigate}
-          className={[linkClass(active), "flex-1"].join(" ")}
+          className={[linkClass(parentStrong, childActive && !parentStrong), "flex-1"].join(" ")}
         >
           <Icon
             className="h-5 w-5 shrink-0"
-            strokeWidth={active ? 2 : 1.5}
+            strokeWidth={parentStrong ? 2 : 1.5}
             aria-hidden="true"
           />
           <span>{label}</span>
@@ -143,7 +148,7 @@ function NavRow({
             aria-hidden="true"
             className={[
               "ms-auto h-2 w-2 rounded-full bg-brand transition-all duration-200 motion-reduce:transition-none",
-              active && !open ? "scale-100 opacity-100" : "scale-0 opacity-0",
+              parentStrong ? "scale-100 opacity-100" : "scale-0 opacity-0",
             ].join(" ")}
           />
         </Link>
