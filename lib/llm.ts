@@ -392,6 +392,8 @@ export async function callLLMJson<T = unknown>(
     (opts.jsonExample ? `\nمثال دقیق ساختار:\n${opts.jsonExample}` : "");
   const raw = await callLLM(prompt + jsonRule, {
     ...opts,
+    // خروجی ساخت‌یافته فارسی به توکن بیشتری نیاز دارد؛ پیش‌فرض را بالاتر می‌بریم
+    maxTokens: opts.maxTokens ?? 4000,
     temperature: opts.temperature ?? 0.1, // خنک‌تر برای خروجی ساخت‌یافته
   });
 
