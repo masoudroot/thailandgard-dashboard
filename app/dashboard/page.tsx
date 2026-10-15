@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -15,7 +15,9 @@ import {
   Waves,
   XCircle,
 } from "lucide-react";
+import { TEAMS } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
+import NotConnected from "@/components/NotConnected";
 import {
   SkeletonPanel,
   SkeletonRow,
@@ -90,85 +92,6 @@ interface AlertItem {
   timeAgo: string;
 }
 
-/* ─────────────────────────────────────────────
-   دادهٔ نمایشی (تا وقتی API واقعی وصل شود)
-   ───────────────────────────────────────────── */
-
-const MOCK_CYCLE: CycleSummary = {
-  id: "CYC-1842",
-  status: "running",
-  progress: 68,
-  currentWave: 4,
-  activeTeam: "dev",
-  startedAgo: "۲ ساعت پیش",
-  waves: [
-    {
-      wave: 1,
-      teams: [
-        { team: "artdir", status: "success" },
-        { team: "branding", status: "success" },
-        { team: "content", status: "success" },
-      ],
-    },
-    {
-      wave: 2,
-      teams: [
-        { team: "analytics", status: "success" },
-        { team: "intel", status: "success" },
-        { team: "lead", status: "success" },
-      ],
-    },
-    {
-      wave: 3,
-      teams: [
-        { team: "design", status: "success" },
-        { team: "seo", status: "success" },
-        { team: "seocontent", status: "success" },
-      ],
-    },
-    {
-      wave: 4,
-      teams: [
-        { team: "design-ir", status: "success" },
-        { team: "dev", status: "running" },
-        { team: "farsiui", status: "pending" },
-      ],
-    },
-    {
-      wave: 5,
-      teams: [
-        { team: "vibefarsi", status: "pending" },
-        { team: "qa", status: "pending" },
-      ],
-    },
-    { wave: 6, teams: [{ team: "inspector", status: "pending" }] },
-  ],
-};
-
-const MOCK_ALERTS: AlertItem[] = [
-  {
-    id: "a1",
-    severity: "warning",
-    title: "نرخ خطای تیم سئو در موج سوم بالا رفت",
-    detail: "۳ تلاش ناموفق پشت سر هم در فراخوانی مدل؛ فالبک فعال شد.",
-    timeAgo: "۲۵ دقیقه پیش",
-  },
-  {
-    id: "a2",
-    severity: "info",
-    title: "موج سوم با موفقیت کامل شد",
-    detail: "هر ۳ تیم خروجی را تحویل دادند و وارد صف بازبینی شدند.",
-    timeAgo: "۱ ساعت پیش",
-  },
-  {
-    id: "a3",
-    severity: "critical",
-    title: "اتصال API فروش دو بار قطع شد",
-    detail: "تیم لید دادهٔ تازه ندارد؛ با آخرین کش سالم ادامه می‌دهد.",
-    timeAgo: "۲ ساعت پیش",
-  },
-];
-
 const ALERT_META: Record<
   AlertItem["severity"],
   { icon: typeof Info; label: string; ring: string; badge: string }
@@ -208,64 +131,69 @@ function waveState(wave: Wave, currentWave: number): "done" | "active" | "todo" 
 export default function DashboardHomePage() {
   const [cycle, setCycle] = useState<CycleSummary | null>(null);
   const [alerts, setAlerts] = useState<AlertItem[] | null>(null);
+  const [alertsError, setAlertsError] = useState(false);
+  /* قانون مسعود: دادهٔ نمایشی ممنوع. اگر بک‌اند در دسترس نباشد، به‌جای
+     عددهای ساختگی، وضعیت «متصل نیست» را صادقانه نشان می‌دهیم. */
+  const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [retrying, setRetrying] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [starting, setStarting] = useState(false);
   const [queuedNotice, setQueuedNotice] = useState(false);
   const [queuedExtra, setQueuedExtra] = useState(0);
 
-  /* اول API واقعی را امتحان می‌کنیم؛ نبود، mock می‌نشانیم */
-  useEffect(() => {
+  const load = useCallback(async (isRetry = false) => {
+    if (isRetry) setRetrying(true);
+    else setLoading(true);
+    setFailed(false);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3000);
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const cyclesRes = await fetch("/api/cycles?limit=1", {
+        signal: controller.signal,
+      });
+      if (!cyclesRes.ok) throw new Error("cycles unavailable");
+      const body = await cyclesRes.json().catch(() => null);
+      const raw = body?.ok ? body.data : (body?.data?.[0] ?? body?.[0]);
+      setCycle((raw as CycleSummary) ?? null);
 
-    Promise.all([
-      fetch("/api/cycles?limit=1", { signal: controller.signal }),
-      fetch("/api/alerts?limit=5", { signal: controller.signal }),
-    ])
-      .then(async ([cyclesRes, alertsRes]) => {
-        let nextCycle: CycleSummary | null = null;
-        let nextAlerts: AlertItem[] | null = null;
-        if (cyclesRes.ok) {
-          const body = await cyclesRes.json().catch(() => null);
-          const raw = body?.ok ? body.data : body?.data?.[0] ?? body?.[0];
-          if (raw) nextCycle = raw as CycleSummary;
-        }
-        if (alertsRes.ok) {
-          const body = await alertsRes.json().catch(() => null);
-          const raw = body?.ok ? body.data : body;
-          if (Array.isArray(raw) && raw.length > 0) nextAlerts = raw;
-        }
-        setCycle(nextCycle ?? MOCK_CYCLE);
-        setAlerts(nextAlerts ?? MOCK_ALERTS);
-      })
-      .catch(() => {
-        setCycle(MOCK_CYCLE);
-        setAlerts(MOCK_ALERTS);
-      })
-      .finally(() => clearTimeout(timer));
-
-    return () => controller.abort();
+      /* هشدارها حیاتی نیست؛ نبودشان صفحه را نمی‌اندازد */
+      try {
+        const alertsRes = await fetch("/api/alerts?limit=5", {
+          signal: controller.signal,
+        });
+        if (!alertsRes.ok) throw new Error("alerts unavailable");
+        const abody = await alertsRes.json().catch(() => null);
+        const araw = abody?.ok ? abody.data : abody;
+        setAlerts(Array.isArray(araw) ? araw : []);
+        setAlertsError(false);
+      } catch {
+        setAlerts([]);
+        setAlertsError(true);
+      }
+    } catch {
+      setFailed(true);
+    } finally {
+      clearTimeout(timer);
+      setLoading(false);
+      setRetrying(false);
+    }
   }, []);
 
-  const loading = cycle === null || alerts === null;
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const queueCount = 7 + queuedExtra;
+  const queueCount = queuedExtra;
+  /* آمار صادقانه: فقط چیزی که واقعاً می‌دانیم (پیکربندی تیم‌ها، شمار صف
+     واقعی کاربر، و دادهٔ چرخه از API). هیچ عدد ساختگی و ترند الکی نیست. */
   const stats: StatCardProps[] = [
-    {
-      icon: Activity,
-      label: "چرخه‌های اجراشده",
-      value: fa(42),
-      hint: "از ابتدای مهر",
-      tint: "bg-brand/10 text-brand",
-      trend: { dir: "up", pct: 8, note: "نسبت به هفتهٔ پیش" },
-    },
     {
       icon: Users,
       label: "تیم‌های فعال",
-      value: fa(15),
-      hint: "در ۶ موج",
+      value: fa(TEAMS.length),
+      hint: `در ${fa(6)} موج`,
       tint: "bg-success/10 text-success",
-      trend: { dir: "flat", pct: 0, note: "بدون تغییر" },
     },
     {
       icon: ClipboardList,
@@ -273,15 +201,25 @@ export default function DashboardHomePage() {
       value: fa(queueCount),
       hint: "منتظر شروع چرخه",
       tint: "bg-warning/10 text-warning",
-      trend: { dir: "down", pct: 12, note: "نسبت به دیروز" },
     },
-    {
-      icon: Clock3,
-      label: "آخرین چرخه",
-      value: cycle ? fa(cycle.id.replace("CYC-", "")) : fa(1842),
-      hint: cycle?.startedAgo ?? "۲ ساعت پیش",
-      tint: "bg-brand/10 text-brand",
-    },
+    ...(cycle
+      ? ([
+          {
+            icon: Clock3,
+            label: "آخرین چرخه",
+            value: fa(cycle.id.replace("CYC-", "")),
+            hint: cycle.startedAgo,
+            tint: "bg-brand/10 text-brand",
+          },
+          {
+            icon: Activity,
+            label: "موج جاری",
+            value: `موج ${WAVE_WORDS[cycle.currentWave - 1] ?? fa(cycle.currentWave)}`,
+            hint: `از ${fa(6)} موج`,
+            tint: "bg-brand/10 text-brand",
+          },
+        ] as StatCardProps[])
+      : []),
   ];
 
   const handleConfirmStart = () => {
@@ -328,19 +266,26 @@ export default function DashboardHomePage() {
               همین‌جا شروع می‌کنی.
             </p>
 
-            {/* آمار کلی */}
-            <div className="tg-stagger mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 md:mt-8 md:gap-4 lg:grid-cols-4 lg:gap-6">
-              {loading
-                ? Array.from({ length: 4 }).map((_, i) => (
-                    <SkeletonStat key={i} />
-                  ))
-                : stats.map((s) => (
-                    <StatCard key={s.label} {...s} />
-                  ))}
-            </div>
+            {/* آمار کلی؛ وقتی اتصال نیست، به‌جای عدد ساختگی هیچی نشان نمی‌دهیم */}
+            {!failed && (
+              <div className="tg-stagger mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 md:mt-8 md:gap-4 lg:grid-cols-4 lg:gap-6">
+                {loading
+                  ? Array.from({ length: 4 }).map((_, i) => (
+                      <SkeletonStat key={i} />
+                    ))
+                  : stats.map((s) => <StatCard key={s.label} {...s} />)}
+              </div>
+            )}
           </div>
         </section>
 
+        {failed ? (
+          /* بک‌اند در دسترس نیست: صادقانه می‌گوییم، عدد نمی‌سازیم */
+          <div className="mt-4 md:mt-6">
+            <NotConnected onRetry={() => load(true)} retrying={retrying} />
+          </div>
+        ) : (
+          <>
         {/* ── آخرین چرخه + هشدارها ── */}
         <div className="mt-4 grid gap-3 sm:gap-4 md:mt-6 md:gap-6 lg:grid-cols-3">
           {/* کارت آخرین چرخه */}
@@ -348,8 +293,22 @@ export default function DashboardHomePage() {
             aria-label="آخرین چرخه"
             className="rounded-3xl border border-border bg-card p-4 shadow-[var(--shadow-surface)] sm:p-6 lg:col-span-2"
           >
-            {loading || !cycle ? (
+            {loading ? (
               <SkeletonPanel />
+            ) : !cycle ? (
+              <div className="py-6 text-center">
+                <p className="text-sm text-muted-foreground">
+                  هنوز چرخه‌ای اجرا نشده است؛ اولین چرخه را شروع کن.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDialogOpen(true)}
+                  className="tg-btn mt-4 inline-flex min-h-[48px] items-center justify-center gap-2 rounded-2xl bg-brand px-6 font-bold text-brand-foreground shadow-[var(--shadow-control)] hover:brightness-110"
+                >
+                  <Play size={20} strokeWidth={2} />
+                  شروع چرخهٔ جدید
+                </button>
+              </div>
             ) : (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -417,10 +376,14 @@ export default function DashboardHomePage() {
           >
             <h2 className="text-xl font-bold">هشدارهای اخیر</h2>
             <div className="tg-stagger mt-4 space-y-4">
-              {loading || !alerts ? (
+              {loading || alerts === null ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <SkeletonRow key={i} />
                 ))
+              ) : alertsError ? (
+                <p className="rounded-2xl bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
+                  هشدارها در دسترس نیست؛ سرویس هشدار وصل نیست.
+                </p>
               ) : alerts.length === 0 ? (
                 <p className="rounded-2xl bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
                   هشدار تازه‌ای نیست؛ همه‌چیز آرام است.
@@ -482,10 +445,15 @@ export default function DashboardHomePage() {
             </div>
           </div>
 
-          {loading || !cycle ? (
+          {loading ? (
             <div className="mt-6">
               <SkeletonPanel />
             </div>
+          ) : !cycle ? (
+            <p className="mt-6 rounded-2xl bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
+              هنوز چرخه‌ای اجرا نشده است؛ موج‌ها بعد از شروع اولین چرخه این‌جا
+              می‌آیند.
+            </p>
           ) : (
             <>
               {/* خط زمانی */}
@@ -569,6 +537,8 @@ export default function DashboardHomePage() {
             </>
           )}
         </section>
+          </>
+        )}
       </div>
 
       {/* ── گفت‌وگوی تأیید شروع چرخه ── */}

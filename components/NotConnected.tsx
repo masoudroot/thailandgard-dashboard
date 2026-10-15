@@ -45,8 +45,8 @@ export default function NotConnected({ onRetry, retrying = false }: NotConnected
           <span className="font-bold text-brand">۲.</span>
           <span>
             از داشبورد سوپابیس (تنظیمات پروژه، بخش API) مقدارهای{' '}
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs" dir="ltr">SUPABASE_URL</code> و{' '}
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs" dir="ltr">SUPABASE_SERVICE_ROLE_KEY</code> را در{' '}
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all" dir="ltr">SUPABASE_URL</code> و{' '}
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all" dir="ltr">SUPABASE_SERVICE_ROLE_KEY</code> را در{' '}
             <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs" dir="ltr">.env.local</code> بگذارید.
           </span>
         </li>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FileText, FileX2 } from 'lucide-react';
 import type { Cycle, TeamName } from '@/lib/types';
 import EmptyState from '@/components/EmptyState';
+import NotConnected from '@/components/NotConnected';
 import PageHeader from '@/components/PageHeader';
 import { SkeletonPanel, SkeletonStat } from '@/components/Skeleton';
 
@@ -118,91 +119,22 @@ const AXIS_TITLES = [
   { key: 'actions', title: 'چه کاری انجام شد' },
 ] as const;
 
-/* ------------------------------------------------------------------ */
-/* دادهٔ نمایشی (تا وقتی GET /api/cycles ساخته شود)                   */
-/* ------------------------------------------------------------------ */
-
-const MOCK_REPORTS: CycleReport[] = [
-  {
-    id: 'mock-cycle-1',
-    run_id: 'TG-0722-03',
-    status: 'success',
-    started_at: '2026-10-14T03:58:00+03:30',
-    finished_at: '2026-10-14T06:14:00+03:30',
-    stats: { commits: 18, tasks: 42, teams: 15 },
-    teams: ALL_TEAMS,
-    report: {
-      goal: 'هدف این چرخه، سبز نگه‌داشتن مسیر دیپلوی و جلو بردن صف نبض دیزاین بود؛ یعنی هیچ آیتم طراحی بیش از یک ساعت بدون پاسخ نماند و بیلد سایت روی هر پوش سالم بیلد شود.',
-      problem: 'صبح دیپلوی روی یک فایل جدید که تیم dev ساخته ولی کامیت نکرده بود می‌افتاد؛ بیلد Turbopack با خطای Module not found قرمز شد و دو ران پشت سر هم شکست خوردند. هم‌زمان سه آیتم نبض دیزاین بیش از چهل دقیقه روی «مسدود» مانده بودند و جوابی از تیم مالک نرسیده بود.',
-      plan: 'قرار بود همهٔ فایل‌های untracked پوشهٔ site شناسایی و در دو کامیت جدا کامیت شوند، ران دیپلوی دوباره اجرا شود، و آیتم‌های مسدود طبق قانون ضدپارکینگ در همان اجرا تشدید شوند: یا حکم تیم مالک گرفته شود یا راه‌حل استاندارد با ثبت در لاگ اعمال شود.',
-      outcome: 'هر چهار فایل گمشده پیدا و کامیت شد؛ ران بعدی دیپلوی سبز شد و پروداکشن با همان کامیت به‌روز شد. هر سه آیتم مسدود هم تشدید شدند: یکی حکم گرفت و جلو رفت، دو تای دیگر با راه‌حل استاندارد بسته شدند.',
-      actions: 'تیم dev فایل‌های untracked را فهرست کرد و در دو کامیت پوش کرد؛ تیم qa بیلد را راستی‌آزمایی کرد؛ بازرس قانون ضدپارکینگ را روی آیتم‌های مسدود اجرا کرد؛ تیم محتوا گزارش نهایی چرخه را بست و به تلگرام اطلاع‌رسانی شد.',
-      summary:
-        'در کل چرخهٔ موفقی بود. دو گرهٔ واقعی باز شدند: دیپلوی از قرمز به سبز برگشت و سه آیتم مسدود از پارکینگ بیرون آمدند. تنها نکتهٔ باقی‌مانده این است که تیم dev باید پیش از هر پوش، چک‌لیست فایل‌های untracked را بزند تا این سناریو تکرار نشود؛ این قانون به چک‌لیست تیم اضافه شد.',
-    },
-  },
-  {
-    id: 'mock-cycle-2',
-    run_id: 'TG-0721-02',
-    status: 'success',
-    started_at: '2026-10-13T22:05:00+03:30',
-    finished_at: '2026-10-14T00:31:00+03:30',
-    stats: { commits: 11, tasks: 27, teams: 15 },
-    teams: ALL_TEAMS,
-    report: {
-      goal: 'هدف، به‌روزرسانی قیمت تورهای صفحهٔ اصلی و همگام‌سازی داده‌های تورسنج بود تا هیچ تور قدیمی با قیمت کهنه روی سایت نماند.',
-      problem: 'در سه تور، قیمت دیتابیس با قیمت سایت یکی نبود و تورسنج روی دو تور خطای تازگی داده می‌داد. کاربر سایت قیمت قدیم می‌دید و تیم فروش از اختلاف قیمت شکایت داشت.',
-      plan: 'قرار بود کوئری‌های تورسنج مستقیم اجرا شوند، قیمت‌ها از دیتابیس خوانده و روی سایت بنشینند، و بعد از نشستن، راستی‌آزمایی دوم روی همان تورها انجام شود.',
-      outcome: 'هر سه قیمت نشست و راستی شد؛ خطای تازگی تورسنج روی هر دو تور رفع شد. صفحهٔ تورها حالا همان قیمتی را نشان می‌دهد که در دیتابیس است.',
-      actions: 'تیم analytics کوئری‌های تورسنج را اجرا کرد؛ تیم dev کش قیمت‌ها را تازه کرد؛ تیم qa هر سه تور را دستی باز کرد و قیمت را با دیتابیس مقایسه کرد؛ نتیجه در لاگ چرخه ثبت شد.',
-      summary:
-        'در کل کار تمیز و سریعی بود و بدون هیچ خطایی در کمتر از سه ساعت بسته شد. فقط یک یادداشت برای چرخه‌های بعد ماند: کوئری‌های تورسنج را دیگر به‌صورت دستی اجرا نکنیم و یک ران خودکار شبانه برایشان بگذاریم تا این اختلاف قیمت اصلاً پیش نیاید.',
-    },
-  },
-  {
-    id: 'mock-cycle-3',
-    run_id: 'TG-0721-01',
-    status: 'success',
-    started_at: '2026-10-13T14:00:00+03:30',
-    finished_at: '2026-10-13T17:46:00+03:30',
-    stats: { commits: 24, tasks: 35, teams: 15 },
-    teams: ALL_TEAMS,
-    report: {
-      goal: 'هدف این چرخه، ممیزی سئوی ده صفحهٔ پربازدید سایت و بستن ایرادهای فنی قبل از ایندکس بعدی گوگل بود.',
-      problem: 'در ممیزی قبلی، چهار صفحه متا دیسکریپشن نداشتند، دو صفحه سرعت لودشان بالای چهار ثانیه بود و یک صفحه لینک شکسته داشت. اگر این‌ها می‌ماندند، در ایندکس بعدی رتبه می‌افتاد.',
-      plan: 'قرار بود تیم سئو هر ده صفحه را صفحه‌به‌صفحه ممیزی کند، ایرادها را اولویت‌بندی کند، تیم dev ایرادهای فنی را ببندد و تیم محتوا متاها را بنویسد؛ در پایان یک گزارش RAG برای هر صفحه صادر شود.',
-      outcome: 'هر ده صفحه ممیزی شدند؛ هر شش ایراد فنی بسته شد؛ متاهای گمشده نوشته و اعمال شدند؛ سرعت هر دو صفحهٔ کند به زیر دو ثانیه رسید. گزارش RAG هر ده صفحه سبز شد.',
-      actions: 'تیم seo ممیزی و اولویت‌بندی را انجام داد؛ تیم dev ایرادهای فنی و سرعت را بست؛ تیم content متاها را نوشت؛ تیم qa همه را راستی‌آزمایی کرد؛ بازرس گزارش نهایی را امضا کرد.',
-      summary:
-        'در کل یکی از تمیزترین چرخه‌های هفته بود: همهٔ ایرادها در همان چرخه بسته شدند و هیچ‌کدام به چرخهٔ بعد منتقل نشد. پیشنهاد تیم سئو برای چرخهٔ بعد: همین ممیزی را روی ده صفحهٔ بعدی پربازدید تکرار کنیم تا کل سایت تا آخر ماه سبز شود.',
-    },
-  },
-];
-
-/* ------------------------------------------------------------------ */
-/* واکشی چرخه‌ها از API با بازگشت به دادهٔ نمایشی                    */
-/* ------------------------------------------------------------------ */
-
-async function fetchCycles(): Promise<{ cycles: CycleReport[]; isMock: boolean }> {
-  try {
-    const res = await fetch('/api/cycles', { cache: 'no-store' });
-    if (!res.ok) throw new Error('bad status');
-    const body = await res.json().catch(() => null);
-    const list: Cycle[] | undefined = body?.ok ? body.data : Array.isArray(body) ? body : undefined;
-    if (!Array.isArray(list) || list.length === 0) throw new Error('empty');
-    // فعلاً API گزارش پنج‌محوری ندارد؛ محورها خالی می‌مانند تا API تکمیل شود.
-    const mapped: CycleReport[] = list
-      .filter((c) => c.status === 'success')
-      .map((c) => ({
-        ...c,
-        teams: ALL_TEAMS,
-        report: { goal: '', problem: '', plan: '', outcome: '', actions: '', summary: '' },
-      }));
-    if (mapped.length === 0) throw new Error('no success');
-    return { cycles: mapped, isMock: false };
-  } catch {
-    return { cycles: MOCK_REPORTS, isMock: true };
-  }
+async function fetchCycles(): Promise<{ cycles: CycleReport[] }> {
+  const res = await fetch('/api/cycles', { cache: 'no-store' });
+  if (!res.ok) throw new Error('bad status');
+  const body = await res.json().catch(() => null);
+  const list: Cycle[] | undefined = body?.ok ? body.data : Array.isArray(body) ? body : undefined;
+  if (!Array.isArray(list) || list.length === 0) throw new Error('empty');
+  // فعلاً API گزارش پنج‌محوری ندارد؛ محورها خالی می‌مانند تا API تکمیل شود.
+  const mapped: CycleReport[] = list
+    .filter((c) => c.status === 'success')
+    .map((c) => ({
+      ...c,
+      teams: ALL_TEAMS,
+      report: { goal: '', problem: '', plan: '', outcome: '', actions: '', summary: '' },
+    }));
+  if (mapped.length === 0) throw new Error('no success');
+  return { cycles: mapped };
 }
 
 /* ------------------------------------------------------------------ */
@@ -211,26 +143,36 @@ async function fetchCycles(): Promise<{ cycles: CycleReport[]; isMock: boolean }
 
 export default function ReportsPage() {
   const [reports, setReports] = useState<CycleReport[]>([]);
-  const [isMock, setIsMock] = useState(false);
+  /* قانون مسعود: دادهٔ نمایشی ممنوع؛ اگر API در دسترس نباشد صادقانه می‌گوییم */
+  const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /* تلاش مجدد: با هر افزایش، افکت بالا دوباره اجرا می‌شود */
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let alive = true;
-    fetchCycles().then(({ cycles, isMock: mock }) => {
-      if (!alive) return;
-      const sorted = [...cycles].sort(
-        (a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
-      );
-      setReports(sorted);
-      setIsMock(mock);
-      setSelectedId((prev) => prev ?? sorted[0]?.id ?? null);
-      setLoading(false);
-    });
+    setLoading(true);
+    fetchCycles()
+      .then(({ cycles }) => {
+        if (!alive) return;
+        const sorted = [...cycles].sort(
+          (a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
+        );
+        setReports(sorted);
+        setSelectedId((prev) => prev ?? sorted[0]?.id ?? null);
+        setFailed(false);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setFailed(true);
+        setLoading(false);
+      });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [attempt]);
 
   const selected = useMemo(
     () => reports.find((r) => r.id === selectedId) ?? null,
@@ -246,17 +188,15 @@ export default function ReportsPage() {
         icon={FileText}
         title="گزارش چرخه‌ها"
         subtitle="گزارش پنج‌محوری چرخه‌های موفق تیم‌های هوش مصنوعی تایلندگرد. برای خواندن گزارش، یک چرخه را از فهرست انتخاب کنید."
-        actions={
-          isMock && !loading ? (
-            <span className="inline-block rounded-md bg-secondary px-3 py-1 text-xs text-secondary-foreground">
-              دادهٔ نمایشی: مسیر GET /api/cycles هنوز ساخته نشده، پس فهرست نمونه نمایش داده می‌شود.
-            </span>
-          ) : undefined
-        }
       />
 
       {loading ? (
         <LoadingState />
+      ) : failed ? (
+        <NotConnected
+          onRetry={() => setAttempt((n) => n + 1)}
+          retrying={false}
+        />
       ) : reports.length === 0 ? (
         <ReportsEmptyState />
       ) : (

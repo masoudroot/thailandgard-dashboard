@@ -95,17 +95,36 @@ function TabShell({
 export default function MobileNav() {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
+  /* دراور فقط وقتی در DOM است که باز باشد یا در حال بسته‌شدن؛ باکسِ
+     translate-x-fullِ بیرون‌صفحه در حالت بسته، در راست‌چین overflow افقی
+     می‌ساخت و کل صفحه را ~۶۰px شیفت می‌داد (مشاهده‌شده در ۳۶۰px). */
+  const [mounted, setMounted] = React.useState(false);
+  const openRef = React.useRef(open);
+  openRef.current = open;
   const closeBtnRef = React.useRef<HTMLButtonElement>(null);
   const moreBtnRef = React.useRef<HTMLButtonElement>(null);
 
-  const close = React.useCallback(() => setOpen(false), []);
+  const openDrawer = React.useCallback(() => {
+    setMounted(true);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => setOpen(true)),
+    );
+  }, []);
+
+  const close = React.useCallback(() => {
+    setOpen(false);
+    /* بعد از پایان ترنزیشن بسته‌شدن، دراور را از DOM برمی‌داریم */
+    window.setTimeout(() => {
+      if (!openRef.current) setMounted(false);
+    }, 240);
+  }, []);
 
   // Escape + قفل اسکرول بدنه + مدیریت فوکوس
   React.useEffect(() => {
     if (!open) return;
 
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") close();
     }
     document.addEventListener("keydown", onKeyDown);
     const prevOverflow = document.body.style.overflow;
@@ -117,7 +136,7 @@ export default function MobileNav() {
       document.body.style.overflow = prevOverflow;
       moreBtnRef.current?.focus();
     };
-  }, [open ]);
+  }, [open, close]);
 
   const moreActive = MORE_HREFS.some((href) => isNavActive(pathname, href));
 
@@ -146,7 +165,7 @@ export default function MobileNav() {
               icon={Menu}
               active={moreActive}
               buttonRef={moreBtnRef}
-              onClick={() => setOpen(true)}
+              onClick={openDrawer}
               aria-expanded={open}
             />
           </li>
@@ -163,7 +182,8 @@ export default function MobileNav() {
         ].join(" ")}
       />
 
-      {/* دراور کناری از سمت راست (شروع در راست‌چین) */}
+      {/* دراور کناری از سمت راست (شروع در راست‌چین)؛ فقط وقتی سوار است که باز باشد */}
+      {mounted && (
       <aside
         id="mobile-nav-drawer"
         role="dialog"
@@ -194,6 +214,7 @@ export default function MobileNav() {
           <LogoutButton onNavigate={close} />
         </div>
       </aside>
+      )}
     </>
   );
 }

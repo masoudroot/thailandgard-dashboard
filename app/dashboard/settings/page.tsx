@@ -769,9 +769,9 @@ function LlmModelsCard() {
           <p className="text-sm font-bold text-foreground">متصل نیست</p>
           <p className="mt-1 text-sm text-muted-foreground">
             برای مدیریت مدل‌ها باید پایگاه داده وصل باشد. متغیرهای محیطی
-            <code dir="ltr" className="mx-1 rounded bg-background px-1 text-xs">SUPABASE_URL</code>
+            <code dir="ltr" className="mx-1 break-all rounded bg-background px-1 text-xs">SUPABASE_URL</code>
             و
-            <code dir="ltr" className="mx-1 rounded bg-background px-1 text-xs">SUPABASE_SERVICE_ROLE_KEY</code>
+            <code dir="ltr" className="mx-1 break-all rounded bg-background px-1 text-xs">SUPABASE_SERVICE_ROLE_KEY</code>
             را در محیط اجرا تنظیم کنید و سرویس را دوباره راه‌اندازی کنید.
           </p>
         </div>

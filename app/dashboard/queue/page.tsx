@@ -459,7 +459,7 @@ export default function QueuePage() {
                           className="min-h-[44px] w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm"
                         />
                       </label>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <label className="block">
                           <span className="mb-1 block text-sm font-medium">تیم مجری *</span>
                           <select
