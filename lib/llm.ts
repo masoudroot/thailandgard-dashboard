@@ -67,6 +67,38 @@ export interface LLMStats {
   lastError: string | null;
 }
 
+/**
+ * Circuit breaker: مدل‌های خراب را موقتاً از مدار خارج می‌کند.
+ * بعد از ۳ خطای پیاپی، مدل ۱۰ دقیقه استراحت می‌کند.
+ */
+const circuitBreaker = new Map<string, { failures: number; trippedUntil: number }>();
+const CB_THRESHOLD = 3;
+const CB_COOLDOWN_MS = 10 * 60 * 1000;
+
+function isCircuitOpen(modelKey: string): boolean {
+  const cb = circuitBreaker.get(modelKey);
+  if (!cb) return false;
+  if (Date.now() > cb.trippedUntil) {
+    circuitBreaker.delete(modelKey);
+    return false;
+  }
+  return cb.failures >= CB_THRESHOLD;
+}
+
+function recordSuccess(modelKey: string): void {
+  circuitBreaker.delete(modelKey);
+}
+
+function recordFailure(modelKey: string): void {
+  const cb = circuitBreaker.get(modelKey) ?? { failures: 0, trippedUntil: 0 };
+  cb.failures += 1;
+  if (cb.failures >= CB_THRESHOLD) {
+    cb.trippedUntil = Date.now() + CB_COOLDOWN_MS;
+    console.log(`[llm] circuit breaker tripped for ${modelKey} (${CB_COOLDOWN_MS / 60000}min cooldown)`);
+  }
+  circuitBreaker.set(modelKey, cb);
+}
+
 const stats: LLMStats = {
   total: 0,
   success: 0,
@@ -342,6 +374,7 @@ export async function callLLM(
   }
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const model = await resolveModel(opts.model, configuredModel);
+  const modelKey = `${base}::${model}`;
 
   const callOpts = {
     maxTokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
@@ -352,13 +385,38 @@ export async function callLLM(
 
   stats.total += 1;
 
+  // اگر مدار این مدل باز است (خراب شناخته شده)، مستقیم برو سراغ جایگزین هوشمند
+  if (isCircuitOpen(modelKey)) {
+    console.log(`[llm] circuit open for ${model}, using smart fallback`);
+    const smartFallback = team ? await findWorkingModel(team, base, apiKey, model) : null;
+    if (smartFallback) {
+      let fbBase = base;
+      let fbKey = apiKey;
+      try {
+        const ep = await getEndpoint(smartFallback.endpointId);
+        if (ep?.baseUrl && ep?.apiKey) {
+          fbBase = ep.baseUrl;
+          fbKey = ep.apiKey;
+        }
+      } catch { /* نادیده */ }
+      const text = await postChatCompletions(fbBase, fbKey, smartFallback.model, prompt, callOpts);
+      stats.success += 1;
+      stats.fallback += 1;
+      if (team) await persistTeamModel(team, smartFallback.endpointId, smartFallback.model).catch(() => {});
+      return text;
+    }
+    // جایگزین پیدا نشد؛ همان را امتحان کن شاید درست شده باشد
+  }
+
   try {
     const text = await postChatCompletions(base, apiKey, model, prompt, callOpts);
     stats.success += 1;
+    recordSuccess(modelKey);
     return text;
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     if (isRetryable(err)) {
+      recordFailure(modelKey);
       // جست‌وجوی هوشمند: مدل‌های سالم همه درگاه‌ها را در لحظه تست کن
       const smartFallback = team ? await findWorkingModel(team, base, apiKey, model) : null;
       const fallback = smartFallback?.model ?? fallbackModel(model);

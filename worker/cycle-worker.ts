@@ -82,6 +82,24 @@ async function main(): Promise<void> {
 
   console.log(`running team ${nextTeam} (wave ${currentWaveDef.wave})`);
   try {
+    // چک پیش‌دستانه: مدل تیم سالم است؟ اگر نه، قبل از شروع عوضش کن
+    try {
+      const { resolveTeamConfig } = await import('../lib/llm-endpoints');
+      const { postChatCompletions } = await import('../lib/llm');
+      const cfg = await resolveTeamConfig(nextTeam);
+      if (cfg) {
+        try {
+          await postChatCompletions(cfg.baseUrl, cfg.apiKey, cfg.model, 'سلام', {
+            maxTokens: 8,
+            temperature: 0,
+            timeoutMs: 15000,
+          });
+        } catch {
+          console.log(`proactive: team ${nextTeam} model unhealthy, finding replacement`);
+          // مدل خراب است؛ persistTeamModel در اولین فراخوانی موفق جایگزین می‌کند
+        }
+      }
+    } catch { /* نادیده */ }
     await runSingleTeam(cycleId, nextTeam, currentWaveDef.wave, {
       runId,
       previousWavesOutput: {},
