@@ -5,7 +5,7 @@ import {
   resumeCycle,
 } from '../../../../lib/orchestrator';
 
-/** GET /api/cycles/[id] — جزئیات یک چرخه + همه‌ی team_runs آن. */
+/** GET /api/cycles/[id]: جزئیات یک چرخه + همه‌ی team_runs آن. */
 export async function GET(
   _req: Request,
   { params }: { params: { id: string } },
@@ -36,7 +36,7 @@ export async function GET(
 
 
 /**
- * PATCH /api/cycles/[id] — کنترل چرخه: توقف نرم، ادامه، لغو.
+ * PATCH /api/cycles/[id]: کنترل چرخه: توقف نرم، ادامه، لغو.
  * بدنه: { "action": "pause" | "resume" | "cancel" }
  *
  *  - pause: running -> pausing؛ حلقه‌ی اجرا بین موج‌ها این را می‌بیند،

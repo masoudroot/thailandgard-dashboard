@@ -6,7 +6,7 @@ import {
   runAllWaves,
 } from '../../../lib/orchestrator';
 
-/** GET /api/cycles — فهرست چرخه‌ها (جدیدترین اول). */
+/** GET /api/cycles: فهرست چرخه‌ها (جدیدترین اول). */
 export async function GET(): Promise<Response> {
   try {
     const { data, error } = await getSupabase()
@@ -22,7 +22,7 @@ export async function GET(): Promise<Response> {
 }
 
 /**
- * POST /api/cycles — شروع چرخه‌ی جدید.
+ * POST /api/cycles: شروع چرخه‌ی جدید.
  * اگر چرخهٔ فعالی (در حال اجرا، در آستانهٔ توقف، یا متوقف‌شده) هست، 409 برمی‌گردد؛
  * اول باید همان چرخه لغو شود یا ادامه یابد. قفل ارکستراتور هم همین را تضمین می‌کند.
  * قفل و ردیف cycles هم‌زمان ساخته می‌شود و run_id برمی‌گردد (202)؛
