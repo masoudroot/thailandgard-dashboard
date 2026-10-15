@@ -43,11 +43,17 @@ export default function NotConnected({ onRetry, retrying = false }: NotConnected
         </li>
         <li className="flex gap-2">
           <span className="font-bold text-brand">۲.</span>
-          <span>
-            از داشبورد سوپابیس (تنظیمات پروژه، بخش API) مقدارهای{' '}
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all" dir="ltr">SUPABASE_URL</code> و{' '}
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all" dir="ltr">SUPABASE_SERVICE_ROLE_KEY</code> را در{' '}
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs" dir="ltr">.env.local</code> بگذارید.
+          <span className="min-w-0">
+            از داشبورد سوپابیس (تنظیمات پروژه، بخش API) این دو مقدار را در{' '}
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs" dir="ltr">.env.local</code> بگذارید:
+            <span className="mt-2 flex flex-col items-start gap-1.5">
+              <code className="rounded bg-muted px-2 py-1 font-mono text-xs whitespace-nowrap" dir="ltr">
+                SUPABASE_URL
+              </code>
+              <code className="rounded bg-muted px-2 py-1 font-mono text-xs whitespace-nowrap" dir="ltr">
+                SUPABASE_SERVICE_ROLE_KEY
+              </code>
+            </span>
           </span>
         </li>
         <li className="flex gap-2">
