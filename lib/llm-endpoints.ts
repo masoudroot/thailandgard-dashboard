@@ -17,6 +17,8 @@ export const SETTINGS_KEY_ENDPOINTS = 'llm_endpoints';
 export const SETTINGS_KEY_TEAM_MODELS = 'team_models';
 /** مدل پیش‌فرض سامانه برای تیم‌های بدون تنظیم: { endpointId, model } یا null */
 export const SETTINGS_KEY_DEFAULT_MODEL = 'llm_default_model';
+/** مدل امبدینگ سامانه برای جست‌وجوی معنایی: { endpointId, model } یا null */
+export const SETTINGS_KEY_EMBEDDING_MODEL = 'llm_embedding_model';
 
 /** خطای ورودی کاربر (نامعتبر بودن فرم)؛ مسیر API آن را 400 می‌کند. */
 export class InputError extends Error {
@@ -216,6 +218,20 @@ export async function deleteEndpoint(id: string): Promise<void> {
     }
   }
   if (changed) await setSetting(SETTINGS_KEY_TEAM_MODELS, map);
+
+  // مدل پیش‌فرض و امبدینگ اگر به این endpoint اشاره کنند پاک می‌شوند
+  // تا ارجاع مرده در settings نماند.
+  for (const key of [SETTINGS_KEY_DEFAULT_MODEL, SETTINGS_KEY_EMBEDDING_MODEL]) {
+    const raw = await getSetting<unknown>(key, null);
+    if (
+      raw &&
+      typeof raw === 'object' &&
+      !Array.isArray(raw) &&
+      (raw as Record<string, unknown>).endpointId === id
+    ) {
+      await setSetting(key, null);
+    }
+  }
 }
 
 /** خواندن نگاشت «مدل هر تیم» (تیم‌هایی که تنظیم نشده‌اند در نگاشت نیستند). */
@@ -284,7 +300,17 @@ export async function resolveTeamConfig(
 
 /** خواندن «مدل پیش‌فرض سامانه» (تیم‌های بدون تنظیم از آن استفاده می‌کنند). */
 export async function getDefaultModel(): Promise<TeamModelEntry | null> {
-  const raw = await getSetting<unknown>(SETTINGS_KEY_DEFAULT_MODEL, null);
+  return getSingleModelEntry(SETTINGS_KEY_DEFAULT_MODEL);
+}
+
+/** خواندن «مدل امبدینگ» سامانه (جست‌وجوی معنایی در حافظه تیم‌ها). */
+export async function getEmbeddingModel(): Promise<TeamModelEntry | null> {
+  return getSingleModelEntry(SETTINGS_KEY_EMBEDDING_MODEL);
+}
+
+/** خواندن یک ورودی تکی { endpointId, model } از settings؛ endpoint مرده null می‌دهد. */
+async function getSingleModelEntry(key: string): Promise<TeamModelEntry | null> {
+  const raw = await getSetting<unknown>(key, null);
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const v = raw as Record<string, unknown>;
   const endpointId = typeof v.endpointId === 'string' ? v.endpointId.trim() : '';
@@ -295,12 +321,13 @@ export async function getDefaultModel(): Promise<TeamModelEntry | null> {
   return { endpointId, model };
 }
 
-/**
- * ذخیره‌ی «مدل پیش‌فرض سامانه». ورودی null یعنی پاک کردن (برگشت به env).
- */
-export async function saveDefaultModel(input: unknown): Promise<TeamModelEntry | null> {
+/** ذخیره‌ی یک ورودی تکی { endpointId, model } در settings؛ ورودی null یعنی پاک کردن. */
+async function saveSingleModelEntry(
+  key: string,
+  input: unknown,
+): Promise<TeamModelEntry | null> {
   if (input === null) {
-    await setSetting(SETTINGS_KEY_DEFAULT_MODEL, null);
+    await setSetting(key, null);
     return null;
   }
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -315,8 +342,35 @@ export async function saveDefaultModel(input: unknown): Promise<TeamModelEntry |
   const ep = await getEndpoint(endpointId);
   if (!ep) throw new InputError('این endpoint وجود ندارد.');
   const entry: TeamModelEntry = { endpointId, model };
-  await setSetting(SETTINGS_KEY_DEFAULT_MODEL, entry);
+  await setSetting(key, entry);
   return entry;
+}
+
+/**
+ * ذخیره‌ی «مدل پیش‌فرض سامانه». ورودی null یعنی پاک کردن (برگشت به env).
+ */
+export async function saveDefaultModel(input: unknown): Promise<TeamModelEntry | null> {
+  return saveSingleModelEntry(SETTINGS_KEY_DEFAULT_MODEL, input);
+}
+
+/**
+ * ذخیره‌ی «مدل امبدینگ» سامانه. ورودی null یعنی پاک کردن.
+ */
+export async function saveEmbeddingModel(input: unknown): Promise<TeamModelEntry | null> {
+  return saveSingleModelEntry(SETTINGS_KEY_EMBEDDING_MODEL, input);
+}
+
+/**
+ * حل کردن پیکربندی امبدینگ: endpoint + کلید واقعی + مدل.
+ * اگر تنظیم نشده یا endpoint/کلیدش ناقص است null برمی‌گردد تا فراخواننده
+ * به رفتار پیش‌فرض (env) برگردد.
+ */
+export async function resolveEmbeddingConfig(): Promise<ResolvedTeamLLM | null> {
+  const entry = await getEmbeddingModel();
+  if (!entry) return null;
+  const ep = await getEndpoint(entry.endpointId);
+  if (!ep || !ep.apiKey || !entry.model) return null;
+  return { baseUrl: ep.baseUrl, apiKey: ep.apiKey, model: entry.model };
 }
 
 export interface PromptTestResult {

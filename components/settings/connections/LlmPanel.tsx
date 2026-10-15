@@ -62,7 +62,7 @@ function SaveNote({ state }: { state: SaveState }) {
 
 /**
  * کارت «مدل‌های هوش مصنوعی»: درگاه‌های OpenAI + مدل پیش‌فرض سامانه +
- * مدل هر یک از ۱۵ تیم + تست واقعی پرامپت. کلیدها فقط ماسک‌شده نمایش داده می‌شوند.
+ * مدل امبدینگ + مدل هر یک از ۱۵ تیم + تست واقعی پرامپت. کلیدها فقط ماسک‌شده نمایش داده می‌شوند.
  */
 export function LlmPanel() {
   const [loading, setLoading] = useState(true);
@@ -70,6 +70,7 @@ export function LlmPanel() {
   const [endpoints, setEndpoints] = useState<MaskedEndpoint[]>([]);
   const [teamModels, setTeamModels] = useState<Record<string, TeamModelEntry>>({});
   const [defaultModel, setDefaultModel] = useState<TeamModelEntry | null>(null);
+  const [embeddingModel, setEmbeddingModel] = useState<TeamModelEntry | null>(null);
   const [modelsCache, setModelsCache] = useState<Record<string, string[]>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, EndpointTestResult>>({});
@@ -82,6 +83,7 @@ export function LlmPanel() {
   const [deleting, setDeleting] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [defaultSave, setDefaultSave] = useState<SaveState>("idle");
+  const [embeddingSave, setEmbeddingSave] = useState<SaveState>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // تست واقعی پرامپت
@@ -101,11 +103,20 @@ export function LlmPanel() {
         const d = body?.data;
         if (res.ok && body?.ok !== false && d) {
           setConnected(!!d.connected);
-          if (Array.isArray(d.endpoints)) setEndpoints(d.endpoints);
+          if (Array.isArray(d.endpoints)) {
+            setEndpoints(d.endpoints);
+            // فهرست واقعی مدل‌های همه‌ی درگاه‌ها را بی‌صدا بگیر تا
+            // انتخاب‌گرهای مدل (پیش‌فرض، امبدینگ، تیم‌ها، تست) از اول پر باشند.
+            for (const ep of d.endpoints as MaskedEndpoint[]) {
+              if (ep?.id) void ensureModels(ep.id);
+            }
+          }
           if (d.teamModels && typeof d.teamModels === "object")
             setTeamModels(d.teamModels as Record<string, TeamModelEntry>);
           if (d.defaultModel && typeof d.defaultModel === "object")
             setDefaultModel(d.defaultModel as TeamModelEntry);
+          if (d.embeddingModel && typeof d.embeddingModel === "object")
+            setEmbeddingModel(d.embeddingModel as TeamModelEntry);
         } else {
           setErrorMsg(body?.error?.message ?? "خواندن تنظیمات انجام نشد؛ دوباره تلاش کنید.");
         }
@@ -232,6 +243,7 @@ export function LlmPanel() {
         return next;
       });
       if (defaultModel?.endpointId === id) setDefaultModel(null);
+      if (embeddingModel?.endpointId === id) setEmbeddingModel(null);
       if (ptEndpoint === id) {
         setPtEndpoint("");
         setPtModel("");
@@ -365,6 +377,61 @@ export function LlmPanel() {
     void handleDefaultSave(defaultModel.endpointId, model);
   }
 
+  async function handleEmbeddingSave(endpointId: string, model: string) {
+    setEmbeddingSave("saving");
+    try {
+      const res = await fetch("/api/settings/llm/embedding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpointId, model }),
+      });
+      const body = await res.json();
+      if (!res.ok || body?.ok === false) {
+        throw new Error(body?.error?.message ?? "ذخیره انجام نشد.");
+      }
+      setEmbeddingModel(body?.data?.embeddingModel ?? null);
+      setEmbeddingSave("saved");
+    } catch {
+      setEmbeddingSave("error");
+    }
+  }
+
+  function handleEmbeddingEndpoint(endpointId: string) {
+    if (!endpointId) {
+      // پاک کردن مدل امبدینگ
+      setEmbeddingSave("saving");
+      fetch("/api/settings/llm/embedding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear: true }),
+      })
+        .then(async (res) => {
+          const body = await res.json();
+          if (!res.ok || body?.ok === false) throw new Error();
+          setEmbeddingModel(null);
+          setEmbeddingSave("saved");
+        })
+        .catch(() => setEmbeddingSave("error"));
+      return;
+    }
+    const model = embeddingModel?.model ?? "";
+    setEmbeddingModel({ endpointId, model });
+    if (model.trim()) void handleEmbeddingSave(endpointId, model.trim());
+    void ensureModels(endpointId);
+  }
+
+  function handleEmbeddingModel(model: string) {
+    if (!embeddingModel?.endpointId) return;
+    setEmbeddingModel({ endpointId: embeddingModel.endpointId, model });
+  }
+
+  function handleEmbeddingModelBlur() {
+    if (!embeddingModel?.endpointId) return;
+    const model = embeddingModel.model.trim();
+    if (!model) return;
+    void handleEmbeddingSave(embeddingModel.endpointId, model);
+  }
+
   async function handlePromptTest() {
     setPtSending(true);
     setPtResult(null);
@@ -402,6 +469,13 @@ export function LlmPanel() {
 
   const ptCached = ptEndpoint ? modelsCache[ptEndpoint] : undefined;
   const defCached = defaultModel?.endpointId ? modelsCache[defaultModel.endpointId] : undefined;
+  const embCached = embeddingModel?.endpointId ? modelsCache[embeddingModel.endpointId] : undefined;
+  /** فقط مدل‌های امبدینگ همان درگاه (نام شامل embed) */
+  const embOnly = embCached?.filter((m) => m.toLowerCase().includes("embed"));
+
+  /** نام نمایشی یک درگاه برای خط «انتخاب فعلی» */
+  const epName = (id: string): string =>
+    endpoints.find((e) => e.id === id)?.name ?? "-";
 
   return (
     <ConnectionRow
@@ -412,8 +486,8 @@ export function LlmPanel() {
       statusText={rowStatus}
     >
       <p className="mb-4 text-xs leading-6 text-muted-foreground">
-        درگاه‌های سازگار با OpenAI، مدل پیش‌فرض سامانه و انتخاب مدل هر یک از
-        ۱۵ تیم. تیمی که تنظیم نشود، از مدل پیش‌فرض استفاده می‌کند.
+        درگاه‌های سازگار با OpenAI، مدل پیش‌فرض سامانه، مدل امبدینگ و انتخاب
+        مدل هر یک از ۱۵ تیم. تیمی که تنظیم نشود، از مدل پیش‌فرض استفاده می‌کند.
       </p>
 
       {loading ? (
@@ -611,6 +685,14 @@ export function LlmPanel() {
             <p className="mb-3 text-xs leading-6 text-muted-foreground">
               تیم‌هایی که مدل اختصاصی ندارند از این درگاه و مدل استفاده می‌کنند.
             </p>
+            {defaultModel?.endpointId && (
+              <p className="mb-3 rounded-lg bg-muted px-3 py-2 text-xs leading-6 text-foreground">
+                انتخاب فعلی: درگاه {epName(defaultModel.endpointId)} | مدل{" "}
+                <span dir="ltr" className="font-mono">
+                  {defaultModel.model || "انتخاب نشده"}
+                </span>
+              </p>
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label htmlFor="llm-default-ep" className="mb-1.5 block text-xs font-medium text-muted-foreground">
@@ -660,6 +742,81 @@ export function LlmPanel() {
             </div>
             <div className="mt-2">
               <SaveNote state={defaultSave} />
+            </div>
+          </div>
+
+          {/* ── مدل امبدینگ ── */}
+          <div className="rounded-lg border border-border bg-background px-3 py-4">
+            <h3 className="mb-1 text-sm font-bold text-foreground">مدل امبدینگ</h3>
+            <p className="mb-3 text-xs leading-6 text-muted-foreground">
+              برای جست‌وجوی معنایی در حافظه تیم‌ها. فهرست مدل‌ها فقط مدل‌های
+              امبدینگ همان درگاه را نشان می‌دهد.
+            </p>
+            {embeddingModel?.endpointId && (
+              <p className="mb-3 rounded-lg bg-muted px-3 py-2 text-xs leading-6 text-foreground">
+                انتخاب فعلی: درگاه {epName(embeddingModel.endpointId)} | مدل{" "}
+                <span dir="ltr" className="font-mono">
+                  {embeddingModel.model || "انتخاب نشده"}
+                </span>
+              </p>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="llm-emb-ep" className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                  درگاه
+                </label>
+                <select
+                  id="llm-emb-ep"
+                  value={embeddingModel?.endpointId ?? ""}
+                  onChange={(e) => handleEmbeddingEndpoint(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">انتخاب نشده</option>
+                  {endpoints.map((ep) => (
+                    <option key={ep.id} value={ep.id}>
+                      {ep.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="llm-emb-model" className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                  مدل امبدینگ
+                  {embeddingModel?.endpointId && embCached && (
+                    <span className="me-1">({faDigits(embOnly?.length ?? 0)} مدل امبدینگ از درگاه)</span>
+                  )}
+                  {embeddingModel?.endpointId && loadingModels[embeddingModel.endpointId] && (
+                    <span className="me-1">(در حال گرفتن فهرست…)</span>
+                  )}
+                </label>
+                <input
+                  id="llm-emb-model"
+                  type="text"
+                  dir="ltr"
+                  list="llm-emb-model-list"
+                  placeholder={embeddingModel?.endpointId ? "انتخاب یا تایپ مدل…" : "اول یک درگاه انتخاب کنید"}
+                  disabled={!embeddingModel?.endpointId}
+                  value={embeddingModel?.model ?? ""}
+                  onChange={(e) => handleEmbeddingModel(e.target.value)}
+                  onBlur={handleEmbeddingModelBlur}
+                  className={inputClass}
+                />
+                {embOnly && embOnly.length > 0 && (
+                  <datalist id="llm-emb-model-list">
+                    {embOnly.map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
+                )}
+              </div>
+            </div>
+            {embeddingModel?.endpointId && embCached && (embOnly?.length ?? 0) === 0 && !loadingModels[embeddingModel.endpointId] && (
+              <p className="mt-2 text-xs leading-6 text-muted-foreground">
+                در فهرست این درگاه مدل امبدینگ پیدا نشد؛ می‌توانید نام مدل را دستی تایپ کنید.
+              </p>
+            )}
+            <div className="mt-2">
+              <SaveNote state={embeddingSave} />
             </div>
           </div>
 

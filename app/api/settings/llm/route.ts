@@ -1,5 +1,6 @@
 /**
- * GET /api/settings/llm: لیست endpointهای LLM (کلیدها ماسک‌شده) + نگاشت «مدل هر تیم».
+ * GET /api/settings/llm: لیست endpointهای LLM (کلیدها ماسک‌شده) + نگاشت «مدل هر تیم»
+ * + مدل پیش‌فرض + مدل امبدینگ.
  * POST /api/settings/llm: افزودن endpoint جدید یا ویرایش موجود (با id).
  *
  * اگر env سوپابیس ست نباشد، GET با connected:false برمی‌گردد تا UI صادقانه
@@ -10,6 +11,7 @@ import { fail, ok } from '../../../../lib/api';
 import {
   InputError,
   getDefaultModel,
+  getEmbeddingModel,
   getTeamModelMap,
   isSupabaseConfigured,
   listEndpointsMasked,
@@ -18,15 +20,16 @@ import {
 
 export async function GET(): Promise<Response> {
   if (!isSupabaseConfigured()) {
-    return ok({ connected: false, endpoints: [], teamModels: {}, defaultModel: null });
+    return ok({ connected: false, endpoints: [], teamModels: {}, defaultModel: null, embeddingModel: null });
   }
   try {
-    const [endpoints, teamModels, defaultModel] = await Promise.all([
+    const [endpoints, teamModels, defaultModel, embeddingModel] = await Promise.all([
       listEndpointsMasked(),
       getTeamModelMap(),
       getDefaultModel(),
+      getEmbeddingModel(),
     ]);
-    return ok({ connected: true, endpoints, teamModels, defaultModel });
+    return ok({ connected: true, endpoints, teamModels, defaultModel, embeddingModel });
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));
   }
