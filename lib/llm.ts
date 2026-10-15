@@ -322,11 +322,14 @@ export async function callLLM(
  */
 export async function callLLMJson<T = unknown>(
   prompt: string,
-  opts: LLMCallOptions = {},
+  opts: LLMCallOptions & { jsonExample?: string } = {},
 ): Promise<T> {
-  const raw = await callLLM(prompt, {
+  const jsonRule =
+    "\n\nقانون سفت و سخت: خروجی‌ات باید دقیقاً یک JSON معتبر باشد. هیچ متنی قبل یا بعدش نباشد؛ نه markdown، نه توضیح، نه کدفنس." +
+    (opts.jsonExample ? `\nمثال دقیق ساختار:\n${opts.jsonExample}` : "");
+  const raw = await callLLM(prompt + jsonRule, {
     ...opts,
-    temperature: opts.temperature ?? 0.2, // cooler by default for structured output
+    temperature: opts.temperature ?? 0.1, // خنک‌تر برای خروجی ساخت‌یافته
   });
 
   const parsed = tryParseJson(raw);
