@@ -188,7 +188,7 @@ async function findWorkingModel(
       let models: string[] = [];
       try {
         const fetched = await fetchEndpointModels(epId, 15000);
-        models = fetched.models.map((m) => m.id).filter((id) => id !== failedModel).slice(0, 5);
+        models = fetched.models.filter((id) => id !== failedModel).slice(0, 5);
       } catch {
         continue;
       }
