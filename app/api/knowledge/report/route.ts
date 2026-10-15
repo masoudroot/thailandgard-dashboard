@@ -1,4 +1,5 @@
 import { ok, fail } from '@/lib/api';
+import { faNum } from '@/lib/format';
 import { TEAM_META } from '@/lib/team-meta';
 import {
   scoreAllTeams,
@@ -38,9 +39,6 @@ export interface KnowledgeReport {
   teams: ReportTeamEntry[];
   summary: ReportSummary;
 }
-
-const faNum = (n: number | string): string =>
-  String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]);
 
 const ERROR_NOTE = 'خطا در خواندن دانش';
 

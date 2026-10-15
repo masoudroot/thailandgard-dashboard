@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Input, Label, Field } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/textarea';
+import { faNum } from '@/lib/format';
 
 /* ------------------------------------------------------------------ */
 /*  مدل داده (آینهٔ واقعی build_queue + تنظیمات اجرا)                   */
@@ -88,12 +89,6 @@ const TEAM_LABELS: Record<string, string> = {
   inspector: 'بازرس',
 };
 
-const FA_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
-
-function faNum(value: string | number): string {
-  return String(value).replace(/[0-9]/g, (d) => FA_DIGITS[Number(d)]);
-}
-
 function relativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.max(1, Math.round(diffMs / 60_000));
@@ -142,7 +137,7 @@ async function readError(res: Response): Promise<string> {
   const body = await res.json().catch(() => ({}));
   const payload = unwrapPayload(body) as { error?: { message?: string } | string };
   if (typeof payload?.error === 'string') return payload.error;
-  return payload?.error?.message ?? `خطا با کد ${res.status}`;
+  return payload?.error?.message ?? `خطا با کد ${faNum(res.status)}`;
 }
 
 type LoadState = 'loading' | 'ready' | 'not-connected' | 'unauthorized';

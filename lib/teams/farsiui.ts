@@ -16,6 +16,7 @@ import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
+import { faDigits as faNum } from '../format';
 
 /** نام تیم در رجیستری سراسری (lib/types.ts). */
 export const TEAM: TeamName = 'farsiui';
@@ -176,10 +177,7 @@ function parseJson<T>(raw: string): T {
   return JSON.parse(text) as T;
 }
 
-/** رقم لاتین به فارسی برای خلاصهٔ خروجی. */
-function faNum(n: number): string {
-  return String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
-}
+
 
 /** سرپرست: شکستن کار چرخه به سه مأموریت. */
 async function planMissions(contentText: string): Promise<[string, string, string]> {

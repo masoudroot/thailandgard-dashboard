@@ -2,6 +2,7 @@
  * Jalali (شمسی) calendar conversion: Borkowski algorithm as used by jalaali-js.
  * Valid for Jalali years 1 … 3177. Dependency-free.
  */
+import { faDigits } from "./format";
 
 export type JalaliDate = { jy: number; jm: number; jd: number };
 
@@ -100,9 +101,6 @@ export const JALALI_WEEKDAYS_SHORT = ["ش", "ی", "د", "س", "چ", "پ", "ج"];
 export function jalaliWeekday(date: Date) {
   return (date.getDay() + 1) % 7;
 }
-
-const FA = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
-const faDigits = (n: number | string) => String(n).replace(/\d/g, (d) => FA[Number(d)]);
 
 /** «چهارشنبه، ۲۵ شهریور ۱۴۰۵» */
 export function formatJalali(date: Date, opts: { weekday?: boolean; year?: boolean } = {}) {

@@ -13,8 +13,7 @@ import { Card } from '../../../../components/ui/Card';
 import { TEAMS, type TeamName, type TeamRun } from '../../../../lib/types';
 import { TEAM_META, WAVE_TITLES } from '../../../../lib/team-meta';
 
-const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
-const faNum = (v: number | string) => String(v).replace(/[0-9]/g, (d) => FA_DIGITS[Number(d)]);
+import { faNum } from '../../../../lib/format';
 
 const jalaliDate = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
   dateStyle: 'medium',

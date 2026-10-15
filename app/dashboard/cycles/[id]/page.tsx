@@ -146,7 +146,7 @@ export default function CycleDetailPage() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         const payload = unwrapPayload(body) as { error?: { message?: string } };
-        throw new Error(payload.error?.message ?? `خطا با کد ${res.status}`);
+        throw new Error(payload.error?.message ?? `خطا با کد ${faNum(res.status)}`);
       }
       await load();
     } catch (e) {

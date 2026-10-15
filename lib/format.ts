@@ -14,3 +14,13 @@ export function faDigits(value: number | string): string {
 export function faNum(value: number | string): string {
   return faDigits(value).replace(/,/g, '٬');
 }
+
+/** عدد با جداکنندهٔ هزارگان فارسی (٬). */
+export function faNumGrouped(value: number | string): string {
+  return faNum(Number(value).toLocaleString('en-US'));
+}
+
+/** درصد فارسی، مثلاً «۶۸٪». */
+export function faPct(value: number): string {
+  return `${faDigits(Math.round(value))}٪`;
+}

@@ -1,15 +1,9 @@
 import Link from 'next/link';
 import type { TeamName, TeamRunStatus } from '../lib/types';
 import StatusBadge from './dataviz/StatusBadge';
+import { faNum } from '@/lib/format';
 
-const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
-
-/** تبدیل ارقام لاتین و جداکننده هزارگان به فارسی. */
-export function faNum(value: number | string): string {
-  return String(value)
-    .replace(/[0-9]/g, (d) => FA_DIGITS[Number(d)])
-    .replace(/,/g, '٬');
-}
+export { faNum };
 
 export interface TeamCardProps {
   team: TeamName;

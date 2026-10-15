@@ -143,7 +143,7 @@ export default function CyclesPage() {
       const body = await res.json().catch(() => ({}));
       const payload = unwrapPayload(body) as { error?: { message?: string } };
       if (!res.ok) {
-        throw new Error(payload.error?.message ?? `خطا با کد ${res.status}`);
+        throw new Error(payload.error?.message ?? `خطا با کد ${faNum(res.status)}`);
       }
       await load();
     } catch (e) {

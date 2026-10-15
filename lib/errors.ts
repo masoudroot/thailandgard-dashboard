@@ -7,6 +7,7 @@
  */
 import { getSupabase } from './api';
 import { TEAMS, type TeamName, type TeamRun } from './types';
+import { faDigits as faCount } from './format';
 
 /** رانی که بیش از این دقیقه در وضعیت running بماند، «گیرکرده» حساب می‌شود. */
 export const STUCK_AFTER_MINUTES = 120;
@@ -137,10 +138,7 @@ export async function getErrorAlerts(): Promise<ErrorAlert[]> {
   return alerts;
 }
 
-const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
-function faCount(n: number): string {
-  return String(n).replace(/[0-9]/g, (d) => FA_DIGITS[Number(d)]);
-}
+
 
 /** شروع «امروز» به وقت تهران، به‌صورت ISO (تهران DST ندارد؛ همیشه +03:30). */
 export function tehranDayStartUtc(now = new Date()): string {

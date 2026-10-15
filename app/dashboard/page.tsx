@@ -40,16 +40,11 @@ type RegistryBadgeVariant =
 import { Card } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/dialog";
 
+import { faDigits } from "@/lib/format";
+
 /* ─────────────────────────────────────────────
    ابزارهای نمایشی
    ───────────────────────────────────────────── */
-
-const FA_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
-
-/** تبدیل ارقام لاتین به فارسی برای لایهٔ نمایش */
-function fa(n: number | string): string {
-  return String(n).replace(/[0-9]/g, (d) => FA_DIGITS[Number(d)]);
-}
 
 const WAVE_WORDS = ["اول", "دوم", "سوم", "چهارم", "پنجم", "ششم"] as const;
 
@@ -201,14 +196,14 @@ export default function DashboardHomePage() {
     {
       icon: Users,
       label: "تیم‌های آماده",
-      value: fa(TEAMS.length),
-      hint: `در ${fa(6)} موج، آماده شروع`,
+      value: faDigits(TEAMS.length),
+      hint: `در ${faDigits(6)} موج، آماده شروع`,
       tint: "bg-success/10 text-success",
     },
     {
       icon: ClipboardList,
       label: "کارهای در صف",
-      value: fa(queueCount),
+      value: faDigits(queueCount),
       hint: "منتظر شروع چرخه",
       tint: "bg-warning/10 text-warning",
     },
@@ -217,15 +212,15 @@ export default function DashboardHomePage() {
           {
             icon: Clock3,
             label: "آخرین چرخه",
-            value: fa(cycle.id.replace("CYC-", "")),
-            hint: cycle.startedAgo,
+            value: faDigits(cycle.id.replace("CYC-", "")),
+            hint: cycle.startedAgo ? faDigits(cycle.startedAgo) : "",
             tint: "bg-brand/10 text-brand",
           },
           {
             icon: Activity,
             label: "موج جاری",
-            value: `موج ${WAVE_WORDS[cycle.currentWave - 1] ?? fa(cycle.currentWave)}`,
-            hint: `از ${fa(6)} موج`,
+            value: `موج ${WAVE_WORDS[cycle.currentWave - 1] ?? faDigits(cycle.currentWave)}`,
+            hint: `از ${faDigits(6)} موج`,
             tint: "bg-brand/10 text-brand",
           },
         ] as StatCardProps[])
@@ -340,7 +335,7 @@ export default function DashboardHomePage() {
                   <ProgressBar
                     value={cycle.progress}
                     label="پیشرفت چرخه"
-                    caption={`${fa(activeWaveTeams.filter((t) => t.status === "success").length)} از ${fa(activeWaveTeams.length)} تیم موج جاری کارشان را تمام کرده‌اند.`}
+                    caption={`${faDigits(activeWaveTeams.filter((t) => t.status === "success").length)} از ${faDigits(activeWaveTeams.length)} تیم موج جاری کارشان را تمام کرده‌اند.`}
                   />
                 </div>
 
@@ -414,7 +409,7 @@ export default function DashboardHomePage() {
                           {a.detail}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {a.timeAgo}
+                          {faDigits(a.timeAgo)}
                         </p>
                       </div>
                     </article>
@@ -478,7 +473,7 @@ export default function DashboardHomePage() {
                           {done ? (
                             <CheckCircle2 size={20} strokeWidth={1.75} />
                           ) : (
-                            fa(w.wave)
+                            faDigits(w.wave)
                           )}
                         </span>
                         <span className="mt-2 text-sm font-bold">
@@ -513,7 +508,7 @@ export default function DashboardHomePage() {
                       <h3 className="flex items-center justify-between text-sm font-bold">
                         <span>موج {WAVE_WORDS[w.wave - 1]}</span>
                         <span className="font-normal text-muted-foreground">
-                          {fa(w.teams.length)} تیم
+                          {faDigits(w.teams.length)} تیم
                         </span>
                       </h3>
                       <ul className="mt-3 space-y-2">
