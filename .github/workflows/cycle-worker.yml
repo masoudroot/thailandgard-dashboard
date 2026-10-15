@@ -20,7 +20,9 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      # npm install به‌جای npm ci: اگر قفل ناهمگام باشد، خودکار همگام می‌شود
+      # (npm ci در صورت ناهمگامی با EUSAGE می‌میرد و ورکر اصلاً اجرا نمی‌شود)
+      - run: npm install --legacy-peer-deps
       - name: run one team
         run: npx tsx worker/cycle-worker.ts ${{ inputs.action }}
         env:
