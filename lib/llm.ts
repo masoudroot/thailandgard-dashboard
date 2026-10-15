@@ -239,7 +239,7 @@ interface ChatCompletionResponse {
   error?: { message?: string; code?: string | number };
 }
 
-async function postChatCompletions(
+export async function postChatCompletions(
   base: string,
   apiKey: string,
   model: string,
