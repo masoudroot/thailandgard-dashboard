@@ -115,23 +115,23 @@ function fromRow(key: string, value: any): Job | null {
 }
 
 interface StoredJob {
-  key: string;
+  agent: string;
   row: JobRow;
 }
 
 async function listStored(): Promise<StoredJob[]> {
   const { data, error } = await getSupabase()
     .from('agent_state')
-    .select('key, value')
-    .like('key', `${KEY_PREFIX}%`)
-    .order('key');
+    .select('agent, state')
+    .like('agent', `${KEY_PREFIX}%`)
+    .order('agent');
   if (error) throw new Error(`queue read failed: ${error.message}`);
   const out: StoredJob[] = [];
   for (const entry of data ?? []) {
-    const key = (entry as { key: string }).key;
-    const row = (entry as { value: unknown }).value as JobRow;
+    const key = (entry as { agent: string }).agent;
+    const row = (entry as { state: unknown }).state as JobRow;
     if (typeof row === 'object' && row !== null && typeof row.id === 'string') {
-      out.push({ key, row });
+      out.push({ agent: key, row });
     }
   }
   return out;
@@ -140,19 +140,19 @@ async function listStored(): Promise<StoredJob[]> {
 async function readStored(id: string): Promise<StoredJob> {
   const { data, error } = await getSupabase()
     .from('agent_state')
-    .select('key, value')
-    .eq('key', keyFor(id))
+    .select('agent, state')
+    .eq('agent', keyFor(id))
     .maybeSingle();
   if (error) throw new Error(`queue read failed: ${error.message}`);
   if (!data) throw new Error(`job not found: ${id}`);
-  const row = (data as { value: unknown }).value as JobRow;
-  return { key: keyFor(id), row };
+  const row = (data as { state: unknown }).state as JobRow;
+  return { agent: keyFor(id), row };
 }
 
 async function saveRow(row: JobRow): Promise<void> {
   const { error } = await getSupabase()
     .from('agent_state')
-    .upsert({ key: keyFor(row.id), value: row }, { onConflict: 'key' });
+    .upsert({ agent: keyFor(row.id), state: row }, { onConflict: 'agent' });
   if (error) throw new Error(`queue write failed: ${error.message}`);
 }
 
@@ -215,17 +215,17 @@ async function tryClaim(stored: StoredJob): Promise<Job | null> {
   };
   const base = getSupabase()
     .from('agent_state')
-    .update({ value: next })
-    .eq('key', stored.key)
-    .eq('value->>status', stored.row.status);
+    .update({ state: next })
+    .eq('agent', stored.agent)
+    .eq('state->>status', stored.row.status);
   const query =
     stored.row.status === 'running' && stored.row.expiresAt
-      ? base.eq('value->>expiresAt', stored.row.expiresAt)
+      ? base.eq('state->>expiresAt', stored.row.expiresAt)
       : base;
-  const { data, error } = await query.select('key');
+  const { data, error } = await query.select('agent');
   if (error) throw new Error(`queue claim failed: ${error.message}`);
   if (!data || data.length === 0) return null; // another worker claimed it
-  return fromRow(stored.key, next);
+  return fromRow(stored.agent, next);
 }
 
 /**
@@ -248,19 +248,19 @@ export async function dequeue(): Promise<Job | null> {
 export async function getJob(id: string): Promise<Job | null> {
   const { data, error } = await getSupabase()
     .from('agent_state')
-    .select('key, value')
-    .eq('key', keyFor(id))
+    .select('agent, state')
+    .eq('agent', keyFor(id))
     .maybeSingle();
   if (error) throw new Error(`queue read failed: ${error.message}`);
   if (!data) return null;
-  return fromRow(keyFor(id), (data as { value: unknown }).value);
+  return fromRow(keyFor(id), (data as { state: unknown }).state);
 }
 
 /** Lists every job, oldest first. */
 export async function listJobs(): Promise<Job[]> {
   const jobs: Job[] = [];
   for (const stored of await listStored()) {
-    const job = fromRow(stored.key, stored.row);
+    const job = fromRow(stored.agent, stored.row);
     if (job) jobs.push(job);
   }
   return jobs.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());

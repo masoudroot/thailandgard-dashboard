@@ -93,7 +93,7 @@ function makeRunId(): string {
 }
 
 interface LockRow {
-  value:
+  state:
     | {
         status?: string;
         run_id?: string;
@@ -108,32 +108,32 @@ interface LockRow {
 async function readLock(): Promise<LockRow | null> {
   const { data, error } = await getSupabase()
     .from('agent_state')
-    .select('value, updated_at')
-    .eq('key', LOCK_KEY)
+    .select('state, updated_at')
+    .eq('agent', LOCK_KEY)
     .maybeSingle();
   if (error) throw new Error(`failed to read orchestrator lock: ${error.message}`);
   return data as LockRow | null;
 }
 
-async function writeLock(value: Record<string, unknown>): Promise<void> {
+async function writeLock(state: Record<string, unknown>): Promise<void> {
   const { error } = await getSupabase()
     .from('agent_state')
     .upsert(
-      { key: LOCK_KEY, value, updated_at: new Date().toISOString() },
-      { onConflict: 'key' },
+      { agent: LOCK_KEY, state, updated_at: new Date().toISOString() },
+      { onConflict: 'agent' },
     );
   if (error) throw new Error(`failed to write orchestrator lock: ${error.message}`);
 }
 
 async function acquireLock(runId: string): Promise<void> {
   const existing = await readLock();
-  if (existing?.value?.status === 'running') {
+  if (existing?.state?.status === 'running') {
     const ref =
-      existing.updated_at || existing.value.started_at || new Date(0).toISOString();
+      existing.updated_at || existing.state.started_at || new Date(0).toISOString();
     const ageMin = (Date.now() - new Date(ref).getTime()) / 60000;
     if (ageMin < LOCK_TTL_MINUTES) {
       throw new CycleLockedError(
-        `another cycle is already running (run_id=${existing.value.run_id ?? 'unknown'}, age=${Math.round(
+        `another cycle is already running (run_id=${existing.state.run_id ?? 'unknown'}, age=${Math.round(
           ageMin,
         )}m); wait for it to finish or for the ${LOCK_TTL_MINUTES}-minute stale-lock window to pass`,
       );
@@ -276,8 +276,8 @@ export async function resumeCycle(cycleId: string): Promise<void> {
     ? Date.now() - new Date(lock.updated_at).getTime()
     : Number.POSITIVE_INFINITY;
   const loopAlive =
-    lock?.value?.status === 'running' &&
-    lock.value.cycle_id === cycleId &&
+    lock?.state?.status === 'running' &&
+    lock.state.cycle_id === cycleId &&
     lockAgeMs < PAUSE_LOOP_ALIVE_MS;
 
   if (!loopAlive) {

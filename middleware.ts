@@ -59,6 +59,12 @@ export async function middleware(request: NextRequest) {
   const protectedApi = pathname.startsWith('/api/');
   const protectedDashboard = pathname.startsWith('/dashboard');
 
+  // API مدیریتی («مدیر داشبورد»): با Bearer token خودش احراز می‌شود، نه کوکی ادمین.
+  // روت‌های /api/manager/* خودشان توکن را چک می‌کنند.
+  if (pathname.startsWith('/api/manager/') && !pathname.startsWith('/api/manager/keys')) {
+    return NextResponse.next();
+  }
+
   if (protectedApi || protectedDashboard) {
     const session = request.cookies.get(SESSION_COOKIE)?.value;
     const expected = await getExpectedPasswordHash();

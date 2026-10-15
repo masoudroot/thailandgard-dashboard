@@ -297,7 +297,7 @@ export async function saveTaskPrefs(id: string, prefs: Partial<TaskPrefs>): Prom
   };
   const { error } = await getSupabase()
     .from('agent_state')
-    .upsert({ key: prefKey(id), value: next }, { onConflict: 'key' });
+    .upsert({ agent: prefKey(id), state: next }, { onConflict: 'agent' });
   if (error) throw new Error(`saveTaskPrefs failed: ${error.message}`);
 }
 
@@ -305,12 +305,12 @@ export async function saveTaskPrefs(id: string, prefs: Partial<TaskPrefs>): Prom
 export async function getTaskPrefs(id: string): Promise<TaskPrefs> {
   const { data, error } = await getSupabase()
     .from('agent_state')
-    .select('value')
-    .eq('key', prefKey(id))
+    .select('state')
+    .eq('agent', prefKey(id))
     .maybeSingle();
   if (error) throw new Error(`getTaskPrefs failed: ${error.message}`);
   if (!data) return { ...DEFAULT_TASK_PREFS };
-  return normalizePrefs((data as { value: unknown }).value);
+  return normalizePrefs((data as { state: unknown }).state);
 }
 
 /** خواندن یک‌جای تنظیمات چند کار (یک کوئری). */
@@ -319,14 +319,14 @@ export async function listTaskPrefs(ids: string[]): Promise<Record<string, TaskP
   if (ids.length === 0) return out;
   const { data, error } = await getSupabase()
     .from('agent_state')
-    .select('key, value')
-    .in('key', ids.map(prefKey));
+    .select('agent, state')
+    .in('agent', ids.map(prefKey));
   if (error) throw new Error(`listTaskPrefs failed: ${error.message}`);
-  for (const row of (data ?? []) as { key: string; value: unknown }[]) {
-    const id = row.key.startsWith(PREF_KEY_PREFIX)
-      ? row.key.slice(PREF_KEY_PREFIX.length)
-      : row.key;
-    out[id] = normalizePrefs(row.value);
+  for (const row of (data ?? []) as { agent: string; state: unknown }[]) {
+    const id = row.agent.startsWith(PREF_KEY_PREFIX)
+      ? row.agent.slice(PREF_KEY_PREFIX.length)
+      : row.agent;
+    out[id] = normalizePrefs(row.state);
   }
   return out;
 }

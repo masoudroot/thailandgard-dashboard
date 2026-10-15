@@ -6,6 +6,7 @@ import { TelegramPanel } from "./TelegramPanel";
 import { GithubPanel } from "./GithubPanel";
 import { LlmGatewaysPanel } from "./LlmGatewaysPanel";
 import { MarketPanel } from "./MarketPanel";
+import { ManagerApiPanel } from "./ManagerApiPanel";
 import { AdminPasswordPanel } from "./AdminPasswordPanel";
 
 /**
@@ -32,6 +33,7 @@ export function ConnectionsHub() {
           <TelegramPanel />
           <GithubPanel />
           <LlmGatewaysPanel />
+          <ManagerApiPanel />
           <AdminPasswordPanel />
         </div>
       </section>
