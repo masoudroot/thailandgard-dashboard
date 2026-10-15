@@ -206,7 +206,7 @@ export function LlmModelsPanel() {
                   value={s.embeddingModel?.model ?? ""}
                   onChange={s.handleEmbeddingModel}
                   onBlur={s.handleEmbeddingModelBlur}
-                  options={embHealthy ?? []}
+                  options={(embHealthy?.length ? embHealthy : embOnly) ?? []}
                 />
               </Field>
             </div>
