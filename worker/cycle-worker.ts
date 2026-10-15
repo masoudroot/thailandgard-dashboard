@@ -2,18 +2,33 @@
  * ورکر ارکستراسیون تایلندگرد — اجرا روی گیت‌هاب اکشنز.
  * هر اجرا فقط «یک تیم» را اجرا می‌کند و خارج می‌شود.
  * کرون گیت‌هاب هر ۵ دقیقه آن را صدا می‌زند تا چرخه جلو برود.
+ * با آرگومان start-cycle یک چرخه جدید می‌سازد.
  *
- * اجرا: npx tsx worker/cycle-worker.ts
+ * اجرا: npx tsx worker/cycle-worker.ts [start-cycle]
  * نیازمند: SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY در env
  */
 import { getSupabase } from '../lib/api';
 import { WAVES, type TeamName } from '../lib/types';
-import { findActiveCycle, finishCycle, runSingleTeam } from '../lib/orchestrator';
+import { findActiveCycle, finishCycle, runSingleTeam, beginCycle } from '../lib/orchestrator';
 
 const STUCK_TIMEOUT_MS = 15 * 60 * 1000;
 
 async function main(): Promise<void> {
   const sb = getSupabase();
+  const action = process.argv[2];
+
+  // ساخت چرخه جدید
+  if (action === 'start-cycle') {
+    const active = await findActiveCycle();
+    if (active) {
+      console.log(`active cycle exists: ${active.run_id}, skipping`);
+      return;
+    }
+    const { cycleId, runId } = await beginCycle();
+    console.log(`new cycle started: ${runId} (${cycleId})`);
+    return;
+  }
+
   const active = await findActiveCycle();
   if (!active) {
     console.log('no active cycle');

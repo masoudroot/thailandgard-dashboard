@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+    inputs:
+      action:
+        description: 'start-cycle برای چرخه جدید، یا خالی برای ادامه چرخه فعلی'
+        required: false
+        default: ''
 
 jobs:
   tick:
@@ -17,7 +22,7 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - name: run one team
-        run: npx tsx worker/cycle-worker.ts
+        run: npx tsx worker/cycle-worker.ts ${{ inputs.action }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
