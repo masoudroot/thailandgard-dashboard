@@ -6,6 +6,8 @@
  * ۲. محدودیت حجم: حداکثر ۱۰ فایل، هر فایل ۱۰۰ کیلوبایت، مجموع ۵۰۰ کیلوبایت
  * ۳. پسوند مجاز: فقط ts و tsx و css و md و json
  * ۴. نحو پایه ts و tsx با TypeScript compiler API (فقط parse، بدون typecheck)
+ * ۵. اعتبار JSON برای فایل‌های .json
+ * ۶. ممنوعیت خط تیرهٔ بلند (U+2014) در همهٔ فایل‌ها (دستور دائمی مدیر)
  *
  * خطاها فارسی‌اند تا مستقیم در گزارش‌ها بنشینند.
  */
@@ -13,6 +15,7 @@
 import ts from "typescript";
 import type { PatchFile } from "../types";
 export type { PatchFile } from "../types";
+import { validatePaths, scanSecrets } from "../execution-guard";
 
 /** نتیجه داوری دروازه */
 export interface GateResult {
@@ -26,9 +29,65 @@ const MAX_FILE_BYTES = 100 * 1024;
 const MAX_TOTAL_BYTES = 500 * 1024;
 const ALLOWED_EXTENSIONS = new Set(["ts", "tsx", "css", "md", "json"]);
 
+/** خط تیرهٔ بلند (U+2014) مطلقاً ممنوع است؛ دستور دائمی مدیر. */
+const EM_DASH = "—";
+
+/** بررسی ممنوعه‌ها در متن فایل؛ خالی بودن یعنی پاک است. */
+function checkForbiddenChars(path: string, content: string): string[] {
+  const errors: string[] = [];
+  const lines = content.split("\n");
+  lines.forEach((line, i) => {
+    if (line.includes(EM_DASH)) {
+      errors.push(
+        `فایل «${path}» در سطر ${faNumber(i + 1)} خط تیرهٔ بلند (—) دارد که مطلقاً ممنوع است. با «-» یا «:» جایگزین کن.`,
+      );
+    }
+  });
+  return errors;
+}
+
+/** اعتبار JSON برای فایل‌های .json. */
+function checkJson(path: string, content: string): string[] {
+  try {
+    JSON.parse(content);
+    return [];
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return [`فایل JSON «${path}» معتبر نیست: ${message}`];
+  }
+}
+
 /** عدد را با ارقام فارسی برمی‌گرداند */
 function faNumber(value: number): string {
   return value.toLocaleString("fa-IR");
+}
+
+/**
+ * الگوهای کد مخرب؛ هر موردی یعنی رد کامل پچ (می‌رود به needs_review).
+ * محافظه‌کارانه: فقط الگوهایی که تقریباً همیشه مخرب‌اند.
+ */
+const DESTRUCTIVE_CODE_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /deleteMany\s*\(\s*\{\s*\}\s*\)/, label: 'حذف دسته‌جمعی بدون شرط (deleteMany خالی)' },
+  { pattern: /\bDROP\s+TABLE\b/i, label: 'دستور DROP TABLE' },
+  { pattern: /\bTRUNCATE\s+TABLE\b/i, label: 'دستور TRUNCATE' },
+  { pattern: /rm\s+-rf\s+[/~]/, label: 'حذف بازگشتی سیستم‌فایل (rm -rf)' },
+  { pattern: /child_process.*exec.*curl/i, label: 'اجرای دانلود و اجرا از شبکه' },
+  { pattern: /eval\s*\(\s*(?!["'`])/, label: 'اجرای کد پویا با eval' },
+];
+
+/** اسکن محتوای فایل‌ها برای الگوهای مخرب */
+function scanDestructive(files: PatchFile[]): string[] {
+  const errors: string[] = [];
+  for (const file of files) {
+    if (typeof file.content !== 'string') continue;
+    for (const d of DESTRUCTIVE_CODE_PATTERNS) {
+      if (d.pattern.test(file.content)) {
+        errors.push(`الگوی مخرب در «${file.path}» (${d.label})؛ این پچ نیاز به بازبینی انسانی دارد.`);
+        break;
+      }
+    }
+  }
+  return errors;
 }
 
 function faSize(bytes: number): string {
@@ -61,7 +120,8 @@ function checkPath(rawPath: string): string | null {
   if (segments[0].toLowerCase() === ".git") {
     return `مسیر «${rawPath}» با «.git» شروع می‌شود و مجاز نیست.`;
   }
-  if (segments.some((s) => s === ".env" || s.startsWith(".env."))) {
+  // بلاک .env با هر ترکیب حروف بزرگ/کوچک (دفاع در عمق)
+  if (segments.some((s) => s.toLowerCase() === ".env" || s.toLowerCase().startsWith(".env."))) {
     return `فایل «.env» در مسیر «${rawPath}» مجاز نیست.`;
   }
   return null;
@@ -149,11 +209,42 @@ export function validatePatch(files: PatchFile[]): GateResult {
     if (ext === "ts" || ext === "tsx") {
       errors.push(...checkSyntax(file.path, file.content));
     }
+
+    if (ext === "json") {
+      errors.push(...checkJson(file.path, file.content));
+    }
+
+    errors.push(...checkForbiddenChars(file.path, file.content));
   }
 
   if (totalBytes > MAX_TOTAL_BYTES) {
     errors.push(`حجم مجموع فایل‌ها (${faSize(totalBytes)}) از سقف ${faSize(MAX_TOTAL_BYTES)} بیشتر است.`);
   }
+
+  // نگهبان امنیتی (lib/execution-guard): مسیرهای ممنوعه‌ی زیرساختی
+  // (middleware، کانفیگ بیلد، package.json، احراز هویت، ورک‌فلوها، ...)
+  try {
+    const pathGuard = validatePaths(files.map((f) => ({ path: f.path, content: f.content })));
+    for (const issue of pathGuard.errors) {
+      errors.push(`نگهبان امنیتی: فایل «${issue.file}»: ${issue.reason}`);
+    }
+  } catch {
+    // اگر نگهبان خطا داد، پچ رد می‌شود (fail-closed)
+    errors.push('نگهبان امنیتی نتوانست مسیرها را بررسی کند؛ پچ رد شد.');
+  }
+
+  // اسکن سکرت داخل محتوا
+  try {
+    const secretIssues = scanSecrets(files.map((f) => ({ path: f.path, content: f.content })));
+    for (const issue of secretIssues) {
+      errors.push(`نگهبان امنیتی: فایل «${issue.file}»: ${issue.reason}`);
+    }
+  } catch {
+    errors.push('نگهبان امنیتی نتوانست سکرت‌ها را بررسی کند؛ پچ رد شد.');
+  }
+
+  // اسکن کد مخرب
+  errors.push(...scanDestructive(files));
 
   return { ok: errors.length === 0, errors };
 }

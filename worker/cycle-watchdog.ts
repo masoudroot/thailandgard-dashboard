@@ -25,6 +25,14 @@ const STALL_THRESHOLD_MINUTES = 15;
 const ALERT_COOLDOWN_MINUTES = 60;
 /** برچسب تیم در اعلان‌ها (فارسی، برای فیلتر در داشبورد). */
 const WATCHDOG_LABEL = 'نگهبان چرخه';
+/** برچسب هشدار بیلد شکسته‌ی سایت. */
+const BUILD_WATCH_LABEL = 'نگهبان بیلد سایت';
+/** ریپوی سایت تایلندگرد. */
+const SITE_REPO = 'masoudroot/thailandgard';
+/** ورک‌فلوی دیپلوی سایت. */
+const SITE_DEPLOY_WORKFLOW = 'prisma-deploy.yml';
+/** شاخه‌ی dev سایت که پل خودکار روی آن مرج می‌کند. */
+const SITE_DEV_BRANCH = 'dev';
 
 interface StallInfo {
   cycleId: string;
@@ -171,19 +179,116 @@ async function main(): Promise<void> {
     }
     if (!cycles || cycles.length === 0) {
       console.log('[cycle-watchdog] چرخه‌ی فعالی نیست؛ کاری انجام نشد.');
-      return;
-    }
-    console.log(`[cycle-watchdog] ${faNum(cycles.length)} چرخه‌ی فعال بررسی می‌شود.`);
-    for (const cycle of cycles) {
-      try {
-        await checkOneCycle(cycle as { id: string; run_id: string; started_at: string });
-      } catch (err) {
-        console.error(`[cycle-watchdog] خطا در بررسی چرخه:`, err instanceof Error ? err.message : err);
+    } else {
+      console.log(`[cycle-watchdog] ${faNum(cycles.length)} چرخه‌ی فعال بررسی می‌شود.`);
+      for (const cycle of cycles) {
+        try {
+          await checkOneCycle(cycle as { id: string; run_id: string; started_at: string });
+        } catch (err) {
+          console.error(`[cycle-watchdog] خطا در بررسی چرخه:`, err instanceof Error ? err.message : err);
+        }
       }
+    }
+    // بررسی بیلد dev سایت (پل خودکار روی آن مرج می‌کند)
+    try {
+      await checkSiteDevBuild();
+    } catch (err) {
+      console.error('[cycle-watchdog] خطا در بررسی بیلد سایت:', err instanceof Error ? err.message : err);
     }
   } catch (err) {
     console.error('[cycle-watchdog] خطای کلی:', err instanceof Error ? err.message : err);
   }
+}
+
+/**
+ * بررسی آخرین بیلد شاخه‌ی dev ریپوی سایت.
+ * اگر آخرین اجرای تکمیل‌شده‌ی prisma-deploy روی dev ناموفق باشد، هشدار می‌فرستد.
+ * فقط هشدار؛ هیچ دست‌کاری در ریپو یا پچ انجام نمی‌شود.
+ */
+async function checkSiteDevBuild(): Promise<void> {
+  let token: string | null = null;
+  try {
+    const { getGithubConfig } = await import('../lib/github');
+    const cfg = await getGithubConfig();
+    token = cfg.token;
+  } catch {
+    // بدون توکن، بررسی بیلد ممکن نیست
+  }
+  if (!token) {
+    console.log('[cycle-watchdog] توکن گیت‌هاب در دسترس نیست؛ بررسی بیلد سایت رد شد.');
+    return;
+  }
+  const api = `https://api.github.com/repos/${SITE_REPO}/actions/workflows/${SITE_DEPLOY_WORKFLOW}/runs?branch=${SITE_DEV_BRANCH}&per_page=5`;
+  let runs: Array<{ id: number; conclusion: string | null; status: string; head_sha: string; html_url: string }> = [];
+  try {
+    const res = await fetch(api, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) {
+      console.error(`[cycle-watchdog] خواندن وضعیت بیلد سایت ناموفق بود (وضعیت ${res.status}).`);
+      return;
+    }
+    const body = (await res.json()) as { workflow_runs?: typeof runs };
+    runs = Array.isArray(body.workflow_runs) ? body.workflow_runs : [];
+  } catch (err) {
+    console.error('[cycle-watchdog] خطا در فراخوانی API بیلد سایت:', err instanceof Error ? err.message : err);
+    return;
+  }
+  // آخرین اجرای تکمیل‌شده
+  const done = runs.find((r) => r.status === 'completed');
+  if (!done) {
+    console.log('[cycle-watchdog] اجرای تکمیل‌شده‌ای برای بیلد dev سایت پیدا نشد.');
+    return;
+  }
+  if (done.conclusion === 'success') {
+    console.log(`[cycle-watchdog] بیلد dev سایت سالم است (اجرای ${done.id}).`);
+    return;
+  }
+  // ناموفق: آیا قبلاً برای همین اجرا هشدار داده‌ایم؟
+  const dedupKey = `build-${done.id}`;
+  try {
+    const cutoff = new Date(Date.now() - ALERT_COOLDOWN_MINUTES * 60 * 1000).toISOString();
+    const { data, error } = await getSupabase()
+      .from('notifications')
+      .select('id')
+      .eq('team', BUILD_WATCH_LABEL)
+      .ilike('message', `%${dedupKey}%`)
+      .gte('sent_at', cutoff)
+      .limit(1);
+    if (!error && (data?.length ?? 0) > 0) {
+      console.log(`[cycle-watchdog] بیلد شکسته‌ی dev (اجرای ${done.id}) قبلاً هشدار داده شده؛ رد شد.`);
+      return;
+    }
+  } catch {
+    // ادامه می‌دهیم؛ بدترین حالت هشدار تکراری است
+  }
+  const shortSha = done.head_sha.slice(0, 7);
+  const message = [
+    'هشدار نگهبان بیلد سایت',
+    '',
+    `آخرین بیلد شاخه‌ی dev سایت ناموفق بود (${dedupKey}).`,
+    `نتیجه: ${done.conclusion ?? 'نامشخص'}`,
+    `کامیت: ${shortSha}`,
+    `لینک: ${done.html_url}`,
+    '',
+    'احتمالاً یکی از مرج‌های خودکار پل، بیلد را شکسته است.',
+    'بررسی کنید؛ در صورت نیاز از صفحه‌ی پل، رول‌بک بزنید.',
+    '',
+    'این پیام فقط هشدار است؛ چیزی به‌صورت خودکار برنگردانده نشد.',
+  ].join('\n');
+  const { panelId, telegramMessageId } = await notifyTeamReport({
+    team: BUILD_WATCH_LABEL,
+    message,
+  });
+  console.log(
+    `[cycle-watchdog] هشدار بیلد شکسته برای dev فرستاده شد ` +
+      `(اجرای ${done.id}، پنل: ${panelId ?? 'ناموفق'}، تلگرام: ${telegramMessageId ?? 'ناموفق'}).`,
+  );
 }
 
 void main();
