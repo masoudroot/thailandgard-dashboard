@@ -10,7 +10,6 @@ import { Badge } from "@/components/ui/Badge";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { TEAMS } from "@/lib/types";
 import { TEAM_META } from "@/lib/team-meta";
-import {
 import { faDigits } from "@/lib/format";
   ConnectionRow,
   WhereGuide,

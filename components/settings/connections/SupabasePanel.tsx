@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { Check, Copy, Database, RefreshCw, Save } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Field } from "@/components/ui/Input";
-import {
 import { faDigits } from "@/lib/format";
+import {
   ConnectionRow,
   WhereGuide,
   ResultNote,
