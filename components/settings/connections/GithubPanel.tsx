@@ -41,6 +41,10 @@ export function GithubPanel() {
   }, []);
 
   async function handleSave() {
+    if (!token.trim()) {
+      setMessage({ ok: false, text: "اول توکن گیت‌هاب را وارد کنید." });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -149,7 +153,7 @@ export function GithubPanel() {
             <button
               type="button"
               onClick={handleSave}
-              disabled={saving || !token.trim()}
+              disabled={saving}
               className="min-h-12 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {saving ? "در حال بررسی…" : "ذخیره و اتصال"}

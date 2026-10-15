@@ -50,6 +50,10 @@ export function TelegramPanel() {
   }, []);
 
   async function handleSave() {
+    if (!token.trim() || !chatId.trim()) {
+      setResult({ ok: false, text: "اول توکن بات و آیدی چت را وارد کنید." });
+      return;
+    }
     setSaving(true);
     setResult(null);
     try {
@@ -166,7 +170,7 @@ export function TelegramPanel() {
         {result && <ResultNote ok={result.ok} text={result.text} />}
 
         <div className="flex flex-col gap-2 sm:flex-row">
-          <PrimaryButton onClick={handleSave} disabled={saving || !token.trim() || !chatId.trim()}>
+          <PrimaryButton onClick={handleSave} disabled={saving}>
             {saving ? "در حال بررسی…" : "ذخیره و اتصال"}
           </PrimaryButton>
           <GhostButton onClick={() => void refresh()} disabled={state === "loading"}>

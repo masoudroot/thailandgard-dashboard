@@ -175,6 +175,10 @@ export function LlmPanel() {
   }
 
   async function handleAdd() {
+    if (!addName.trim() || !addBase.trim() || !addKey.trim()) {
+      setErrorMsg("نام، آدرس و کلید هر سه لازم‌اند.");
+      return;
+    }
     setAdding(true);
     setErrorMsg(null);
     try {
@@ -594,7 +598,7 @@ export function LlmPanel() {
             <button
               type="button"
               onClick={handleAdd}
-              disabled={adding || !addName.trim() || !addBase.trim() || !addKey.trim()}
+              disabled={adding}
               className="mt-3 min-h-12 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-control transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {adding ? "در حال ذخیره…" : "افزودن درگاه"}

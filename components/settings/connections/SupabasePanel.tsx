@@ -62,6 +62,10 @@ export function SupabasePanel() {
 
   /** تست با مقادیر فرم */
   async function handleTest() {
+    if (!canTest) {
+      setResult({ ok: false, text: "اول آدرس پروژه و کلید service_role را وارد کنید." });
+      return;
+    }
     setTesting(true);
     setResult(null);
     setManual(null);
@@ -87,6 +91,10 @@ export function SupabasePanel() {
 
   /** ذخیره: ورسل مستقیم یا راهنمای دستی */
   async function handleSave() {
+    if (!canTest) {
+      setResult({ ok: false, text: "اول آدرس پروژه و کلید service_role را وارد کنید." });
+      return;
+    }
     setSaving(true);
     setResult(null);
     setManual(null);
@@ -218,11 +226,11 @@ export function SupabasePanel() {
         )}
 
         <div className="flex flex-wrap gap-2">
-          <GhostButton onClick={handleTest} disabled={testing || !canTest}>
+          <GhostButton onClick={handleTest} disabled={testing}>
             <RefreshCw size={15} strokeWidth={1.75} aria-hidden="true" />
             {testing ? "در حال تست…" : "تست اتصال"}
           </GhostButton>
-          <PrimaryButton onClick={handleSave} disabled={saving || !canTest}>
+          <PrimaryButton onClick={handleSave} disabled={saving}>
             <Save size={15} strokeWidth={1.75} aria-hidden="true" />
             {saving ? "در حال ذخیره…" : "ذخیره و اتصال"}
           </PrimaryButton>

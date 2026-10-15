@@ -21,6 +21,10 @@ export function AdminPasswordPanel() {
 
   async function handleChange() {
     setResult(null);
+    if (!current || !next || !repeat) {
+      setResult({ ok: false, text: "هر سه فیلد را پر کنید." });
+      return;
+    }
     if (next.length < 8) {
       setResult({ ok: false, text: "رمز تازه باید حداقل ۸ کاراکتر باشد." });
       return;
@@ -112,7 +116,7 @@ export function AdminPasswordPanel() {
         <div>
           <PrimaryButton
             onClick={handleChange}
-            disabled={saving || !current || !next || !repeat}
+            disabled={saving}
           >
             {saving ? "در حال تغییر…" : "تغییر رمز"}
           </PrimaryButton>
