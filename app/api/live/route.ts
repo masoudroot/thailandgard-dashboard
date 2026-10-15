@@ -22,7 +22,7 @@ export async function GET(): Promise<Response> {
   try {
     sb = getSupabase();
   } catch {
-    return fail('اتصال به دیتابیس برقرار نیست. متغیرهای SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY را بررسی کنید.', 503);
+    return fail('اتصال به دیتابیس برقرار نیست. اتصال را در بخش تنظیمات بررسی کنید.', 503);
   }
 
   try {

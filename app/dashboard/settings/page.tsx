@@ -750,7 +750,7 @@ function LlmModelsCard() {
       </h2>
       <p className="mb-4 text-xs text-muted-foreground">
         درگاه‌های سازگار با OpenAI و انتخاب مدل هر یک از ۱۵ تیم.
-        تیمی که تنظیم نشود، از متغیرهای محیطی (LLM_MODEL و LLM_API_KEY) استفاده می‌کند.
+        تیمی که تنظیم نشود، از تنظیمات پیش‌فرض سامانه استفاده می‌کند.
       </p>
 
       {loading ? (

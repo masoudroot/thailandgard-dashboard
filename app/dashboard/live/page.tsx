@@ -392,7 +392,7 @@ export default function LivePage() {
             title="به پایگاه داده متصل نیست"
             description={
               errorMsg ||
-              'صفحه نتوانست به پایگاه داده وصل شود. متغیرهای SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY را در محیط اجرا بررسی کنید، بعد صفحه را تازه کنید.'
+              'صفحه نتوانست به پایگاه داده وصل شود. اتصال را در بخش تنظیمات بررسی کنید، بعد صفحه را تازه کنید.'
             }
             action={
               <button
@@ -430,7 +430,7 @@ export default function LivePage() {
             {!data.liveColumns && (
               <section className="mb-6 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm leading-7 text-card-foreground">
                 پیشرفت و کار جاری زنده هنوز فعال نیست؛ فایل{' '}
-                <code className="font-mono text-xs" dir="ltr">
+                <code className="break-all font-mono text-xs" dir="ltr">
                   supabase/migrations/20261015074440_team_runs_live.sql
                 </code>{' '}
                 را در SQL Editor سوپابیس اجرا کنید. تا آن موقع، وضعیت تیم‌ها از
