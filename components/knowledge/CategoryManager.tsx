@@ -126,7 +126,7 @@ export function CategoryManager({ team }: CategoryManagerProps) {
     <section aria-label="مدیریت دسته‌های دانش" className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold leading-7 text-foreground">دسته‌بندی‌ها</h2>
-        <Button variant="default" size="sm" onClick={openAdd}>
+        <Button size="sm" onClick={openAdd}>
           <FolderPlus aria-hidden="true" className="h-4 w-4" />
           دستهٔ تازه
         </Button>
@@ -155,7 +155,7 @@ export function CategoryManager({ team }: CategoryManagerProps) {
           <p className="text-sm leading-6 text-muted-foreground">
             هنوز دسته‌ای ساخته نشده. با دسته‌ها دانش تیم را مرتب نگه دارید.
           </p>
-          <Button variant="default" size="sm" className="mt-3" onClick={openAdd}>
+          <Button variant="outline" size="sm" className="mt-3" onClick={openAdd}>
             <FolderPlus aria-hidden="true" className="h-4 w-4" />
             ساخت اولین دسته
           </Button>
@@ -180,7 +180,6 @@ export function CategoryManager({ team }: CategoryManagerProps) {
         footer={
           <>
             <Button
-              variant="default"
               onClick={() => void saveCategory()}
               disabled={saving}
               aria-busy={saving || undefined}
@@ -309,9 +308,9 @@ function TreeNode({
           </span>
         )}
         <Button
-          variant="destructive"
+          variant="ghost"
           size="icon"
-          className="h-8 w-8"
+          className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
           onClick={() => onDelete(node)}
           aria-label={`حذف دستهٔ ${node.name}`}
         >

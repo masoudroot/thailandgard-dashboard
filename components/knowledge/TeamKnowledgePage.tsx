@@ -231,7 +231,7 @@ export default function TeamKnowledgePage({
                 امتیاز دانش {faNum(Math.round(score))} از {faNum(100)}
               </Badge>
             )}
-            <Button variant="default" onClick={openAddForm}>
+            <Button onClick={openAddForm}>
               <Plus size={18} aria-hidden="true" />
               افزودن دانش
             </Button>
@@ -274,7 +274,7 @@ export default function TeamKnowledgePage({
           title="هنوز دانشی ثبت نشده است"
           description="اولین دانش این تیم را اضافه کنید تا در جست‌وجو و پاسخ‌گویی تیم‌ها به کار رود."
           action={
-            <Button variant="default" onClick={openAddForm}>
+            <Button onClick={openAddForm}>
               <Plus size={18} aria-hidden="true" />
               افزودن دانش
             </Button>
@@ -444,7 +444,7 @@ function KnowledgeItemCard({
               )}
             </Button>
             <Button
-              variant="destructive"
+              variant="ghost"
               size="sm"
               onClick={onDelete}
               aria-label={`حذف ${item.title}`}
