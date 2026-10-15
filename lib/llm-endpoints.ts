@@ -15,6 +15,8 @@ import { getSetting, setSetting } from './settings';
 
 export const SETTINGS_KEY_ENDPOINTS = 'llm_endpoints';
 export const SETTINGS_KEY_TEAM_MODELS = 'team_models';
+/** مدل پیش‌فرض سامانه برای تیم‌های بدون تنظیم: { endpointId, model } یا null */
+export const SETTINGS_KEY_DEFAULT_MODEL = 'llm_default_model';
 
 /** خطای ورودی کاربر (نامعتبر بودن فرم)؛ مسیر API آن را 400 می‌کند. */
 export class InputError extends Error {
@@ -266,18 +268,125 @@ export async function saveTeamModelMap(input: unknown): Promise<TeamModelMap> {
 
 /**
  * حل کردن پیکربندی LLM یک تیم: endpoint + کلید واقعی + مدل.
- * اگر تیم تنظیم نشده یا endpoint/کلیدش ناقص است، null برمی‌گردد تا
- * فراخواننده به رفتار پیش‌فرض (env) برگردد.
+ * اگر تیم تنظیم نشده یا endpoint/کلیدش ناقص است، به «مدل پیش‌فرض سامانه»
+ * برمی‌گردد؛ اگر آن هم نباشد null تا فراخواننده به رفتار پیش‌فرض (env) برگردد.
  */
 export async function resolveTeamConfig(
   team: TeamName,
 ): Promise<ResolvedTeamLLM | null> {
   const map = await getTeamModelMap();
-  const entry = map[team];
+  const entry = map[team] ?? (await getDefaultModel());
   if (!entry) return null;
   const ep = await getEndpoint(entry.endpointId);
   if (!ep || !ep.apiKey || !entry.model) return null;
   return { baseUrl: ep.baseUrl, apiKey: ep.apiKey, model: entry.model };
+}
+
+/** خواندن «مدل پیش‌فرض سامانه» (تیم‌های بدون تنظیم از آن استفاده می‌کنند). */
+export async function getDefaultModel(): Promise<TeamModelEntry | null> {
+  const raw = await getSetting<unknown>(SETTINGS_KEY_DEFAULT_MODEL, null);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const v = raw as Record<string, unknown>;
+  const endpointId = typeof v.endpointId === 'string' ? v.endpointId.trim() : '';
+  const model = typeof v.model === 'string' ? v.model.trim() : '';
+  if (!endpointId || !model) return null;
+  const ep = await getEndpoint(endpointId);
+  if (!ep) return null;
+  return { endpointId, model };
+}
+
+/**
+ * ذخیره‌ی «مدل پیش‌فرض سامانه». ورودی null یعنی پاک کردن (برگشت به env).
+ */
+export async function saveDefaultModel(input: unknown): Promise<TeamModelEntry | null> {
+  if (input === null) {
+    await setSetting(SETTINGS_KEY_DEFAULT_MODEL, null);
+    return null;
+  }
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new InputError('ورودی نامعتبر است.');
+  }
+  const v = input as Record<string, unknown>;
+  const endpointId = typeof v.endpointId === 'string' ? v.endpointId.trim() : '';
+  const model = typeof v.model === 'string' ? v.model.trim() : '';
+  if (!endpointId || !model) {
+    throw new InputError('هم endpoint و هم مدل لازم است.');
+  }
+  const ep = await getEndpoint(endpointId);
+  if (!ep) throw new InputError('این endpoint وجود ندارد.');
+  const entry: TeamModelEntry = { endpointId, model };
+  await setSetting(SETTINGS_KEY_DEFAULT_MODEL, entry);
+  return entry;
+}
+
+export interface PromptTestResult {
+  text: string;
+  latencyMs: number;
+}
+
+/**
+ * تست واقعی پرامپت: ارسال یک پیام به endpoint+مدل داده‌شده و برگرداندن
+ * متن پاسخ + زمان پاسخ. برای بخش «تست واقعی» تنظیمات.
+ */
+export async function testPrompt(
+  endpointId: string,
+  model: string,
+  prompt: string,
+  timeoutMs = 120_000,
+): Promise<PromptTestResult> {
+  const ep = await getEndpoint(endpointId);
+  if (!ep) throw new InputError('این endpoint پیدا نشد.');
+  if (!ep.apiKey) throw new InputError('کلید API برای این endpoint ثبت نشده است.');
+  const cleanModel = model.trim();
+  const cleanPrompt = prompt.trim();
+  if (!cleanModel) throw new InputError('مدل را مشخص کنید.');
+  if (!cleanPrompt) throw new InputError('متن پرامپت را بنویسید.');
+  if (cleanPrompt.length > 4000) throw new InputError('پرامپت آزمایشی حداکثر ۴۰۰۰ نویسه باشد.');
+
+  const url = `${ep.baseUrl}/chat/completions`;
+  const started = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ep.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: cleanModel,
+        messages: [{ role: 'user', content: cleanPrompt }],
+        max_tokens: 500,
+        temperature: 0.7,
+      }),
+      signal: controller.signal,
+    });
+    const body: unknown = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail =
+        typeof body === 'object' && body !== null
+          ? (body as { error?: { message?: string } }).error?.message
+          : undefined;
+      throw new Error(detail || `خطای HTTP ${res.status} از درگاه`);
+    }
+    const content =
+      typeof body === 'object' && body !== null
+        ? (body as { choices?: Array<{ message?: { content?: string } }> }).choices?.[0]?.message?.content
+        : undefined;
+    if (typeof content !== 'string' || content.length === 0) {
+      throw new Error('درگاه پاسخی برنگرداند.');
+    }
+    return { text: content, latencyMs: Date.now() - started };
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`پاسخی در ${Math.round(timeoutMs / 1000)} ثانیه نیامد (تایم‌اوت).`);
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export interface ModelsFetchResult {

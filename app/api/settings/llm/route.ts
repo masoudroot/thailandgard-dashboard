@@ -9,6 +9,7 @@
 import { fail, ok } from '../../../../lib/api';
 import {
   InputError,
+  getDefaultModel,
   getTeamModelMap,
   isSupabaseConfigured,
   listEndpointsMasked,
@@ -17,14 +18,15 @@ import {
 
 export async function GET(): Promise<Response> {
   if (!isSupabaseConfigured()) {
-    return ok({ connected: false, endpoints: [], teamModels: {} });
+    return ok({ connected: false, endpoints: [], teamModels: {}, defaultModel: null });
   }
   try {
-    const [endpoints, teamModels] = await Promise.all([
+    const [endpoints, teamModels, defaultModel] = await Promise.all([
       listEndpointsMasked(),
       getTeamModelMap(),
+      getDefaultModel(),
     ]);
-    return ok({ connected: true, endpoints, teamModels });
+    return ok({ connected: true, endpoints, teamModels, defaultModel });
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));
   }
