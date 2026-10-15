@@ -16,7 +16,10 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Vazirmatn", "IRANSans", "Tahoma", "ui-sans-serif", "sans-serif"],
+        /* بدنه: ایران‌یکان X (متغیر --font-body از next/font/local در layout) */
+        sans: ["var(--font-body)", "Tahoma", "ui-sans-serif", "sans-serif"],
+        /* تیترها: پینار (متغیر --font-display) */
+        display: ["var(--font-display)", "Tahoma", "ui-sans-serif", "sans-serif"],
       },
       colors: {
         background: "rgb(var(--background) / <alpha-value>)",

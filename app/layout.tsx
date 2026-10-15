@@ -1,6 +1,28 @@
 import type { Metadata, Viewport } from "next";
+import localFont from "next/font/local";
 import "./globals.css";
 import "./interactions.css";
+
+/* فونت نمایشی تیترها: پینار، نسخه FD با ارقام فارسی */
+const fontDisplay = localFont({
+  src: [
+    { path: "../public/fonts/pinar/Pinar-FD-Regular.woff2", weight: "400" },
+    { path: "../public/fonts/pinar/Pinar-FD-Medium.woff2", weight: "500" },
+    { path: "../public/fonts/pinar/Pinar-FD-SemiBold.woff2", weight: "600" },
+    { path: "../public/fonts/pinar/Pinar-FD-Bold.woff2", weight: "700" },
+    { path: "../public/fonts/pinar/Pinar-FD-ExtraBold.woff2", weight: "800" },
+  ],
+  variable: "--font-display",
+  display: "swap",
+});
+
+/* فونت بدنه: ایران‌یکان X وریبل، پوشش وزن ۱۰۰ تا ۹۰۰ */
+const fontBody = localFont({
+  src: "../public/fonts/iranyekanx/IRANYekanXVF.woff2",
+  variable: "--font-body",
+  weight: "100 900",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "داشبورد ایجنتیک تایلندگرد",
@@ -27,17 +49,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fa" dir="rtl" suppressHydrationWarning>
+    <html
+      lang="fa"
+      dir="rtl"
+      suppressHydrationWarning
+      className={`${fontDisplay.variable} ${fontBody.variable}`}
+    >
       <head>
-        <link
-          rel="preconnect"
-          href="https://cdn.jsdelivr.net"
-          crossOrigin="anonymous"
-        />
-        <link
-          rel="stylesheet"
-          href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
-        />
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body>{children}</body>
