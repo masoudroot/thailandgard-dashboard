@@ -13,6 +13,7 @@ import {
   Settings,
   LogOut,
   Plane,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -31,6 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/queue", label: "صف ساخت", icon: ListChecks },
   { href: "/dashboard/reports", label: "گزارش‌ها", icon: FileText },
   { href: "/dashboard/settings", label: "تنظیمات", icon: Settings },
+  { href: "/dashboard/debug", label: "دستیار فنی", icon: Wrench },
 ];
 
 /** آیتم فعال بر اساس مسیر جاری؛ صفحهٔ خانه فقط روی مسیر دقیق. */

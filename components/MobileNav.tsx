@@ -17,7 +17,7 @@ import {
 const TABS: NavItem[] = [NAV_ITEMS[0], NAV_ITEMS[1], NAV_ITEMS[2], NAV_ITEMS[4]];
 
 /** آیتم‌هایی که فقط در دراور «بیشتر» دیده می‌شوند */
-const MORE_HREFS = [NAV_ITEMS[3].href, NAV_ITEMS[5].href, NAV_ITEMS[6].href];
+const MORE_HREFS = [NAV_ITEMS[3].href, NAV_ITEMS[5].href, NAV_ITEMS[6].href, NAV_ITEMS[7].href];
 
 type TabButtonProps = {
   label: string;
