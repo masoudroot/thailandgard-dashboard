@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
-import { Button, Input, Select, Field, Textarea, cx } from "../ui";
+import { Button, Input, ValueLabelCombobox, Field, Textarea, cx } from "../ui";
 import { Dialog } from "../ui/dialog";
 
 export type KnowledgeCategoryOption = {
@@ -271,12 +271,14 @@ export function KnowledgeForm({
             </div>
           ) : (
             <Field label="دسته (اختیاری)">
-              <Select
+              <ValueLabelCombobox
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
                 disabled={saving}
-                placeholder="بدون دسته"
-                options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                options={[
+                  { value: "", label: "بدون دسته" },
+                  ...categories.map((c) => ({ value: c.id, label: c.name })),
+                ]}
               />
             </Field>
           )}

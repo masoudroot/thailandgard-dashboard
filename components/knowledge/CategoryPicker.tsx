@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Select } from "../ui/Select";
+import { ValueLabelCombobox } from "../ui/value-label-combobox";
 import { Field } from "../ui/Input";
 import { fetchCategories, type KnowledgeCategory } from "./categories";
 
@@ -131,7 +131,7 @@ export function CategoryPicker({
 
   return (
     <Field label={label} hint={effectiveError ? undefined : hint}>
-      <Select
+      <ValueLabelCombobox
         disabled={disabled || loading}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}

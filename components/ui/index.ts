@@ -53,6 +53,8 @@ export { RadioGroup } from "./radio-group";
 export { Sheet } from "./sheet";
 export { Separator } from "./separator";
 export { Timeline } from "./timeline";
+export { ToastProvider, useToast, ToastCard } from "./toast";
+export type { Toast } from "./toast";
 export { Stepper } from "./stepper";
 export { NumberField } from "./number-field";
 export { PasswordInput } from "./password-input";
