@@ -490,6 +490,20 @@ export function LlmPanel() {
         مدل هر یک از ۱۵ تیم. تیمی که تنظیم نشود، از مدل پیش‌فرض استفاده می‌کند.
       </p>
 
+      <details className="mb-4 rounded-lg border border-border bg-background px-3 py-2.5">
+        <summary className="cursor-pointer text-sm font-medium text-foreground">
+          راهنمای قدم‌به‌قدم
+        </summary>
+        <ol className="mt-2 list-decimal space-y-1.5 pe-4 ps-5 text-xs leading-6 text-muted-foreground marker:text-brand">
+          <li>در بخش «افزودن درگاه»، نام، آدرس base URL و کلید API درگاه را وارد و «افزودن درگاه» را بزنید.</li>
+          <li>روی هر درگاه «تست اتصال» را بزنید؛ اگر سالم باشد، فهرست مدل‌های آن درگاه خودکار خوانده می‌شود.</li>
+          <li>در «مدل پیش‌فرض سامانه»، درگاه را انتخاب کنید؛ فهرست مدل‌های همان درگاه می‌آید و یکی را برگزینید.</li>
+          <li>در «مدل امبدینگ» هم همین کار را برای مدل امبدینگ انجام دهید.</li>
+          <li>اگر تیمی مدل خاصی می‌خواهد، در «مدل هر تیم» برای همان تیم درگاه و مدل جدا انتخاب کنید؛ بقیه تیم‌ها از پیش‌فرض استفاده می‌کنند.</li>
+          <li>با «تست واقعی» یک پرامپت کوتاه بفرستید و از سالم بودن مطمئن شوید.</li>
+        </ol>
+      </details>
+
       {loading ? (
         <div aria-busy="true"><SkeletonLines lines={3} /><span className="sr-only">در حال بارگذاری…</span></div>
       ) : !connected ? (

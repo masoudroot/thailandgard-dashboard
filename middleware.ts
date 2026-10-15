@@ -5,6 +5,31 @@ export const SESSION_COOKIE = 'tg-admin';
 
 const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/login', '/login', '/favicon.ico']);
 
+/** خواندن سکرت کرون نرخ‌ها از جدول settings (null اگر نباشد). */
+async function readRatesCronSecret(): Promise<string | null> {
+  try {
+    const url = process.env.SUPABASE_URL?.trim();
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+    if (!url || !key) return null;
+    const res = await fetch(
+      `${url}/rest/v1/settings?key=eq.rates_cron_secret&select=value`,
+      {
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+        },
+        signal: AbortSignal.timeout(8_000),
+      },
+    );
+    if (!res.ok) return null;
+    const rows = (await res.json()) as Array<{ value?: unknown }>;
+    const v = rows?.[0]?.value;
+    return typeof v === 'string' && v.length >= 16 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 /** مسیرهایی که کرون زمان‌بندی‌شده با هدر مخفی هم می‌تواند صدا بزند. */
 const CRON_PATHS = new Set(['/api/rates/fetch']);
 
@@ -16,11 +41,18 @@ export async function middleware(request: NextRequest) {
   }
 
   // احراز کرون: هدر مخفیِ ست‌شده در متغیر محیطی RATES_CRON_SECRET
+  // یا کلید rates_cron_secret در جدول settings
   if (CRON_PATHS.has(pathname)) {
-    const cronSecret = process.env.RATES_CRON_SECRET;
     const provided = request.headers.get('x-cron-secret');
-    if (cronSecret && provided && provided.length === cronSecret.length && provided === cronSecret) {
-      return NextResponse.next();
+    if (provided) {
+      const envSecret = process.env.RATES_CRON_SECRET;
+      if (envSecret && provided.length === envSecret.length && provided === envSecret) {
+        return NextResponse.next();
+      }
+      const storedSecret = await readRatesCronSecret();
+      if (storedSecret && provided.length === storedSecret.length && provided === storedSecret) {
+        return NextResponse.next();
+      }
     }
   }
 

@@ -47,6 +47,90 @@ const jalaliFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
   timeStyle: 'short',
 });
 
+/** تلاش برای parse رشته به‌عنوان JSON؛ در صورت شکست، خود رشته برمی‌گردد */
+function tryParseJson(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const t = value.trim();
+  if (!t.startsWith('{') && !t.startsWith('[')) return value;
+  try {
+    return JSON.parse(t);
+  } catch {
+    return value;
+  }
+}
+
+/** باز کردن JSONهای تودرتو (مثل content که خودش رشته JSON است)؛ حداکثر ۳ سطح */
+function deepParse(value: unknown, depth = 0): unknown {
+  if (depth > 3) return value;
+  const parsed = tryParseJson(value);
+  if (parsed !== value && (typeof parsed === 'object' && parsed !== null)) {
+    if (Array.isArray(parsed)) return parsed.map((v) => deepParse(v, depth + 1));
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      out[k] = deepParse(v, depth + 1);
+    }
+    return out;
+  }
+  return parsed;
+}
+
+/** لیبل فارسی برای کلیدهای رایج حافظه */
+function faLabel(key: string): string {
+  const map: Record<string, string> = {
+    approved: 'تأیید شده',
+    reason: 'دلیل',
+    payload: 'جزئیات',
+    status: 'وضعیت',
+    summary: 'خلاصه',
+    run_id: 'شناسه اجرا',
+    content: 'محتوا',
+    no_data: 'بدون داده',
+  };
+  return map[key] ?? key;
+}
+
+/** نمایش یک مقدار ساده */
+function PlainValue({ value }: { value: unknown }) {
+  if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>;
+  if (typeof value === 'boolean')
+    return (
+      <span className={value ? 'font-medium text-success' : 'font-medium text-destructive'}>
+        {value ? 'بله' : 'خیر'}
+      </span>
+    );
+  return <span className="whitespace-pre-wrap break-words">{String(value)}</span>;
+}
+
+/** رندر تمیز یک مقدار حافظه: آبجکت ← فهرست مرتب، رشته ← متن ساده */
+function MemoryValue({ value }: { value: unknown }) {
+  const parsed = deepParse(value);
+  if (parsed !== null && typeof parsed === 'object') {
+    const entries = Object.entries(parsed as Record<string, unknown>);
+    if (entries.length === 0) return <span className="text-muted-foreground">خالی</span>;
+    return (
+      <dl className="space-y-2.5">
+        {entries.map(([k, v]) => (
+          <div key={k} className="rounded-lg bg-background px-3 py-2">
+            <dt className="text-xs font-medium text-muted-foreground">{faLabel(k)}</dt>
+            <dd className="mt-0.5 text-sm leading-7 text-foreground">
+              {v !== null && typeof v === 'object' ? (
+                <MemoryValue value={v} />
+              ) : (
+                <PlainValue value={v} />
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
+  return (
+    <p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground">
+      <PlainValue value={parsed} />
+    </p>
+  );
+}
+
 function prettyJson(value: unknown): string {
   if (typeof value === 'string') return value;
   try {
@@ -102,13 +186,8 @@ function MemoryCard({ row }: { row: MemoryRow }) {
       </button>
 
       {open && (
-        <div className="border-t border-border bg-muted/40">
-          <pre
-            dir="rtl"
-            className="overflow-x-auto whitespace-pre-wrap px-4 py-3 font-mono text-sm leading-7 text-foreground"
-          >
-            {prettyJson(row.value)}
-          </pre>
+        <div className="border-t border-border bg-muted/40 px-4 py-3">
+          <MemoryValue value={row.value} />
           <div className="border-t border-border px-4 py-3">
             <button
               type="button"
@@ -139,12 +218,7 @@ function MemoryCard({ row }: { row: MemoryRow }) {
                       <p className="mb-1 text-xs text-muted-foreground">
                         نسخهٔ {faDigits(history.length - i)} · {jalaliFormatter.format(new Date(h.superseded_at))}
                       </p>
-                      <pre
-                        dir="rtl"
-                        className="overflow-x-auto whitespace-pre-wrap font-mono text-xs leading-6 text-foreground"
-                      >
-                        {prettyJson(h.value)}
-                      </pre>
+                      <MemoryValue value={h.value} />
                     </div>
                   ))}
               </div>

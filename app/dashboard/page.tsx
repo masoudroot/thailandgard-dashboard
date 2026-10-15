@@ -189,9 +189,9 @@ export default function DashboardHomePage() {
   const stats: StatCardProps[] = [
     {
       icon: Users,
-      label: "تیم‌های فعال",
+      label: "تیم‌های آماده",
       value: fa(TEAMS.length),
-      hint: `در ${fa(6)} موج`,
+      hint: `در ${fa(6)} موج، آماده شروع`,
       tint: "bg-success/10 text-success",
     },
     {

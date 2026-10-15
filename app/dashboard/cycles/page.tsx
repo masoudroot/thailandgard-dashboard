@@ -54,7 +54,7 @@ function unwrapPayload(body: unknown): unknown {
   return body;
 }
 
-type LoadState = 'loading' | 'ready' | 'not-connected' | 'unauthorized';
+type LoadState = 'loading' | 'ready' | 'not-connected' | 'unauthorized' | 'error';
 
 export default function CyclesPage() {
   const [cycles, setCycles] = useState<CycleRow[]>([]);
@@ -78,6 +78,19 @@ export default function CyclesPage() {
   const load = useCallback(async () => {
     setLoadState('loading');
     try {
+      // بررسی اتصال با همان منطق صفحه تنظیمات (متغیرهای محیطی)
+      try {
+        const cfgRes = await fetch('/api/settings/supabase/test', { cache: 'no-store' });
+        const cfgBody = await cfgRes.json().catch(() => ({}));
+        const configured = cfgBody?.data?.configured ?? cfgBody?.configured ?? false;
+        if (!configured) {
+          setCycles([]);
+          setLoadState('not-connected');
+          return;
+        }
+      } catch {
+        // اگر بررسی اتصال خودش خطا داد، ادامه بده و بگذار خطای اصلی مشخص شود
+      }
       const res = await fetch('/api/cycles', { cache: 'no-store' });
       if (res.status === 401) {
         setLoadState('unauthorized');
@@ -93,9 +106,9 @@ export default function CyclesPage() {
       setLoadState('ready');
       setError('');
     } catch {
-      // قانون مسعود: به‌جای دادهٔ نمونه، صادقانه «متصل نیست» نمایش بده.
+      // پایگاه داده وصل است ولی خواندن چرخه‌ها خطا داد؛ «متصل نیست» گمراه‌کننده است
       setCycles([]);
-      setLoadState('not-connected');
+      setLoadState('error');
     }
   }, []);
 
@@ -175,6 +188,21 @@ export default function CyclesPage() {
           <SkeletonTable rows={4} columns={7} />
         ) : loadState === 'not-connected' ? (
           <NotConnected onRetry={load} retrying={false} />
+        ) : loadState === 'error' ? (
+          <EmptyState
+            icon={Inbox}
+            title="خواندن چرخه‌ها ناموفق بود"
+            description="پایگاه داده متصل است ولی دریافت فهرست چرخه‌ها خطا داد. دوباره تلاش کنید."
+            action={
+              <button
+                type="button"
+                onClick={load}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-bold text-primary-foreground shadow-control hover:opacity-90"
+              >
+                تلاش دوباره
+              </button>
+            }
+          />
         ) : loadState === 'unauthorized' ? (
           <EmptyState
             icon={KeyRound}
