@@ -132,6 +132,18 @@ export async function runSimpleCheck(team: TeamName, output: TeamResult): Promis
       fixDirective: `این ایراد را برطرف کن و خروجی کامل را از نو تولید کن: ${blockers[0].slice(0, 500)}`,
     };
   }
+  // استثنای سقف هوشمند: رهبر وقتی دادهٔ تازه‌ای نیست و صادقانه تسکی نساخته،
+  // این «کار درست» است نه خرابی؛ بدون قضاوت LLM عبور می‌کند.
+  if (
+    team === 'leader' &&
+    (output.tasks ?? []).length === 0 &&
+    /داده[ٔی]?\s+تازه/.test(summary)
+  ) {
+    return {
+      pass: true,
+      note: 'چک رهبر: دادهٔ تازه‌ای نبود؛ تسک نساختن تصمیم درست است.',
+    };
+  }
   // ۲) داوری سبک LLM: فقط «کار می‌کنه؟» + یک جمله دلیل + دستور اصلاح
   try {
     const { callLLMJson } = await import('./llm');
