@@ -21,7 +21,12 @@ import { getSupabase } from './api';
 import { getGithubConfig } from './github';
 import { GithubError } from './github-changes';
 import { BRIDGE_BASE_BRANCH, SITE_REPO } from './bridge/commit';
-import { preMergeTypeCheck } from './bridge/pre-merge-check';
+/** ایمپورت تنبل ماژول Node-only (fs/child_process) تا باندل کلاینت نشکند.
+ * runPreMergeTypeGate فقط سمت سرور صدا زده می‌شود (propose.ts و API approve).
+ * webpackIgnore: وب‌پک این ایمپورت را دنبال نکند؛ در ران‌تایم سرور با Node حل می‌شود. */
+async function loadPreMergeCheck() {
+  return import(/* webpackIgnore: true */ './bridge/pre-merge-check');
+}
 
 /** وضعیت‌های پچ طبق ماشین حالت docs/execution-bridge.md بخش ۶. */
 export type BridgePatchStatus =
@@ -478,6 +483,7 @@ export class PreMergeGateError extends Error {
  */
 export async function runPreMergeTypeGate(files: BridgePatchFile[]): Promise<void> {
   const siteRepoUrl = `https://github.com/${SITE_REPO}.git`;
+  const { preMergeTypeCheck } = await loadPreMergeCheck();
   const check = await preMergeTypeCheck(files, siteRepoUrl, BRIDGE_BASE_BRANCH);
   if (!check.passed) {
     const firstErrors = check.errors.slice(0, 3).join(' | ');
