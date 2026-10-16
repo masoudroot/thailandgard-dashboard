@@ -303,6 +303,7 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
       combinedKnowledge ? `دانش:\n${combinedKnowledge}\n` : '',
       `حداکثر ${MAX_SLUGS_PER_CYCLE} اسلاگ پراولویت (تازه‌ها و پرترافیک‌ها اول) انتخاب کن.`,
       'فقط JSON معتبر بده: {"slugs": ["slug-1", "slug-2"]}',
+      'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
     ].join('\n'),
     { system: SYSTEM_SUPERVISOR, temperature: 0.3 },
   );
@@ -339,6 +340,7 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
         '',
         'قوانین: کاراکتر U+2014 مطلقاً ممنوع. هیچ تکنیک خاکستری. فقط واقعیت.',
         'فقط JSON معتبر بده: {"slug": "...", "title": "...", "h1": "...", "metaTitle": "...", "metaDescription": "...", "keyword": "..."}',
+        'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
       ].join('\n'),
       { system: SYSTEM_WORKER, temperature: 0.5, maxTokens: 800 },
     );
@@ -380,6 +382,7 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
       ]),
       'داوری کن. معیارها: h1 واقعاً از تایتل جداست؟ طول‌ها در بازه‌اند؟ فارسی طبیعی است؟ خط تیرهٔ بلند ندارد؟ کلیک‌بیت گمراه‌کننده نیست؟',
       'فقط JSON معتبر بده: {"approved": true/false, "reason": "یک جمله"}',
+      'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
     ].join('\n'),
     { system: SYSTEM_CRITIC, temperature: 0.2 },
   );

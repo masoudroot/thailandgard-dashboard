@@ -228,10 +228,10 @@ function isEndpointKeyBad(endpointId: string): boolean {
 const QUALITY_CHAT_MODELS: Record<string, string[]> = {
   reformboss: [
     'glm-5.3-flash',
-    'qwen3.8-flash',
-    'qwen3.5-omni-flash',
     'deepseek-v4-flash',
+    'qwen3.5-omni-flash',
     'kimi-k3',
+    'qwen3.8-flash',
   ],
   gemini: [
     'gemini-3.8-flash',
