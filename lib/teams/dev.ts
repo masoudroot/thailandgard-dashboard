@@ -2,8 +2,11 @@
  * lib/teams/dev.ts : تیم توسعه (dev) — کدنویس واقعی
  *
  * این تیم گزارش نمی‌نویسد؛ کد واقعی تولید می‌کند:
- * سرپرست (تصمیم + انتخاب فایل‌ها) ← خواندن فایل‌های واقعی ریپو ←
- * مجری‌ها (تولید محتوای کامل هر فایل) ← منتقد کد ← پچ نهایی
+ * حلقه نقد ۳ دوره‌ای (lib/critic-loop.ts):
+ *   دور ۱: سرپرست (تصمیم + انتخاب فایل‌ها) ← خواندن فایل‌های واقعی ریپو ←
+ *          مجری‌ها (تولید محتوای کامل هر فایل) ← منتقد کد
+ *   دور ۲: رد ← دستور دقیق منتقد ← مجری‌ها همان فایل‌ها را اصلاح می‌کنند
+ *   دور ۳: فقط نظارت و نظر نهایی (حق رد ندارد) ← فیلتر فایل‌به‌فایل ← پچ نهایی
  *
  * خروجی: PatchFile[] در TeamResult.patch — یعنی [{path, content}]
  * اعمال پچ (کامیت روی شاخه) کار این تیم نیست؛ لایهٔ اعمال جداگانه انجامش می‌دهد.
@@ -12,8 +15,17 @@
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
-import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
+import {
+  extractCriticKnowledge,
+  criticKnowledgeLog,
+  type CriticRoundRecord,
+} from '../knowledge/critic-knowledge';
 import { readRepoFile } from '../github';
+import {
+  runCriticLoop,
+  type CriticLoopResult,
+  type CriticVerdictV2,
+} from '../critic-loop';
 import type {
   PatchFile,
   ProgressReporter,
@@ -86,6 +98,12 @@ interface CriticVerdict {
   approved: boolean;
   reason: string;
   files: FileVerdict[];
+}
+
+/** خروجی یک دور از مجری‌های حلقه نقد: پلن سرپرست + پچ‌های تولیدشده */
+interface WorkerRoundOutput {
+  plan: SupervisorPlan;
+  patches: WorkerPatch[];
 }
 
 /** نقشهٔ کلی ریپو برای کمک به سرپرست در انتخاب فایل. */
@@ -172,7 +190,39 @@ function finalizePatches(
 }
 
 /**
+ * تبدیل دلیل ردِ منتقد قدیمی به دستور اجرایی (CriticVerdictV2.instruction).
+ * امری و بلندتر از ۵۰ نویسه تا از اعتبارسنجی حلقه رد شود.
+ */
+function criticInstructionFromReason(reason: string, files: FileVerdict[]): string {
+  const r = reason.trim() || 'کد ایراد دارد';
+  const fileNotes = files
+    .filter((f) => !f.approved)
+    .map((f) => `فایل ${f.path}: ${String(f.reason || '').trim() || 'ایراد دارد'}`)
+    .join('؛ ');
+  return [
+    `کد را بر اساس این نقد اصلاح کن: «${r}»`,
+    ...(fileNotes ? [`ایرادهای فایل‌به‌فایل را برطرف کن: ${fileNotes}.`] : []),
+    'هر فایل را کامل و قابل اجرا بازنویسی کن؛ سینتکس را درست کن؛ ایمپورت‌ها را دقیق و نسبی بنویس؛',
+    'placeholder و کد ناقص را حذف کن؛ برای رابط فارسی فقط logical CSS استفاده کن؛',
+    'در پایان مطمئن شو هیچ secret و ارجاعی به .env در کد نیست.',
+  ].join(' ');
+}
+
+/**
+ * تبدیل دلیل رد به معیار قبولی (CriticVerdictV2.acceptance).
+ */
+function criticAcceptanceFromReason(reason: string, files: FileVerdict[]): string {
+  const r = reason.trim() || 'کد ایراد دارد';
+  const fileNotes = files
+    .filter((f) => !f.approved)
+    .map((f) => f.path)
+    .join('، ');
+  return `وقتی درست است که نقد «${r}» دیگر دربارهٔ کد صدق نکند${fileNotes ? ` (به‌ویژه فایل‌های: ${fileNotes})` : ''} و هر فایل سینتکس معتبر، ایمپورت‌های درست، logical CSS و بدون secret داشته باشد.`;
+}
+
+/**
  * یک چرخهٔ کامل تیم dev را اجرا می‌کند و TeamResult با patch واقعی برمی‌گرداند.
+ * (مهاجرت به حلقه نقد ۳ دوره‌ای lib/critic-loop.ts)
  */
 export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
@@ -192,87 +242,234 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
   }
   const knowledgePrefix = knowledgeSection ? `${knowledgeSection}\n\n` : '';
 
-  // ۱) سرپرست: هدف این چرخه + انتخاب حداکثر ۳ فایل
-  const supervisorPrompt =
-    knowledgePrefix +
-    `نقشهٔ ریپو:\n${REPO_MAP}\n\n` +
-    `زمینهٔ طراحی:\n${designSummary}\n\n` +
-    `باگ‌ها و نیازهای qa:\n${qaSummary}\n\n` +
-    'بر اساس زمینه، تصمیم بگیر این چرخه دقیقاً چه کدی باید نوشته یا اصلاح شود. ' +
-    'فقط JSON معتبر بده با این ساختار:\n' +
-    '{"goal": "هدف یک‌خطی", "tasks": [{"path": "مسیر نسبی فایل", "action": "create یا modify", "instruction": "دستور دقیق فنی به مجری"}]}\n' +
-    'قواعد: حداکثر ۳ فایل؛ مسیرها نسبی و دقیق؛ هرگز فایل .env یا package-lock را انتخاب نکن؛ ' +
-    'instruction باید آن‌قدر دقیق باشد که مجری بدون سؤال کد را بنویسد.';
-  await reportLive?.('سرپرست: انتخاب فایل‌ها و هدف', 15);
-  const supervisorRaw = await callLLM(supervisorPrompt, {
-    system: SUPERVISOR_SYSTEM,
-    temperature: 0.3,
-  });
-  const plan = normalizePlan(supervisorRaw);
-  if (!plan) {
-    const reason = 'سرپرست پلن معتبر برنگرداند؛ این چرخه پچی تولید نشد.';
-    return {
-      team: TEAM,
-      summary: reason,
-      blockers: [reason],
-      tasks: [],
-      approved: false,
-      patches: [],
-      patch: [],
-    };
-  }
+  // ---------- توابع حلقه نقد ----------
 
-  // ۲) خواندن محتوای فعلی فایل‌ها از ریپو (برای action=modify)
-  await reportLive?.('خواندن فایل‌های واقعی ریپو', 30);
-  const currentContents = new Map<string, string | null>();
-  for (const task of plan.tasks) {
-    if (task.action === 'modify') {
-      try {
-        const content = await readRepoFile(task.path);
-        currentContents.set(task.path, content);
-      } catch (err) {
-        // گیت‌هاب متصل نیست یا فایل نیست؛ مجری با instruction جلو می‌رود
-        currentContents.set(task.path, null);
+  // کش دور ۱: پلن سرپرست و محتوای فعلی فایل‌ها در هر چرخه یک بار ساخته می‌شوند؛
+  // دورهای ۲ و ۳ همان فایل‌ها را با دستور منتقد اصلاح می‌کنند.
+  let cachedPlan: SupervisorPlan | null = null;
+  const cachedContents = new Map<string, string | null>();
+  // جزئیات فایل‌به‌فایل آخرین داوری منتقد (برای فیلتر نهایی و دستور دور بعد)
+  let lastFileVerdicts: FileVerdict[] = [];
+  // حکم خام آخرین داوری (پیش از اجبار دور ۳) برای منطق تأیید نهایی
+  let lastRawApproved: boolean = false;
+  let lastRawReason = '';
+
+  /**
+   * تولید محتوای کامل هر فایل با مجری‌ها (موازی) — منطق فعلی، بدون تغییر.
+   * در دور ۲/۳ دستور منتقد (prevInstruction) به پرامپت هر مجری تزریق می‌شود.
+   */
+  const generatePatches = async (
+    plan: SupervisorPlan,
+    prevInstruction?: string,
+  ): Promise<WorkerPatch[]> => {
+    const patches = await Promise.all(
+      plan.tasks.map(async (task) => {
+        const current = cachedContents.get(task.path);
+        const workerPrompt =
+          `مسیر فایل: ${task.path}\n` +
+          `عمل: ${task.action === 'create' ? 'ساخت فایل تازه' : 'اصلاح فایل موجود'}\n` +
+          `دستور سرپرست:\n${task.instruction}\n` +
+          (prevInstruction ? `\nدستور منتقد برای اصلاح این دور (حتماً رعایت کن):\n${prevInstruction}\n` : '') +
+          (current
+            ? `\nمحتوای فعلی فایل (آن را کامل بازنویسی کن، نه تکه‌تکه):\n${current.slice(0, 30000)}\n`
+            : `\nفایل موجود نیست یا خوانده نشد؛ محتوای کامل را از صفر بنویس.\n`) +
+          '\nقواعد سفت:\n' +
+          '- خروجی فقط JSON معتبر با همین ساختار باشد: {"path": "مسیر فایل", "content": "محتوای کامل و نهایی فایل"}.\n' +
+          '- نه files_hint، نه خلاصه، نه توضیح بیرون از JSON؛ content باید کد کامل و قابل اجرای فایل باشد.\n' +
+          '- حداکثر ۲۰ کیلوبایت برای هر فایل؛ فایل بزرگ‌تر حذف می‌شود، پس کد را جمع‌وجور و کامل بنویس.\n' +
+          '- کد باید کامل و قابل اجرا باشد؛ تکه‌کد ناقص یا placeholder مثل // ... ممنوع.\n' +
+          '- برای رابط فارسی: فقط logical CSS (ms- me- ps- pe- start- end-)، هرگز ml- pl- text-left.\n' +
+          '- ایمپورت‌ها دقیق و نسبی باشند؛ هیچ‌چیز حدسی ایمپورت نکن.';
+        const raw = await callLLM(workerPrompt, {
+          system: WORKER_SYSTEM,
+          temperature: 0.4,
+        });
+        return normalizePatch(raw, task.path);
+      }),
+    );
+    return patches.filter((p): p is WorkerPatch => p !== null);
+  };
+
+  /**
+   * runWorkers: سرپرست (دور ۱) + خواندن فایل‌ها (دور ۱) + مجری‌ها (هر دور).
+   */
+  const runWorkers = async (
+    round: number,
+    prevInstruction?: string,
+  ): Promise<WorkerRoundOutput> => {
+    if (round === 1) {
+      // ۱) سرپرست: هدف این چرخه + انتخاب حداکثر ۳ فایل (منطق فعلی، بدون تغییر)
+      const supervisorPrompt =
+        knowledgePrefix +
+        `نقشهٔ ریپو:\n${REPO_MAP}\n\n` +
+        `زمینهٔ طراحی:\n${designSummary}\n\n` +
+        `باگ‌ها و نیازهای qa:\n${qaSummary}\n\n` +
+        'بر اساس زمینه، تصمیم بگیر این چرخه دقیقاً چه کدی باید نوشته یا اصلاح شود. ' +
+        'فقط JSON معتبر بده با این ساختار:\n' +
+        '{"goal": "هدف یک‌خطی", "tasks": [{"path": "مسیر نسبی فایل", "action": "create یا modify", "instruction": "دستور دقیق فنی به مجری"}]}\n' +
+        'قواعد: حداکثر ۳ فایل؛ مسیرها نسبی و دقیق؛ هرگز فایل .env یا package-lock را انتخاب نکن؛ ' +
+        'instruction باید آن‌قدر دقیق باشد که مجری بدون سؤال کد را بنویسد.';
+      await reportLive?.('سرپرست: انتخاب فایل‌ها و هدف', 15);
+      const supervisorRaw = await callLLM(supervisorPrompt, {
+        system: SUPERVISOR_SYSTEM,
+        temperature: 0.3,
+      });
+      const plan = normalizePlan(supervisorRaw);
+      if (!plan) {
+        throw new Error('سرپرست پلن معتبر برنگرداند؛ این چرخه پچی تولید نشد.');
+      }
+      cachedPlan = plan;
+
+      // ۲) خواندن محتوای فعلی فایل‌ها از ریپو (برای action=modify)
+      await reportLive?.('خواندن فایل‌های واقعی ریپو', 30);
+      for (const task of plan.tasks) {
+        if (task.action === 'modify') {
+          try {
+            const content = await readRepoFile(task.path);
+            cachedContents.set(task.path, content);
+          } catch {
+            // گیت‌هاب متصل نیست یا فایل نیست؛ مجری با instruction جلو می‌رود
+            cachedContents.set(task.path, null);
+          }
+        } else {
+          cachedContents.set(task.path, null);
+        }
       }
     } else {
-      currentContents.set(task.path, null);
+      await reportLive?.(`دور ${round}: اصلاح با دستور منتقد`, 45);
     }
-  }
 
-  // ۳) مجری‌ها: تولید محتوای کامل هر فایل (موازی)
-  await reportLive?.('مجری‌ها: نوشتن کد واقعی', 55);
-  const patches = await Promise.all(
-    plan.tasks.map(async (task) => {
-      const current = currentContents.get(task.path);
-      const workerPrompt =
-        `مسیر فایل: ${task.path}\n` +
-        `عمل: ${task.action === 'create' ? 'ساخت فایل تازه' : 'اصلاح فایل موجود'}\n` +
-        `دستور سرپرست:\n${task.instruction}\n` +
-        (current
-          ? `\nمحتوای فعلی فایل (آن را کامل بازنویسی کن، نه تکه‌تکه):\n${current.slice(0, 30000)}\n`
-          : `\nفایل موجود نیست یا خوانده نشد؛ محتوای کامل را از صفر بنویس.\n`) +
-        '\nقواعد سفت:\n' +
-        '- خروجی فقط JSON معتبر با همین ساختار باشد: {"path": "مسیر فایل", "content": "محتوای کامل و نهایی فایل"}.\n' +
-        '- نه files_hint، نه خلاصه، نه توضیح بیرون از JSON؛ content باید کد کامل و قابل اجرای فایل باشد.\n' +
-        '- حداکثر ۲۰ کیلوبایت برای هر فایل؛ فایل بزرگ‌تر حذف می‌شود، پس کد را جمع‌وجور و کامل بنویس.\n' +
-        '- کد باید کامل و قابل اجرا باشد؛ تکه‌کد ناقص یا placeholder مثل // ... ممنوع.\n' +
-        '- برای رابط فارسی: فقط logical CSS (ms- me- ps- pe- start- end-)، هرگز ml- pl- text-left.\n' +
-        '- ایمپورت‌ها دقیق و نسبی باشند؛ هیچ‌چیز حدسی ایمپورت نکن.';
-      const raw = await callLLM(workerPrompt, {
-        system: WORKER_SYSTEM,
-        temperature: 0.4,
+    const plan = cachedPlan;
+    if (!plan) {
+      throw new Error('پلن سرپرست در کش پیدا نشد.');
+    }
+
+    // ۳) مجری‌ها: تولید محتوای کامل هر فایل
+    await reportLive?.('مجری‌ها: نوشتن کد واقعی', 55);
+    const validPatches = await generatePatches(plan, prevInstruction);
+    if (validPatches.length === 0) {
+      throw new Error('هیچ مجری‌ای کد معتبر تولید نکرد؛ این چرخه پچی تولید نشد.');
+    }
+    return { plan, patches: validPatches };
+  };
+
+  /**
+   * runCritic: منتقد کد فعلی (فایل‌به‌فایل)، با تبدیل خروجی به CriticVerdictV2.
+   * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+   */
+  const runCritic = async (
+    output: WorkerRoundOutput,
+    round: number,
+  ): Promise<CriticVerdictV2> => {
+    const criticPrompt =
+      output.patches
+        .map(
+          (p, i) =>
+            `--- فایل ${i + 1}: ${p.path} ---\n${p.content.slice(0, 25000)}`,
+        )
+        .join('\n\n') +
+      '\n\nهر فایل را داوری کن و فقط JSON معتبر بده:\n' +
+      '{"approved": بولین (کل پچ), "reason": "یک جمله", "files": [{"path": "مسیر", "approved": بولین, "reason": "دلیل"}]}\n' +
+      'معیارها: سینتکس معتبر؛ ایمپورت‌های درست؛ راست‌چین با logical CSS؛ بدون secret و .env؛ ' +
+      'کد ناقص یا placeholder = رد. فقط ایراد واقعی؛ سلیقه‌ای نه.';
+    await reportLive?.('منتقد: بازبینی خط‌به‌خط کد', 85);
+    let verdict: CriticVerdict;
+    try {
+      verdict = await callLLMJson<CriticVerdict>(criticPrompt, {
+        system: CRITIC_SYSTEM,
+        temperature: 0.2,
       });
-      return normalizePatch(raw, task.path);
-    }),
-  );
+    } catch {
+      verdict = { approved: false, reason: 'منتقد خروجی معتبر نداد.', files: [] };
+    }
 
-  const validPatches = patches.filter((p): p is WorkerPatch => p !== null);
-  if (validPatches.length === 0) {
-    const reason = 'هیچ مجری‌ای کد معتبر تولید نکرد؛ این چرخه پچی تولید نشد.';
+    // جزئیات فایل‌به‌فایل را برای فیلتر نهایی و دستور دور بعد نگه می‌داریم
+    lastFileVerdicts = Array.isArray(verdict.files)
+      ? verdict.files.filter((f) => f && typeof f.path === 'string')
+      : [];
+    lastRawApproved = verdict.approved === true;
+    lastRawReason = String(verdict.reason ?? '').trim() || 'منتقد دلیلی ثبت نکرد.';
+    const reason = lastRawReason;
+
+    if (round === 3) {
+      return {
+        approved: true,
+        reason: '',
+        instruction: '',
+        acceptance: '',
+        finalOpinion: reason,
+      };
+    }
+    if (verdict.approved) {
+      return {
+        approved: true,
+        reason: '',
+        instruction: '',
+        acceptance: '',
+        finalOpinion: reason || undefined,
+      };
+    }
+    return {
+      approved: false,
+      reason,
+      instruction: criticInstructionFromReason(reason, lastFileVerdicts),
+      acceptance: criticAcceptanceFromReason(reason, lastFileVerdicts),
+    };
+  };
+
+  // تاریخچه دورها برای ثبت دانش + آخرین لاگ دانش برای خلاصه
+  const roundHistory: CriticRoundRecord[] = [];
+  let lastKnowledgeLog = '';
+
+  /**
+   * onRoundKnowledge: ثبت دانش هر دور با extractCriticKnowledge فعلی.
+   */
+  const onRoundKnowledge = async (
+    round: number,
+    verdict: CriticVerdictV2,
+  ): Promise<void> => {
+    const record: CriticRoundRecord = {
+      round,
+      approved: verdict.approved,
+      reason: verdict.approved
+        ? verdict.finalOpinion || 'تأیید شد.'
+        : verdict.reason,
+      instruction: verdict.instruction?.trim() || undefined,
+    };
+    const knowledgeResult = await extractCriticKnowledge(
+      TEAM,
+      {
+        approved: verdict.approved,
+        reason: record.reason,
+        domain: 'توسعه و کد',
+        instruction: record.instruction,
+        round,
+        rounds: roundHistory.slice(),
+        isFinal: round === 3,
+      },
+      runId,
+    );
+    roundHistory.push(record);
+    lastKnowledgeLog = criticKnowledgeLog(knowledgeResult);
+  };
+
+  // ---------- اجرای حلقه نقد ۳ دوره‌ای ----------
+  let loopResult: CriticLoopResult<WorkerRoundOutput>;
+  try {
+    loopResult = await runCriticLoop<WorkerRoundOutput>({
+      team: TEAM,
+      runId,
+      runWorkers,
+      runCritic,
+      onRoundKnowledge,
+      onProgress: (msg) => reportLive?.(msg, 70),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     return {
       team: TEAM,
-      summary: reason,
-      blockers: [reason],
+      summary: msg,
+      blockers: [msg],
       tasks: [],
       approved: false,
       patches: [],
@@ -280,48 +477,23 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
     };
   }
 
-  // ۴) منتقد: داوری واقعی کد، فایل‌به‌فایل
-  const criticPrompt =
-    validPatches
-      .map(
-        (p, i) =>
-          `--- فایل ${i + 1}: ${p.path} ---\n${p.content.slice(0, 25000)}`,
-      )
-      .join('\n\n') +
-    '\n\nهر فایل را داوری کن و فقط JSON معتبر بده:\n' +
-    '{"approved": بولین (کل پچ), "reason": "یک جمله", "files": [{"path": "مسیر", "approved": بولین, "reason": "دلیل"}]}\n' +
-    'معیارها: سینتکس معتبر؛ ایمپورت‌های درست؛ راست‌چین با logical CSS؛ بدون secret و .env؛ ' +
-    'کد ناقص یا placeholder = رد. فقط ایراد واقعی؛ سلیقه‌ای نه.';
-  await reportLive?.('منتقد: بازبینی خط‌به‌خط کد', 85);
-  let verdict: CriticVerdict;
-  try {
-    verdict = await callLLMJson<CriticVerdict>(criticPrompt, {
-      system: CRITIC_SYSTEM,
-      temperature: 0.2,
-    });
-  } catch {
-    verdict = { approved: false, reason: 'منتقد خروجی معتبر نداد.', files: [] };
-  }
-
-  // فقط فایل‌های تأییدشده در پچ نهایی می‌مانند
+  // فقط فایل‌های تأییدشده در پچ نهایی می‌مانند (منطق فعلی)
   const approvedByPath = new Map<string, boolean>();
-  if (Array.isArray(verdict.files)) {
-    for (const f of verdict.files) {
-      if (f && typeof f.path === 'string') approvedByPath.set(f.path, f.approved === true);
-    }
+  for (const f of lastFileVerdicts) {
+    approvedByPath.set(f.path, f.approved === true);
   }
-  const criticApproved = validPatches.filter((p) => {
+  const criticApproved = loopResult.output.patches.filter((p) => {
     // اگر منتقد برای فایلی نظر نداد، نظر کلی ملاک است
     if (approvedByPath.has(p.path)) return approvedByPath.get(p.path) === true;
-    return verdict.approved === true;
+    return lastRawApproved;
   });
 
   // مرحلهٔ نهایی: تبدیل به PatchFileهای واقعی با سقف ۳ فایل / ۲۰KB
   const dropped: string[] = [];
   const finalPatch = finalizePatches(criticApproved, dropped);
 
-  const approved = verdict.approved === true && finalPatch.length > 0;
-  const reason = String(verdict.reason ?? '').trim() || 'منتقد دلیلی ثبت نکرد.';
+  const approved = lastRawApproved && finalPatch.length > 0;
+  const reason = lastRawReason;
   const droppedNote =
     dropped.length > 0 ? ` — حذف‌شده (سقف ۲۰KB): ${dropped.join('، ')}` : '';
 
@@ -335,26 +507,34 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
       approved,
       run_id: runId,
       files: finalPatch.map((p) => p.path),
+      finalRound: loopResult.finalRound,
+      rounds: loopResult.verdicts.map((v, i) => ({
+        round: i + 1,
+        approved: v.approved,
+        reason: v.reason || v.finalOpinion || '',
+      })),
     });
   }
 
   const tasks: QueuedTask[] = finalPatch.map((p) => ({
     title: `پچ: ${p.path}`,
-    description: `فایل ${p.path} — ${plan.goal}`,
+    description: `فایل ${p.path} — ${loopResult.output.plan.goal}`,
     files_hint: p.path,
     priority: 'high' as const,
   }));
-
-  const knowledgeResult = await extractCriticKnowledge(
-    TEAM,
-    { approved, reason, domain: 'توسعه و کد' },
-    runId,
-  );
-  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+  const hadRejection = loopResult.verdicts.some((v) => !v.approved);
+  if (hadRejection) {
+    tasks.push({
+      title: 'بازبینی پچ dev',
+      description: `منتقد در دورهای اول کد را رد کرد و حلقه در دور ${loopResult.finalRound} با نظر نهایی تمام شد: ${loopResult.finalOpinion}. پچ ساخته شد ولی نیاز به بازبینی دارد.`,
+      files_hint: finalPatch.map((p) => p.path).join('، ') || '(بدون فایل)',
+      priority: 'high' as const,
+    });
+  }
 
   return {
     team: TEAM,
-    summary: `${summary}${droppedNote} ${knowledgeLog}`,
+    summary: `${summary}${droppedNote} ${lastKnowledgeLog}`,
     blockers: approved ? [] : [reason],
     tasks,
     approved,
