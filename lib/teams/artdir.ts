@@ -39,6 +39,10 @@ export interface TeamInput {
   ragContext: string;
   memory: MemoryEntry[];
   previousWavesOutput: Record<string, string>;
+  /** دستور صریح منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ اگر بود، بالاترین اولویت را دارد. */
+  reviewDirective?: string;
+  /** شمارهٔ دور حلقهٔ بیرونی (۱ تا ۳). */
+  round?: number;
 }
 
 interface SupervisorPlan {
@@ -182,7 +186,14 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       throw new Error('پلن سرپرست در کش پیدا نشد.');
     }
     await reportLive?.('مجری‌ها: اجرای مأموریت‌ها', 55);
-    const workersOutput = await executeWorkers(plan, prevInstruction);
+    // دستور صریح حلقهٔ بیرونی (ارکستراتور) در همین چرخه — اولویت بالا، جدا از ragContext.
+    const outerDirective = input.reviewDirective?.trim()
+      ? `دستور مستقیم منتقد از حلقهٔ بیرونی (همین چرخه — بالاترین اولویت، حتماً اعمال کن):\n${input.reviewDirective.trim()}`
+      : undefined;
+    const combinedInstruction = [outerDirective, prevInstruction]
+      .filter(Boolean)
+      .join('\n\n');
+    const workersOutput = await executeWorkers(plan, combinedInstruction || undefined);
     return { plan, workersOutput };
   };
 
@@ -313,7 +324,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   const summary = lastRawApproved
     ? `تیم آرت‌دایرکشن این چرخه سه خروجی داد: نقد بصری مشخص با راه‌حل، تصمیم‌های آرت‌دایرکشن با دلیل مستند و بریف اجرایی کامل برای تیم طراحی. ${lastRawReason} هر سه کار بعدی (ثبت تصمیم‌ها، تحویل بریف و پیگیری ایرادها) در صف گذاشته شد. ${lastKnowledgeLog}`
-    : `تیم آرت‌دایرکشن این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${lastRawReason} «چرا»ی تصمیم‌ها یا کامل شدن بریف باید در چرخهٔ بعد جبران شود و بلوکر در گزارش درج شد. ${lastKnowledgeLog}`;
+    : `تیم آرت‌دایرکشن این چرخه خروجی تولید کرد؛ منتقد در ${loopResult.finalRound} دور همین چرخه تأیید نکرد و نظر نهایی داد. دلیل: ${lastRawReason} دانش به‌روز شد و بلوکر در گزارش همین چرخه درج شد. ${lastKnowledgeLog}`;
 
   return {
     team: TEAM,

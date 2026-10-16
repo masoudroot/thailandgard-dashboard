@@ -18,6 +18,7 @@ import {
 } from '../knowledge/critic-knowledge';
 import {
   runCriticLoop,
+  retryInCycle,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -36,6 +37,10 @@ export interface TeamInput {
   ragContext: string;
   memory: MemoryEntry[];
   previousWavesOutput: Record<string, string>;
+  /** دستور صریح منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ اگر بود، بالاترین اولویت را دارد. */
+  reviewDirective?: string;
+  /** شمارهٔ دور حلقهٔ بیرونی (۱ تا ۳). */
+  round?: number;
 }
 
 interface SupervisorPlan {
@@ -181,13 +186,18 @@ function criticAcceptanceFromReason(reason: string): string {
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
   await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
-  const plan = await makeSupervisorPlan(input);
+  // دستور مسعود: سرپرست باید در همین چرخه مأموریت معتبر بدهد؛ تا ۳ تلاش، بدون موکول به چرخه بعد.
+  const plan = await retryInCycle(
+    () => makeSupervisorPlan(input),
+    (p) => safeMissions(p).length > 0,
+    { label: 'سرپرست branding', onProgress: (msg) => reportLive?.(msg, 15) },
+  );
   const tasks: QueuedTask[] = [];
   const blockers: string[] = [];
 
-  const missions = safeMissions(plan);
+  const missions = plan ? safeMissions(plan) : [];
   if (missions.length === 0) {
-    const msg = 'سرپرست مأموریت معتبری نداد (خروجی JSON ناقص)؛ کار به چرخهٔ بعد موکول شد.';
+    const msg = 'سرپرست پس از ۳ تلاش در همین چرخه مأموریت معتبری نداد (خروجی JSON ناقص)؛ بلوکر ثبت شد و دانش به‌روز شد.';
     blockers.push(msg);
     return { team: TEAM, summary: msg, blockers, tasks, approved: false };
   }
@@ -206,7 +216,18 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       round === 1 ? 'مجری‌ها: اجرای مأموریت‌ها' : `دور ${round}: اصلاح با دستور منتقد`,
       50,
     );
-    const workersOutput = await executeWorkers(missions, prevInstruction);
+    // دستور صریح حلقهٔ بیرونی (ارکستراتور) در همین چرخه — اولویت بالا، جدا از ragContext.
+    // دستور مسعود: دستور منتقد باید صریح به تیم برسد و در همان چرخه اجرا شود.
+    const outerDirective = input.reviewDirective?.trim()
+      ? `دستور مستقیم منتقد از حلقهٔ بیرونی (همین چرخه — بالاترین اولویت، حتماً اعمال کن):\n${input.reviewDirective.trim()}`
+      : undefined;
+    const combinedInstruction = [outerDirective, prevInstruction]
+      .filter(Boolean)
+      .join('\n\n');
+    const workersOutput = await executeWorkers(
+      missions,
+      combinedInstruction || undefined,
+    );
     return { missions, workersOutput };
   };
 
@@ -305,7 +326,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       onProgress: (msg) => reportLive?.(msg, 70),
     });
   } catch (err) {
-    const msg = `مجری خروجی معتبر نداد: ${err instanceof Error ? err.message : String(err)}؛ کار به چرخهٔ بعد موکول شد.`;
+    const msg = `مجری پس از ۳ تلاش در همین چرخه خروجی معتبر نداد: ${err instanceof Error ? err.message : String(err)}؛ بلوکر در همین چرخه ثبت شد و دانش به‌روز شد.`;
     blockers.push(msg);
     return { team: TEAM, summary: msg, blockers, tasks, approved: false };
   }
@@ -348,7 +369,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   const summary = loopResult.approved
     ? `تیم برندینگ این چرخه شعار، واژه‌نامهٔ یوایکس‌رایتینگ و فیلتر لحن را بازبینی و تولید کرد و منتقد آن را تأیید کرد. ${reason} ۳ گزینهٔ شعار نهایی برای تأیید مسعود آماده است و دو کار بعدی (واژه‌نامه و اصلاح لحن متن‌ها) در صف گذاشته شد. ${lastKnowledgeLog}`
-    : `تیم برندینگ این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${reason} حکم اصلاح لحن برای متن‌های زنده ثبت شده و بلوکر در گزارش درج شد. ${lastKnowledgeLog}`;
+    : `تیم برندینگ این چرخه خروجی تولید کرد؛ منتقد در ${loopResult.finalRound} دور همین چرخه تأیید نکرد و نظر نهایی داد. دلیل: ${reason} حکم اصلاح لحن برای متن‌های زنده ثبت شد، دانش به‌روز شد و بلوکر در گزارش همین چرخه درج شد. ${lastKnowledgeLog}`;
 
   return {
     team: TEAM,

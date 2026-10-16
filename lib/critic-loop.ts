@@ -52,6 +52,55 @@ export interface CriticLoopResult<WorkerOutput> {
   verdicts: CriticVerdictV2[];
   /** نظر نهایی منتقد. */
   finalOpinion: string;
+  /** تعداد تلاش‌های مجدد مجری در همین چرخه (برای ردیابی). */
+  workerRetries: number;
+}
+
+/** سقف تلاش مجری در هر دور — همه در همین چرخه، بدون موکول به چرخه بعد. */
+const MAX_WORKER_ATTEMPTS_PER_ROUND = 3;
+
+/**
+ * تلاش مجدد یک کار ناپایدار (مثل ساخت پلن سرپرست) در همین چرخه.
+ * دستور مسعود: هیچ کاری به چرخهٔ بعد موکول نمی‌شود؛ تا سقف تلاش، همین‌جا تکرار می‌شود.
+ *
+ * @param fn کاری که باید موفق شود
+ * @param isValid اعتبارسنج نتیجه (خروجی معتبر؟)؛ اگر false برگرداند، تلاش بعدی
+ * @param opts.maxAttempts سقف تلاش (پیش‌فرض ۳)
+ * @param opts.label نام کار برای لاگ
+ * @param opts.onProgress گزارش پیشرفت
+ * @returns نتیجهٔ معتبر، یا null اگر همهٔ تلاش‌ها ناموفق بودند
+ */
+export async function retryInCycle<T>(
+  fn: () => Promise<T>,
+  isValid: (result: T) => boolean,
+  opts: {
+    maxAttempts?: number;
+    label?: string;
+    onProgress?: (msg: string) => void | Promise<void>;
+  } = {},
+): Promise<T | null> {
+  const maxAttempts = opts.maxAttempts ?? 3;
+  const label = opts.label ?? 'کار';
+  let lastResult: T | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const result = await fn();
+      if (isValid(result)) return result;
+      lastResult = result;
+      if (attempt < maxAttempts) {
+        await opts.onProgress?.(
+          `${label}: خروجی نامعتبر (تلاش ${attempt} از ${maxAttempts})؛ تلاش مجدد در همین چرخه.`,
+        );
+      }
+    } catch (err) {
+      if (attempt < maxAttempts) {
+        await opts.onProgress?.(
+          `${label}: خطا در تلاش ${attempt} از ${maxAttempts}؛ تلاش مجدد در همین چرخه.`,
+        );
+      }
+    }
+  }
+  return lastResult && isValid(lastResult) ? lastResult : null;
 }
 
 /** افعال امری فارسی برای اعتبارسنجی دستور. */
@@ -94,17 +143,56 @@ export async function runCriticLoop<WorkerOutput>(
   const verdicts: CriticVerdictV2[] = [];
   let output: WorkerOutput | undefined;
   let prevInstruction: string | undefined;
+  let workerRetries = 0;
+
+  /**
+   * اجرای مجری با تلاش مجدد در همین چرخه (دستور مسعود: رد باید در همان چرخه حل شود).
+   * هر دور تا ۳ تلاش؛ هیچ‌چیز به چرخهٔ بعد موکول نمی‌شود.
+   */
+  const runWorkersWithRetry = async (
+    round: number,
+    instruction: string | undefined,
+  ): Promise<WorkerOutput> => {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= MAX_WORKER_ATTEMPTS_PER_ROUND; attempt++) {
+      try {
+        const attemptInstruction =
+          attempt === 1
+            ? instruction
+            : [
+                instruction,
+                '',
+                `تذکر تلاش ${attempt}: خروجی قبلی‌ات ناقص/نامعتبر بود. این بار خروجی را کامل و بدون نقص بده؛`,
+                'کم‌کاری یا خروجی خالی پذیرفته نیست.',
+              ]
+              .filter(Boolean)
+              .join('\n');
+        return await runWorkers(round, attemptInstruction);
+      } catch (err) {
+        lastErr = err;
+        if (attempt < MAX_WORKER_ATTEMPTS_PER_ROUND) {
+          workerRetries++;
+          await onProgress?.(
+            `دور ${round}: خطای مجری (تلاش ${attempt} از ${MAX_WORKER_ATTEMPTS_PER_ROUND})؛ تلاش مجدد در همین چرخه.`,
+          );
+        }
+      }
+    }
+    throw lastErr;
+  };
 
   for (let round = 1; round <= 3; round++) {
     await onProgress?.(`دور ${round}: اجرای مجری`);
 
-    // اجرای مجری (با دستور دور قبل در دور ۲ و ۳)
+    // اجرای مجری (با دستور دور قبل در دور ۲ و ۳) — با تلاش مجدد در همین چرخه
     try {
-      output = await runWorkers(round, prevInstruction);
+      output = await runWorkersWithRetry(round, prevInstruction);
     } catch (err) {
-      // خطای مجری در دور ۲/۳ حلقه را نمی‌کشد؛ با بهترین خروجی موجود ادامه می‌دهیم
+      // هر ۳ تلاش هر دور ناموفق بود.
+      // دور ۱: بدون هیچ خروجی نمی‌شود ادامه داد → خطا به تیم برمی‌گردد تا بلوکر در همین چرخه ثبت شود.
+      // دور ۲/۳: با بهترین خروجی موجود (دور قبل) ادامه می‌دهیم؛ چیزی به چرخهٔ بعد موکول نمی‌شود.
       if (round === 1 || !output) throw err;
-      await onProgress?.(`دور ${round}: خطای مجری؛ با خروجی دور قبل ادامه می‌دهیم.`);
+      await onProgress?.(`دور ${round}: مجری پس از ${MAX_WORKER_ATTEMPTS_PER_ROUND} تلاش خروجی نداد؛ با خروجی دور قبل ادامه می‌دهیم (همین چرخه).`);
     }
 
     await onProgress?.(`دور ${round}: داوری منتقد`);
@@ -121,6 +209,7 @@ export async function runCriticLoop<WorkerOutput>(
         finalRound: 3,
         verdicts,
         finalOpinion: verdict.finalOpinion || verdict.reason || 'نظر نهایی ثبت شد.',
+        workerRetries,
       };
     }
 
@@ -149,6 +238,7 @@ export async function runCriticLoop<WorkerOutput>(
         finalRound: round,
         verdicts,
         finalOpinion: verdict.finalOpinion || 'تأیید شد.',
+        workerRetries,
       };
     }
 
@@ -170,5 +260,6 @@ export async function runCriticLoop<WorkerOutput>(
     finalRound: 3,
     verdicts,
     finalOpinion: 'حلقه بدون نتیجه نهایی تمام شد.',
+    workerRetries,
   };
 }
