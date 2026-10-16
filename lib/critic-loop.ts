@@ -24,6 +24,7 @@
  */
 
 import { faDigits } from './format';
+import { recordEvent } from './operation-events';
 
 export interface CriticVerdictV2 {
   approved: boolean;
@@ -383,6 +384,27 @@ export async function runCriticLoop<WorkerOutput>(
   let prevInstruction: string | undefined;
   let workerRetries = 0;
 
+  /* لایه ۱ دیده‌بان زنده (fail-soft): رویدادهای منتقد هر دور.
+   * پرامپت کامل در callback تیم (runCritic) ساخته می‌شود و در این سطح
+   * دیده نمی‌شود؛ پس prompt_sent فقط دور و تیم را ثبت می‌کند.
+   * پاسخ خام منتقد = آبجکت حکم بازگردانده‌شده از runCritic. */
+  const runCriticWithEvents = async (roundNo: number): Promise<CriticVerdictV2> => {
+    await recordEvent(runId, team, 'prompt_sent', {
+      round: roundNo,
+      note: 'پرامپت کامل منتقد در callback تیم (runCritic) ساخته می‌شود و در این سطح دیده نمی‌شود',
+    });
+    const v = await runCritic(output!, roundNo as 1 | 2 | 3);
+    await recordEvent(runId, team, 'llm_response', { round: roundNo, verdict: v });
+    return v;
+  };
+  const recordDecision = (roundNo: number, v: CriticVerdictV2): Promise<void> =>
+    recordEvent(runId, team, 'critic_decision', {
+      approved: v.approved,
+      score: v.score ?? null,
+      reason: v.reason ?? '',
+      round: roundNo,
+    });
+
   /**
    * اجرای مجری با تلاش مجدد در همین چرخه (دستور مسعود: رد باید در همان چرخه حل شود).
    * هر دور تا ۳ تلاش؛ هیچ‌چیز به چرخهٔ بعد موکول نمی‌شود.
@@ -454,6 +476,7 @@ export async function runCriticLoop<WorkerOutput>(
             'در چرخهٔ بعد مجری باید خروجی کامل و قابل ارزیابی تحویل بدهد.',
         };
         verdicts.push(invalidVerdict);
+        await recordDecision(round, invalidVerdict);
         await onRoundKnowledge?.(round, invalidVerdict);
         return {
           output: output!,
@@ -466,6 +489,7 @@ export async function runCriticLoop<WorkerOutput>(
       }
       const autoVerdict = buildAutoRejection(validity.detail);
       verdicts.push(autoVerdict);
+      await recordDecision(round, autoVerdict);
       await onRoundKnowledge?.(round, autoVerdict);
       prevInstruction = [
         `دستور منتقد (دور ${round}):`,
@@ -478,7 +502,7 @@ export async function runCriticLoop<WorkerOutput>(
     }
 
     await onProgress?.(`دور ${round}: داوری منتقد`);
-    let verdict = await runCritic(output!, round > 3 ? 3 : round as 1 | 2 | 3);
+    let verdict = await runCriticWithEvents(round);
 
     // دروازه امتیاز منتقد (یافته تلخ «امتیاز ۸۰»): در دورهای ۱ و ۲، وقتی
     // منتقد امتیاز داده، تأیید فقط با امتیاز ۸۰ یا بالاتر است. اگر دروازه
@@ -504,6 +528,7 @@ export async function runCriticLoop<WorkerOutput>(
     if (round === 3) {
       verdict = { ...verdict, approved: true };
       verdicts.push(verdict);
+      await recordDecision(round, verdict);
       await onRoundKnowledge?.(round, verdict);
       return {
         output: output!,
@@ -521,7 +546,7 @@ export async function runCriticLoop<WorkerOutput>(
       if (!validation.valid) {
         await onProgress?.(`دور ${round}: حکم رد نامعتبر است (${validation.issues.join(' ')})؛ یک بار از منتقد می‌خواهیم کاملش کند.`);
         // یک بار retry
-        verdict = await runCritic(output!, round as 1 | 2);
+        verdict = await runCriticWithEvents(round);
         const revalidation = validateRejection(verdict);
         if (!verdict.approved && !revalidation.valid) {
           // با همان حکم ناقص ادامه می‌دهیم ولی ثبت می‌شود
@@ -531,6 +556,7 @@ export async function runCriticLoop<WorkerOutput>(
     }
 
     verdicts.push(verdict);
+    await recordDecision(round, verdict);
     await onRoundKnowledge?.(round, verdict);
 
     if (verdict.approved) {
