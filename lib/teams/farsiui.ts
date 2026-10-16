@@ -2,10 +2,13 @@
  * lib/teams/farsiui.ts: تیم ۱۱، farsiui
  *
  * ممیز فارسی‌نویسی و راست‌چین تایلندگرد.
- * خروجی موج‌های قبلی (متن‌های تیم content) را می‌گیرد؛ سرپرست کار را به سه
- * مأموریت می‌شکند، سه مجری موازی اجرا می‌کنند (متن رابط، قاعدهٔ عدد و لیبل
- * و جهت، سند پیام‌ها)، منتقد داوری می‌کند و نتیجه با کلید learned:<runId>
- * در حافظهٔ تیم ثبت می‌شود.
+ * خروجی موج‌های قبلی (متن‌های تیم content) را می‌گیرد؛ حلقه نقد ۳ دوره‌ای
+ * (lib/critic-loop.ts):
+ *   دور ۱: سرپرست کار را به سه مأموریت می‌شکند ← سه مجری موازی (متن رابط،
+ *          قاعدهٔ عدد و لیبل و جهت، سند پیام‌ها)
+ *   دور ۲: رد ← دستور دقیق منتقد ← سه مجری اصلاح می‌کنند
+ *   دور ۳: فقط نظارت و نظر نهایی (حق رد ندارد)
+ * منتقد داوری می‌کند و نتیجه با کلید learned:<runId> در حافظهٔ تیم ثبت می‌شود.
  *
  * اقتباس از ورک‌فلو «thailandgard-all-teams،» بخش farsiui:
  * نودهای «پارام سرپرست (farsiui)»، «پارام مجری ۱ تا ۳ (farsiui)» و
@@ -15,7 +18,16 @@
 import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
-import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
+import {
+  extractCriticKnowledge,
+  criticKnowledgeLog,
+  type CriticRoundRecord,
+} from '../knowledge/critic-knowledge';
+import {
+  runCriticLoop,
+  type CriticLoopResult,
+  type CriticVerdictV2,
+} from '../critic-loop';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 import { faDigits as faNum } from '../format';
 
@@ -60,6 +72,12 @@ export interface CriticVerdict {
     findings: AuditFinding[];
     notes: string;
   };
+}
+
+/** خروجی یک دور از مجری‌های حلقه نقد: مأموریت‌ها + خروجی هر سه مجری */
+interface WorkerRoundOutput {
+  missions: [string, string, string];
+  outputs: [string, string, string];
 }
 
 const SUPERVISOR_SYSTEM = 'تو سرپرست تیم farsiui تایلندگرد هستی.';
@@ -288,62 +306,207 @@ function buildSummary(verdict: CriticVerdict): string {
 }
 
 /**
+ * تبدیل دلیل ردِ منتقد قدیمی به دستور اجرایی (CriticVerdictV2.instruction).
+ * امری و بلندتر از ۵۰ نویسه تا از اعتبارسنجی حلقه رد شود.
+ */
+function criticInstructionFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return [
+    `خروجی را بر اساس این نقد اصلاح کن: «${r}»`,
+    'هر سه خروجی را بازنویسی کن: خط تیرهٔ بلند را از همهٔ متن‌ها حذف کن؛',
+    'رجیستر «شما» را در همهٔ متن‌های پیشنهادی یکدست نگه دار؛',
+    'به هر یافته منبع قاعده‌اش را اضافه کن و حدس نزن؛ فقط واقعیت بنویس.',
+  ].join(' ');
+}
+
+/**
+ * تبدیل دلیل رد به معیار قبولی (CriticVerdictV2.acceptance).
+ */
+function criticAcceptanceFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return `وقتی درست است که نقد «${r}» دیگر دربارهٔ خروجی صدق نکند: هیچ خط تیرهٔ بلندی در متن‌ها نیست، رجیستر «شما» یکدست است و هر یافته منبع قاعده دارد.`;
+}
+
+/**
  * اجرای تیم farsiui در یک چرخه.
  * متن‌هایی را می‌خواند که تیم محتوا در previousWavesOutput['content'] گذاشته است.
+ * (مهاجرت به حلقه نقد ۳ دوره‌ای lib/critic-loop.ts)
  */
 export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
   const { runId, previousWavesOutput } = input;
   const contentText = toText(previousWavesOutput['content']);
 
-  // ۱. سرپرست: شکستن کار به سه مأموریت
-  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
-  const missions = await planMissions(contentText);
+  // ---------- توابع حلقه نقد ----------
 
-  // ۲. سه مجری، موازی
-  await reportLive?.('مجری‌ها: سه خروجی موازی', 55);
-  const [w1, w2, w3] = await Promise.all([
-    callLLM(worker1Prompt(missions[0]), {
-      system: WORKER_SYSTEM,
-      temperature: 0.5,
-      maxTokens: 3000,
-    }),
-    callLLM(worker2Prompt(missions[1]), {
-      system: WORKER_SYSTEM,
-      temperature: 0.5,
-      maxTokens: 3000,
-    }),
-    callLLM(worker3Prompt(missions[2]), {
-      system: WORKER_SYSTEM,
-      temperature: 0.5,
-      maxTokens: 3000,
-    }),
-  ]);
+  // کش دور ۱: مأموریت‌های سرپرست در هر چرخه یک بار ساخته می‌شوند؛
+  // دورهای ۲ و ۳ همان مأموریت‌ها را با دستور منتقد اصلاح می‌کنند.
+  let cachedMissions: [string, string, string] | null = null;
+  // داوری خام آخرین دور (برای تسک‌ها، بلوکرها و خلاصه)
+  let lastVerdict: CriticVerdict | null = null;
 
-  // ۳. منتقد: داوری خروجی مجری‌ها
-  await reportLive?.('منتقد: داوری خروجی', 85);
-  const verdict = await judge(w1, w2, w3);
+  /** سه مجری، موازی (منطق فعلی، بدون تغییر). */
+  const executeWorkers = async (
+    missions: [string, string, string],
+    prevInstruction?: string,
+  ): Promise<[string, string, string]> => {
+    const withInstruction = (prompt: string) =>
+      prevInstruction
+        ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', prevInstruction, '', prompt].join('\n')
+        : prompt;
+    return (await Promise.all([
+      callLLM(withInstruction(worker1Prompt(missions[0])), {
+        system: WORKER_SYSTEM,
+        temperature: 0.5,
+        maxTokens: 3000,
+      }),
+      callLLM(withInstruction(worker2Prompt(missions[1])), {
+        system: WORKER_SYSTEM,
+        temperature: 0.5,
+        maxTokens: 3000,
+      }),
+      callLLM(withInstruction(worker3Prompt(missions[2])), {
+        system: WORKER_SYSTEM,
+        temperature: 0.5,
+        maxTokens: 3000,
+      }),
+    ])) as [string, string, string];
+  };
 
-  // ۴. ثبت در حافظهٔ تیم با کلید learned:<runId>
-  const summary = buildSummary(verdict);
+  /**
+   * runWorkers: سرپرست (دور ۱) + سه مجری موازی هر دور.
+   */
+  const runWorkers = async (
+    round: number,
+    prevInstruction?: string,
+  ): Promise<WorkerRoundOutput> => {
+    if (round === 1) {
+      // ۱. سرپرست: شکستن کار به سه مأموریت
+      await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
+      cachedMissions = await planMissions(contentText);
+    } else {
+      await reportLive?.(`دور ${round}: اصلاح با دستور منتقد`, 50);
+    }
+    const missions = cachedMissions;
+    if (!missions) {
+      throw new Error('مأموریت‌های سرپرست در کش پیدا نشد.');
+    }
+
+    // ۲. سه مجری، موازی
+    await reportLive?.('مجری‌ها: سه خروجی موازی', 55);
+    const outputs = await executeWorkers(missions, prevInstruction);
+    return { missions, outputs };
+  };
+
+  /**
+   * runCritic: منتقد فعلی، با تبدیل خروجی به CriticVerdictV2.
+   * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+   */
+  const runCritic = async (
+    output: WorkerRoundOutput,
+    round: number,
+  ): Promise<CriticVerdictV2> => {
+    await reportLive?.(`منتقد: داوری خروجی (دور ${round})`, 85);
+    const verdict = await judge(output.outputs[0], output.outputs[1], output.outputs[2]);
+    lastVerdict = verdict;
+    const reason = verdict.reason;
+
+    if (round === 3) {
+      return {
+        approved: true,
+        reason: '',
+        instruction: '',
+        acceptance: '',
+        finalOpinion: reason,
+      };
+    }
+    if (verdict.approved) {
+      return {
+        approved: true,
+        reason: '',
+        instruction: '',
+        acceptance: '',
+        finalOpinion: reason || undefined,
+      };
+    }
+    return {
+      approved: false,
+      reason,
+      instruction: criticInstructionFromReason(reason),
+      acceptance: criticAcceptanceFromReason(reason),
+    };
+  };
+
+  // تاریخچه دورها برای ثبت دانش + آخرین لاگ دانش برای خلاصه
+  const roundHistory: CriticRoundRecord[] = [];
+  let lastKnowledgeLog = '';
+
+  /**
+   * onRoundKnowledge: ثبت دانش هر دور با extractCriticKnowledge فعلی.
+   */
+  const onRoundKnowledge = async (
+    round: number,
+    verdict: CriticVerdictV2,
+  ): Promise<void> => {
+    const record: CriticRoundRecord = {
+      round,
+      approved: verdict.approved,
+      reason: verdict.approved
+        ? verdict.finalOpinion || 'تأیید شد.'
+        : verdict.reason,
+      instruction: verdict.instruction?.trim() || undefined,
+    };
+    const knowledgeResult = await extractCriticKnowledge(
+      TEAM,
+      {
+        approved: verdict.approved,
+        reason: record.reason,
+        domain: 'رابط فارسی',
+        instruction: record.instruction,
+        round,
+        rounds: roundHistory.slice(),
+        isFinal: round === 3,
+      },
+      runId,
+    );
+    roundHistory.push(record);
+    lastKnowledgeLog = criticKnowledgeLog(knowledgeResult);
+  };
+
+  // ---------- اجرای حلقه نقد ۳ دوره‌ای ----------
+  const loopResult: CriticLoopResult<WorkerRoundOutput> = await runCriticLoop<WorkerRoundOutput>({
+    team: TEAM,
+    runId,
+    runWorkers,
+    runCritic,
+    onRoundKnowledge,
+    onProgress: (msg) => reportLive?.(msg, 70),
+  });
+
+  const verdict = lastVerdict ?? {
+    approved: false,
+    reason: 'داوری ثبت نشد.',
+    payload: { findings: [], notes: '' },
+  };
+
+  // ثبت در حافظهٔ تیم با کلید learned:<runId> (غنی‌شده با تاریخچه دورهای حلقه)
+  const summary = `${buildSummary(verdict)} حلقه در دور ${loopResult.finalRound} تمام شد.`;
   await writeMemory(TEAM, `learned:${runId}`, {
     content: summary.slice(0, 2000),
     approved: verdict.approved,
     notes: verdict.payload.notes,
     run_id: runId,
+    finalRound: loopResult.finalRound,
+    rounds: loopResult.verdicts.map((v, i) => ({
+      round: i + 1,
+      approved: v.approved,
+      reason: v.reason || v.finalOpinion || '',
+    })),
   });
-
-  // ۵. خروجی استاندارد تیم
-  const knowledgeResult = await extractCriticKnowledge(
-    TEAM,
-    { approved: verdict.approved, reason: verdict.reason, domain: 'رابط فارسی' },
-    runId,
-  );
-  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
 
   return {
     team: TEAM,
-    summary: `${summary} ${knowledgeLog}`,
+    summary: `${summary} ${lastKnowledgeLog}`,
     blockers: buildBlockers(verdict),
     tasks: buildTasks(verdict),
     approved: verdict.approved,
