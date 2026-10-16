@@ -6,18 +6,29 @@
  *   که ارکستراتور با runWithTeamContext ست می‌کند.
  * - در غیر این صورت: env های `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL`.
  *
- * روتر هوشمند (callLLMSmart):
+ * روتر هوشمند (callLLMSmart) : ماتریس کامل مدل × درگاه:
  *   ۱. فهرست اولویت‌بندی‌شده‌ی کاندیداها را می‌سازد: مدل اصلی تیم،
  *      بعد مدل‌های برتر همان درگاه، بعد «کشف پویا» (فهرست واقعی مدل‌های
  *      هر درگاه از GET /models، با اولویت مدل‌هایی که اخیراً موفق بوده‌اند)،
  *      بعد درگاه‌های بعدی به ترتیب تنظیمات.
- *   ۲. هر کاندیدایی که در cooldown باشد رد می‌شود.
- *   ۳. روی خطای 429/503/404/401/تایم‌اوت/اتصال، خطا ثبت و cooldown می‌شود
- *      و روتر سراغ مدل بعدی می‌رود؛ اگر همه‌ی مدل‌های یک درگاه تمام شد،
- *      درگاه بعدی امتحان می‌شود.
- *   ۴. اگر مدل اصلی تیم با 404 مرده باشد (مدل منسوخ)، جایگزین موفق به‌صورت
- *      خودکار در team_models ذخیره می‌شود تا انتخاب بعدی درست باشد.
- *   ۵. هیچ درگاه/مدلی بی‌صدا رد نمی‌شود: دلیل رد شدن در لاگ و پیام خطای
+ *   ۲. از روی گروه‌های درگاهی، «ماتریس تلاش» تخت ساخته می‌شود: برای هر مدل،
+ *      اول همه‌ی درگاه‌هایی که آن مدل را دارند امتحان می‌شوند (چرخش کلید :
+ *      مثلاً همان gemini-3.8-flash روی هر ۴ کلید Gemini) و بعد مدل بعدی.
+ *      یعنی ترتیب «مدل‌محور» است نه «درگاه‌محور»، تا یک کلید rate-limit‌خورده
+ *      کل مدل را نکشد.
+ *   ۳. هر کاندیدایی که در cooldown باشد رد می‌شود.
+ *   ۴. روی خطای 429/503/404/401/تایم‌اوت/اتصال، خطا ثبت و cooldown می‌شود
+ *      و روتر سراغ ترکیب بعدی ماتریس می‌رود.
+ *      - 429: «صبر کن و دوباره» : اگر همه مردند، تا سقف مشخص صبر می‌کند و
+ *        همان کاندیداهای سهمیه‌تمام‌شده را یک دور دیگر امتحان می‌کند.
+ *      - 503: فقط همان ترکیب رد می‌شود، مدل بعدی.
+ *      - 401: کلید خراب است؛ کل درگاه رد می‌شود.
+ *      - 404 روی مدل اصلی: جایگزین موفق خودکار در team_models ذخیره می‌شود.
+ *   ۵. سقف تلاش (پیش‌فرض ۴۸) و سقف زمانی (پیش‌فرض ۴ دقیقه) جلوی گیر کردن
+ *      حلقه را می‌گیرد.
+ *   ۶. گزینه‌ی tier: 'fast' | 'standard' | 'strong' : برای کار ساده مدل
+ *      سبک/ارزان اول، برای کار پیچیده مدل قوی اول (فقط ترتیب، نه حذف).
+ *   ۷. هیچ درگاه/مدلی بی‌صدا رد نمی‌شود: دلیل رد شدن در لاگ و پیام خطای
  *      نهایی ثبت می‌شود تا علت «همه مردند» شفاف باشد.
  * - Timeout پیش‌فرض ۱۸۰ ثانیه؛ هیچ فراخوانی برای همیشه گیر نمی‌کند.
  * - آمار فراخوانی‌ها در getLLMStats دیده می‌شود.
@@ -65,6 +76,28 @@ export interface LLMCallOptions {
   system?: string;
   /** Sampling temperature. Default 0.7. */
   temperature?: number;
+  /**
+   * رده‌ی مدل درخواستی: 'fast' (سبک/ارزان برای کار ساده)،
+   * 'standard' (پیش‌فرض)، 'strong' (قوی برای کار پیچیده).
+   * فقط «ترتیب» کاندیداها را عوض می‌کند؛ هیچ مدلی حذف نمی‌شود.
+   * اگر ست نشود، ترتیب قدیمی حفظ می‌شود.
+   */
+  tier?: ModelTier;
+}
+
+/** رده‌ی مدل: سبک/ارزان، استاندارد، قوی. */
+export type ModelTier = 'fast' | 'standard' | 'strong';
+
+/**
+ * حدس رده‌ی مدل از روی نام (启发式):
+ * lite/nano/mini/haiku ← سبک؛ pro/ultra/max/thinking/opus/sonnet ← قوی؛
+ * بقیه (flash و...) ← استاندارد.
+ */
+export function modelTier(name: string): ModelTier {
+  const n = name.toLowerCase();
+  if (/(^|[^a-z])(lite|nano|mini|haiku)([^a-z]|$)/.test(n)) return 'fast';
+  if (/(^|[^a-z])(pro|ultra|max|thinking|opus|sonnet)([^a-z]|$)/.test(n)) return 'strong';
+  return 'standard';
 }
 
 /**
@@ -128,6 +161,18 @@ const DEFAULT_MAX_TOKENS = 2000;
 const DEFAULT_TEMPERATURE = 0.7;
 const DEFAULT_API_BASE = "https://api.reformboss.com/v1";
 const DEFAULT_MODEL = "glm-5.3-flash";
+
+/** خواندن عدد از env با مقدار پیش‌فرض (برای تست‌پذیری هم لازم است). */
+function numEnv(name: string, def: number): number {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? v : def;
+}
+
+/* سقف‌های حلقه‌ی روتر (قابل تنظیم با env برای تست): */
+const maxRouteAttempts = () => numEnv('LLM_MAX_ROUTE_ATTEMPTS', 48); // سقف تلاش هر فراخوانی
+const routeBudgetMs = () => numEnv('LLM_ROUTE_BUDGET_MS', 240_000);   // سقف زمانی حلقه (۴ دقیقه)
+const maxQuotaWaitMs = () => numEnv('LLM_QUOTA_WAIT_MS', 90_000);     // سقف صبر پاس ۲ روی 429
+const quotaCooldownMs = () => numEnv('LLM_QUOTA_COOLDOWN_MS', COOLDOWN_QUOTA_MS);
 
 /* ------------------------------------------------------------------ */
 /* Cooldown: مدل‌های خطادار موقتاً از چرخه‌ی کاندیداها خارج می‌شوند     */
@@ -238,8 +283,8 @@ const DISCOVERY_TTL_MS = 15 * 60 * 1000;
 const DISCOVERY_FAIL_TTL_MS = 5 * 60 * 1000;
 /** تایم‌اوت درخواست GET /models */
 const DISCOVERY_TIMEOUT_MS = 12_000;
-/** سقف مدل‌های کشف‌شده‌ی هر درگاه در هر فراخوانی (جلوگیری از تلاش بی‌پایان) */
-const MAX_DISCOVERED_PER_ENDPOINT = 12;
+/** سقف مدل‌های کشف‌شده‌ی هر درگاه در هر فراخوانی (ماتریس کامل ولی محدود) */
+const MAX_DISCOVERED_PER_ENDPOINT = 20;
 
 /** نام مدل امبدینگ است؟ (در مسیر چت نمی‌آید) */
 function isEmbeddingModelName(name: string): boolean {
@@ -354,11 +399,119 @@ function extraHealthyModels(
 
 interface ChatRoutePlan {
   groups: RouteGroup[];
+  /** ماتریس تخت تلاش: مدل‌محور (برای هر مدل، اول همه‌ی درگاه‌ها = چرخش کلید) */
+  attempts: AttemptCandidate[];
   team: TeamName | null;
   /** ورودی اصلی تیم (برای جایگزینی خودکار روی 404) */
   primaryEntry: TeamModelEntry | null;
   /** یادداشت‌های «رد شد» برای شفافیت در پیام خطای نهایی */
   skipped: string[];
+}
+
+/** یک ترکیب (درگاه × مدل) در ماتریس تلاش. */
+interface AttemptCandidate {
+  endpoint: LLMEndpoint;
+  model: string;
+  isPrimary: boolean;
+}
+
+interface ModelNode {
+  display: string;
+  entries: Array<{
+    endpoint: LLMEndpoint;
+    isPrimary: boolean;
+    groupIndex: number;
+    modelIndex: number;
+    successTs: number;
+  }>;
+}
+
+/**
+ * ساخت ماتریس تخت تلاش از روی گروه‌های درگاهی.
+ *
+ * ترتیب «مدل‌محور» است: برای هر مدل (به ترتیب اولویت)، اول همه‌ی درگاه‌هایی
+ * که آن مدل را دارند امتحان می‌شوند و بعد مدل بعدی. یعنی اگر gemini-3.8-flash
+ * روی کلید اول 429 خورد، همان مدل روی کلید دوم/سوم/چهارم امتحان می‌شود
+ * (چرخش کلید = تعادل بار) و تازه بعد می‌رویم سراغ مدل بعدی.
+ *
+ * ترتیب مدل‌ها:
+ *   ۱. مدل اصلی تیم/تسک/صریح همیشه اول؛
+ *   ۲. اگر tier ست شده باشد، مدل‌های هم‌رده‌ی درخواستی بعد می‌آیند؛
+ *   ۳. بقیه به ترتیب اولویت قدیمی (پایدار).
+ * داخل هر مدل: درگاه‌هایی که اخیراً با همین مدل موفق بوده‌اند اول، بعد به
+ * ترتیب تنظیمات.
+ */
+function flattenToMatrix(
+  groups: RouteGroup[],
+  opts: LLMCallOptions,
+  successMap: Map<string, number>,
+): AttemptCandidate[] {
+  const byModel = new Map<string, ModelNode>();
+  groups.forEach((g, gi) => {
+    g.models.forEach((c, mi) => {
+      const key = normModelName(c.model);
+      let node = byModel.get(key);
+      if (!node) {
+        node = { display: c.model, entries: [] };
+        byModel.set(key, node);
+      }
+      if (c.isPrimary) node.display = c.model; // املای مدل اصلی حفظ شود
+      node.entries.push({
+        endpoint: g.endpoint,
+        isPrimary: c.isPrimary,
+        groupIndex: gi,
+        modelIndex: mi,
+        successTs: successMap.get(`${g.endpoint.id}::${key}`) ?? 0,
+      });
+    });
+  });
+
+  const firstPos = (n: ModelNode): readonly [number, number] => {
+    let gi = Infinity;
+    let mi = Infinity;
+    for (const e of n.entries) {
+      if (e.groupIndex < gi || (e.groupIndex === gi && e.modelIndex < mi)) {
+        gi = e.groupIndex;
+        mi = e.modelIndex;
+      }
+    }
+    return [gi, mi] as const;
+  };
+  const isPrimaryNode = (n: ModelNode) => n.entries.some((e) => e.isPrimary);
+  const tierWanted = opts.tier;
+
+  const nodes = Array.from(byModel.values());
+  nodes.sort((a, b) => {
+    const pa = isPrimaryNode(a) ? 0 : 1;
+    const pb = isPrimaryNode(b) ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    if (tierWanted) {
+      const ta = modelTier(a.display) === tierWanted ? 0 : 1;
+      const tb = modelTier(b.display) === tierWanted ? 0 : 1;
+      if (ta !== tb) return ta - tb;
+    }
+    const [ga, ma] = firstPos(a);
+    const [gb, mb] = firstPos(b);
+    if (ga !== gb) return ga - gb;
+    return ma - mb;
+  });
+
+  const out: AttemptCandidate[] = [];
+  const seen = new Set<string>();
+  for (const n of nodes) {
+    const entries = n.entries.slice().sort((x, y) => {
+      if (y.successTs !== x.successTs) return y.successTs - x.successTs;
+      if (x.groupIndex !== y.groupIndex) return x.groupIndex - y.groupIndex;
+      return x.modelIndex - y.modelIndex;
+    });
+    for (const e of entries) {
+      const k = cooldownKey(e.endpoint.id, n.display);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({ endpoint: e.endpoint, model: n.display, isPrimary: e.isPrimary });
+    }
+  }
+  return out;
 }
 
 async function buildChatRouteGroups(opts: LLMCallOptions): Promise<ChatRoutePlan> {
@@ -477,9 +630,16 @@ async function buildChatRouteGroups(opts: LLMCallOptions): Promise<ChatRoutePlan
   if (groups.length === 0) {
     // هیچ endpoint فعالی در تنظیمات نیست؛ مسیر اضطراری env
     // (اگر کلید env هم نباشد، خطای فارسی واضح پرتاب می‌شود)
-    return { groups: buildEnvFallbackGroup(opts), team, primaryEntry: null, skipped };
+    const fb = buildEnvFallbackGroup(opts);
+    return {
+      groups: fb,
+      attempts: flattenToMatrix(fb, opts, successMap),
+      team,
+      primaryEntry: null,
+      skipped,
+    };
   }
-  return { groups, team, primaryEntry, skipped };
+  return { groups, attempts: flattenToMatrix(groups, opts, successMap), team, primaryEntry, skipped };
 }
 
 /** مسیر اضطراری وقتی settings در دسترس نیست: فقط env */
@@ -563,7 +723,7 @@ async function applyFailureCooldown(
   const key = cooldownKey(endpointId, model);
   switch (kind) {
     case 'quota':
-      routeCooldowns.set(key, now + COOLDOWN_QUOTA_MS);
+      routeCooldowns.set(key, now + quotaCooldownMs());
       break;
     case 'unavailable':
       routeCooldowns.set(key, now + COOLDOWN_UNAVAILABLE_MS);
@@ -643,7 +803,14 @@ export async function callLLMSmart(
       `${tag} خواندن تنظیمات ناموفق بود، مسیر اضطراری env: ${err instanceof Error ? err.message : String(err)}`,
     );
     try {
-      plan = { groups: buildEnvFallbackGroup(opts), team, primaryEntry: null, skipped: [] };
+      const fb = buildEnvFallbackGroup(opts);
+      plan = {
+        groups: fb,
+        attempts: flattenToMatrix(fb, opts, new Map()),
+        team,
+        primaryEntry: null,
+        skipped: [],
+      };
     } catch (envErr) {
       stats.errors += 1;
       stats.lastError = envErr instanceof Error ? envErr.message : String(envErr);
@@ -651,8 +818,7 @@ export async function callLLMSmart(
     }
   }
 
-  const usableGroups = plan.groups.filter((g) => g.models.length > 0);
-  if (usableGroups.length === 0) {
+  if (plan.attempts.length === 0) {
     const msg =
       'هیچ مدل فعالی برای فراخوانی پیدا نشد. در بخش تنظیمات سامانه یک endpoint با کلید معتبر و یک مدل برای تیم ثبت کنید.';
     stats.errors += 1;
@@ -661,23 +827,42 @@ export async function callLLMSmart(
   }
 
   console.log(
-    `${tag} کاندیداها: ${usableGroups
-      .map((g) => `${g.endpoint.name}:[${g.models.map((m) => m.model).join(', ')}]`)
-      .join(' | ')}`,
+    `${tag} ماتریس تلاش (مدل‌محور، چرخش کلید): ${plan.attempts
+      .map((a) => `${a.endpoint.name}/${a.model}`)
+      .join(' ← ')}`,
   );
 
   const trace: string[] = [];
+  /** درگاه‌هایی که کلیدشان در همین فراخوانی 401 گرفت: بقیه‌ی ترکیب‌هایشان رد می‌شود */
+  const badEndpoints = new Set<string>();
+  /** کاندیداهایی که 429 گرفتند: برای پاس ۲ («صبر کن و دوباره») */
+  const quotaFailed = new Map<
+    string,
+    { endpoint: LLMEndpoint; model: string; isPrimary: boolean; until: number }
+  >();
+  const tStart = Date.now();
+  const maxAttempts = maxRouteAttempts();
+  const budgetMs = routeBudgetMs();
   let attempted = 0;
   let primaryGone = false;
+  let budgetExceeded = false;
+  let attemptCapHit = false;
 
-  for (const group of usableGroups) {
-    const ep = group.endpoint;
-    if (isEndpointKeyBad(ep.id)) {
-      trace.push(`${ep.name}: کلید نامعتبر (در استراحت)`);
-      console.log(`${tag} درگاه ${ep.name} رد شد (کلید نامعتبر، در استراحت)`);
-      continue;
-    }
-    for (const cand of group.models) {
+  const runAttempts = async (list: AttemptCandidate[]): Promise<string | null> => {
+    for (const cand of list) {
+      const ep = cand.endpoint;
+      if (badEndpoints.has(ep.id)) {
+        trace.push(`${ep.name}: کلید نامعتبر (رد شد)`);
+        continue;
+      }
+      if (attempted >= maxAttempts) {
+        attemptCapHit = true;
+        break;
+      }
+      if (Date.now() - tStart > budgetMs) {
+        budgetExceeded = true;
+        break;
+      }
       if (isOnCooldown(ep.id, cand.model)) {
         trace.push(`${ep.name}/${cand.model}: در استراحت`);
         continue;
@@ -718,6 +903,18 @@ export async function callLLMSmart(
         await applyFailureCooldown(ep.id, cand.model, c.kind, short);
         trace.push(`${ep.name}/${cand.model}: ${c.fa}`);
         console.log(`${tag} ${ep.name}/${cand.model} ← ${c.fa}: ${short}`);
+        if (c.kind === 'quota') {
+          const k = cooldownKey(ep.id, cand.model);
+          const until = routeCooldowns.get(k) ?? Date.now() + quotaCooldownMs();
+          if (!quotaFailed.has(k)) {
+            quotaFailed.set(k, {
+              endpoint: ep,
+              model: cand.model,
+              isPrimary: cand.isPrimary,
+              until,
+            });
+          }
+        }
         if (
           c.kind === 'gone' &&
           cand.isPrimary &&
@@ -728,21 +925,54 @@ export async function callLLMSmart(
         ) {
           primaryGone = true;
         }
-        if (c.kind === 'auth') break; // بقیه‌ی مدل‌های این درگاه هم با همین کلید خراب‌اند
+        // 401 یعنی کلید کل درگاه خراب است؛ بقیه‌ی ترکیب‌های همین درگاه رد می‌شوند
+        if (c.kind === 'auth') badEndpoints.add(ep.id);
       }
     }
+    return null;
+  };
+
+  // پاس ۱: کل ماتریس (مدل‌محور با چرخش کلید)
+  let outcome = await runAttempts(plan.attempts);
+
+  // پاس ۲ : «صبر کن و دوباره»: اگر همه با 429 مردند و سقف‌ها تمام نشده،
+  // تا سقف مشخص صبر می‌کنیم و همان کاندیداهای سهمیه‌تمام‌شده را یک دور
+  // دیگر امتحان می‌کنیم.
+  if (!outcome && quotaFailed.size > 0 && !budgetExceeded && !attemptCapHit) {
+    const entries = Array.from(quotaFailed.values());
+    const waitMs = Math.min(
+      Math.max(0, Math.min(...entries.map((e) => e.until)) - Date.now()),
+      maxQuotaWaitMs(),
+    );
+    if (waitMs > 0) {
+      console.log(
+        `${tag} همه با 429 مردند؛ ${Math.ceil(waitMs / 1000)} ثانیه صبر و تلاش مجدد روی ${entries.length} کاندیدا`,
+      );
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+    // استراحت درون‌حافظه‌ای این‌ها را پاک می‌کنیم تا پاس ۲ واقعاً تلاش کند
+    // (استراحت ماندگار دیتابیس عمداً نادیده گرفته می‌شود: ما صبر کردیم)
+    for (const e of entries) routeCooldowns.delete(cooldownKey(e.endpoint.id, e.model));
+    outcome = await runAttempts(
+      entries.map((e) => ({ endpoint: e.endpoint, model: e.model, isPrimary: e.isPrimary })),
+    );
   }
 
-  const detail = trace.length > 0 ? trace.join('؛ ') : 'کاندیدایی برای تلاش نبود';
-  const skipNote =
-    plan.skipped.length > 0 ? ` ردشده‌ها: ${plan.skipped.join('؛ ')}.` : '';
-  const msg =
-    `همه‌ی مدل‌ها و درگاه‌ها ناموفق بودند و هیچ پاسخی گرفته نشد. ` +
-    `جزئیات: ${detail}.${skipNote} ` +
-    `اگر سهمیه تمام شده، چند دقیقه صبر کنید یا در تنظیمات مدل دیگری انتخاب کنید.`;
-  stats.errors += 1;
-  stats.lastError = detail;
-  throw new LLMError(msg, { retried: true });
+  if (!outcome) {
+    const detail = trace.length > 0 ? trace.join('؛ ') : 'کاندیدایی برای تلاش نبود';
+    const skipNote =
+      plan.skipped.length > 0 ? ` ردشده‌ها: ${plan.skipped.join('؛ ')}.` : '';
+    const budgetNote = budgetExceeded ? ' سقف زمانی روتر تمام شد.' : '';
+    const capNote = attemptCapHit ? ' سقف تعداد تلاش روتر تمام شد.' : '';
+    const msg =
+      `همه‌ی مدل‌ها و درگاه‌ها ناموفق بودند و هیچ پاسخی گرفته نشد. ` +
+      `جزئیات: ${detail}.${skipNote}${budgetNote}${capNote} ` +
+      `اگر سهمیه تمام شده، چند دقیقه صبر کنید یا در تنظیمات مدل دیگری انتخاب کنید.`;
+    stats.errors += 1;
+    stats.lastError = detail;
+    throw new LLMError(msg, { retried: true });
+  }
+  return outcome;
 }
 
 export class LLMError extends Error {

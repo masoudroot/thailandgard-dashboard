@@ -347,6 +347,10 @@ describe('تست فشار روتر هوشمند', () => {
   });
 
   it('سناریو تکمیلی: وقتی همه مردند، خطای فارسی واضح و بدون گیر کردن', async () => {
+    // پاس ۲ («صبر کن و دوباره») با env کوتاه تا تست سریع بماند
+    process.env.LLM_QUOTA_COOLDOWN_MS = '700';
+    process.env.LLM_QUOTA_WAIT_MS = '2500';
+    try {
     mockA.requests.length = 0;
     mockA.chatRoutes = {
       't6-primary': { status: 429, text: 'quota exhausted' },
@@ -381,8 +385,12 @@ describe('تست فشار روتر هوشمند', () => {
     );
     const ms = Date.now() - t0;
     assert.ok(ms < 20000, `نباید گیر کند (شد ${ms}ms)`);
-    // هر ۶ کاندیدا دقیقاً یک بار امتحان شده‌اند
-    assert.equal(mockA.requests.length, 6);
+    // هر ۶ کاندیدا در دو پاس امتحان شده‌اند: ۶ × ۲ = ۱۲
+    assert.equal(mockA.requests.length, 12);
+    } finally {
+      delete process.env.LLM_QUOTA_COOLDOWN_MS;
+      delete process.env.LLM_QUOTA_WAIT_MS;
+    }
   });
 
   it('سناریو تکمیلی: پاسخ پوچ (choices خالی) به مدل بعدی می‌رود', async () => {
@@ -507,6 +515,10 @@ describe('تست فشار روتر هوشمند', () => {
   });
 
   it('سناریو شفافیت: درگاه ردشده در پیام خطای نهایی توضیح داده می‌شود', async () => {
+    // پاس ۲ با env کوتاه تا تست سریع بماند
+    process.env.LLM_QUOTA_COOLDOWN_MS = '700';
+    process.env.LLM_QUOTA_WAIT_MS = '2500';
+    try {
     mockA.requests.length = 0;
     mockA.modelList = []; // کشف خالی؛ فقط رفتار قدیمی
     mockA.chatRoutes = {
@@ -546,6 +558,131 @@ describe('تست فشار روتر هوشمند', () => {
         );
         return true;
       },
+    );
+    mockA.modelList = null;
+    } finally {
+      delete process.env.LLM_QUOTA_COOLDOWN_MS;
+      delete process.env.LLM_QUOTA_WAIT_MS;
+    }
+  });
+
+  it('سناریو ماتریس: چرخش کلید — همان مدل اول روی درگاه دوم امتحان می‌شود', async () => {
+    mockA.requests.length = 0;
+    mockB.requests.length = 0;
+    // هر دو درگاه gemini-kind هستند پس فهرست تأییدشده‌ی یکسانی دارند
+    mockA.chatRoutes = {
+      't12-primary': { status: 429, text: 'quota exhausted' },
+      'gemini-3.8-flash': { status: 429, text: 'quota exhausted' },
+    };
+    mockB.chatRoutes = {
+      'gemini-3.8-flash': { status: 200, text: 'ok-rotated' },
+    };
+    await seedSettings({
+      llm_endpoints: [
+        ep('epT12a', 'mock-gemini-key1', mockA),
+        ep('epT12b', 'mock-gemini-key2', mockB),
+      ],
+      team_models: { dev: { endpointId: 'epT12a', model: 't12-primary' } },
+      llm_model_health: {},
+    });
+    const { callLLMSmart } = await import('../llm.js');
+    const text = await callLLMSmart('بگو سلام', {
+      team: 'dev',
+      timeoutMs: 15000,
+      maxTokens: 20,
+    });
+    assert.equal(text, 'ok-rotated');
+    const aModels = mockA.requests.map((r) => r.model);
+    const bModels = mockB.requests.map((r) => r.model);
+    // ترتیب مدل‌محور: مدل اصلی، بعد همان gemini-3.8-flash روی کلید اول،
+    // بعد همان مدل روی کلید دوم (قبل از رفتن سراغ مدل بعدی)
+    assert.deepEqual(aModels, ['t12-primary', 'gemini-3.8-flash']);
+    assert.deepEqual(bModels, ['gemini-3.8-flash']);
+  });
+
+  it('سناریو 429: پاس ۲ — بعد از صبر، همان کاندیداها دوباره امتحان می‌شوند', async () => {
+    process.env.LLM_QUOTA_COOLDOWN_MS = '700';
+    process.env.LLM_QUOTA_WAIT_MS = '2500';
+    try {
+      mockA.requests.length = 0;
+      mockA.modelList = []; // کشف خالی؛ فقط مدل اصلی + تأییدشده‌ها
+      // هر دو پاس همه 429 می‌خورند؛ انتظار: خطا ولی دقیقاً دو دور تلاش
+      mockA.chatRoutes = {
+        't13-primary': { status: 429, text: 'quota exhausted' },
+        'glm-5.3-flash': { status: 429, text: 'quota exhausted' },
+        'qwen3.8-flash': { status: 429, text: 'quota exhausted' },
+        'qwen3.5-omni-flash': { status: 429, text: 'quota exhausted' },
+        'deepseek-v4-flash': { status: 429, text: 'quota exhausted' },
+        'kimi-k3': { status: 429, text: 'quota exhausted' },
+      };
+      await seedSettings({
+        llm_endpoints: [ep('epT13', 'mock-reformboss-t13', mockA)],
+        team_models: { dev: { endpointId: 'epT13', model: 't13-primary' } },
+        llm_model_health: {},
+      });
+      const { callLLMSmart } = await import('../llm.js');
+      const t0 = Date.now();
+      await assert.rejects(
+        () =>
+          callLLMSmart('بگو سلام', {
+            team: 'dev',
+            timeoutMs: 15000,
+            maxTokens: 20,
+          }),
+        (err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          assert.ok(msg.includes('همه‌ی مدل‌ها'));
+          return true;
+        },
+      );
+      const ms = Date.now() - t0;
+      assert.ok(ms >= 500, `پاس ۲ باید صبر کرده باشد (شد ${ms}ms)`);
+      // ۶ کاندیدا × ۲ پاس = ۱۲ تلاش
+      assert.equal(
+        mockA.requests.length,
+        12,
+        `باید دو دور کامل تلاش شده باشد، شد: ${mockA.requests.length}`,
+      );
+    } finally {
+      delete process.env.LLM_QUOTA_COOLDOWN_MS;
+      delete process.env.LLM_QUOTA_WAIT_MS;
+      mockA.modelList = null;
+    }
+  });
+
+  it('سناریو tier: با tier=fast مدل سبک بلافاصله بعد از مدل اصلی می‌آید', async () => {
+    mockA.requests.length = 0;
+    mockA.modelList = ['lite-model-x', 'std-model-y'];
+    mockA.chatRoutes = {
+      't14-primary': { status: 429, text: 'quota exhausted' },
+      'glm-5.3-flash': { status: 429, text: 'quota exhausted' },
+      'qwen3.8-flash': { status: 429, text: 'quota exhausted' },
+      'qwen3.5-omni-flash': { status: 429, text: 'quota exhausted' },
+      'deepseek-v4-flash': { status: 429, text: 'quota exhausted' },
+      'kimi-k3': { status: 429, text: 'quota exhausted' },
+      'lite-model-x': { status: 200, text: 'ok-lite' },
+      'std-model-y': { status: 200, text: 'should-not-reach' },
+    };
+    await seedSettings({
+      llm_endpoints: [ep('epT14', 'mock-reformboss-t14', mockA)],
+      team_models: { dev: { endpointId: 'epT14', model: 't14-primary' } },
+      llm_model_health: {},
+    });
+    const { callLLMSmart } = await import('../llm.js');
+    const text = await callLLMSmart('بگو سلام', {
+      team: 'dev',
+      tier: 'fast',
+      timeoutMs: 15000,
+      maxTokens: 20,
+    });
+    assert.equal(text, 'ok-lite');
+    const tried = mockA.requests
+      .filter((r) => r.path === '/chat/completions')
+      .map((r) => r.model);
+    assert.deepEqual(
+      tried,
+      ['t14-primary', 'lite-model-x'],
+      `با tier=fast باید مدل سبک دوم باشد؛ شد: ${tried.join(', ')}`,
     );
     mockA.modelList = null;
   });
