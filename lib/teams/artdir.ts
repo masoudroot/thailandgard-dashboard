@@ -2,17 +2,28 @@
  * تیم «آرت‌دایرکشن» تایلندگرد (lib/teams/artdir.ts)
  *
  * اقتباس از ورک‌فلو n8n (سرپرست ← ۳ مجری ← منتقد):
- * ۱. سرپرست از زمینه سه مأموریت جدا می‌سازد.
- * ۲. مجری‌ها (در یک فراخوانی ترکیبی): نقد بصری مشخص سه‌قلمی،
- * تصمیم‌های آرت‌دایرکشن برای ثبت در DECISIONS-ARTDIR.md،
- * و بریف اجرایی کامل برای تیم طراحی.
+ * ۱. حلقه نقد ۳ دوره‌ای (lib/critic-loop.ts):
+ *    دور ۱: سرپرست سه مأموریت جدا می‌سازد ← مجری‌ها (در یک فراخوانی ترکیبی)
+ *    دور ۲: رد ← دستور دقیق منتقد ← مجری‌ها اصلاح می‌کنند
+ *    دور ۳: فقط نظارت و نظر نهایی (حق رد ندارد)
+ * ۲. خروجی: نقد بصری مشخص سه‌قلمی، تصمیم‌های آرت‌دایرکشن برای ثبت در
+ *    DECISIONS-ARTDIR.md، و بریف اجرایی کامل برای تیم طراحی.
  * ۳. منتقد سخت‌گیر داوری می‌کند: هر تصمیم بزرگ «چرا»ی مستند دارد؟
  */
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
-import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
+import {
+  extractCriticKnowledge,
+  criticKnowledgeLog,
+  type CriticRoundRecord,
+} from '../knowledge/critic-knowledge';
+import {
+  runCriticLoop,
+  type CriticLoopResult,
+  type CriticVerdictV2,
+} from '../critic-loop';
 import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'artdir';
@@ -40,8 +51,14 @@ interface CriticVerdict {
   payload: string;
 }
 
+/** خروجی یک دور از مجری‌های حلقه نقد: پلن سرپرست + خروجی ترکیبی مجری‌ها */
+interface WorkerRoundOutput {
+  plan: SupervisorPlan;
+  workersOutput: string;
+}
+
 /** سرپرست: از زمینه، سه مأموریت مجزا برای مجری‌ها می‌سازد. */
-async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
+async function makeSupervisorPlan(input: TeamInput): Promise<SupervisorPlan> {
   // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
   // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
   let knowledgeSection = '';
@@ -79,8 +96,11 @@ async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
  * هر سه مجری در یک فراخوانی: تحلیل + تولید.
  * (هر سه مجری در یک فراخوانی: تحلیل و تولید با هم، برای سقف ۳ فراخوانی هر چرخه)
  */
-async function runWorkers(plan: SupervisorPlan): Promise<string> {
+async function executeWorkers(plan: SupervisorPlan, prevInstruction?: string): Promise<string> {
   const prompt = [
+    ...(prevInstruction
+      ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', prevInstruction, '']
+      : []),
     'مأموریت سرپرست:',
     plan.workers.map((w, i) => `${i + 1}. ${w}`).join('\n'),
     '',
@@ -96,7 +116,7 @@ async function runWorkers(plan: SupervisorPlan): Promise<string> {
 }
 
 /** منتقد سخت‌گیر: هر تصمیم بزرگ «چرا»ی مستند دارد و طرح بدون بریف به اجرا نرفته؟ */
-async function runCritic(workersOutput: string): Promise<CriticVerdict> {
+async function judgeWorkers(workersOutput: string): Promise<CriticVerdict> {
   const prompt = [
     'خروجی مجری‌ها:',
     workersOutput,
@@ -110,19 +130,155 @@ async function runCritic(workersOutput: string): Promise<CriticVerdict> {
   });
 }
 
+/**
+ * تبدیل دلیل ردِ منتقد قدیمی به دستور اجرایی (CriticVerdictV2.instruction).
+ * امری و بلندتر از ۵۰ نویسه تا از اعتبارسنجی حلقه رد شود.
+ */
+function criticInstructionFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return [
+    `خروجی را بر اساس این نقد اصلاح کن: «${r}»`,
+    'هر سه بخش را بازنویسی کن: نقد بصری را با سه قلم مشخص (کدام المان، چه ایرادی، چه راه‌حلی) بنویس؛',
+    'به هر تصمیم بزرگ «چرا»ی مستند بده (چه حسی، برای چه مخاطبی، با چه ارجاع بصری)؛',
+    'بریف اجرایی را کامل کن: هیچ طرحی بدون بریف (هدف، مخاطب، حس موردنظر، ارجاع بصری) به اجرا نمی‌رود.',
+  ].join(' ');
+}
+
+/**
+ * تبدیل دلیل رد به معیار قبولی (CriticVerdictV2.acceptance).
+ */
+function criticAcceptanceFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return `وقتی درست است که نقد «${r}» دیگر دربارهٔ خروجی صدق نکند: هر تصمیم بزرگ «چرا»ی مستند دارد و هیچ طرحی بدون بریف کامل به اجرا نرفته است.`;
+}
+
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
-  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
-  const plan = await runSupervisor(input);
-  await reportLive?.('مجری‌ها: اجرای مأموریت‌ها', 50);
-  const workersOutput = await runWorkers(plan);
-  await reportLive?.('منتقد: داوری خروجی', 80);
-  const verdict = await runCritic(workersOutput);
+
+  // ---------- توابع حلقه نقد ----------
+
+  // کش دور ۱: پلن سرپرست در هر چرخه یک بار ساخته می‌شود؛
+  // دورهای ۲ و ۳ همان پلن را با دستور منتقد اصلاح می‌کنند.
+  let cachedPlan: SupervisorPlan | null = null;
+  // حکم خام آخرین داوری (پیش از اجبار دور ۳)
+  let lastRawApproved: boolean = false;
+  let lastRawReason = '';
+
+  /**
+   * runWorkers: سرپرست (دور ۱) + مجری‌های ترکیبی هر دور.
+   */
+  const runWorkers = async (
+    round: number,
+    prevInstruction?: string,
+  ): Promise<WorkerRoundOutput> => {
+    if (round === 1) {
+      await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
+      cachedPlan = await makeSupervisorPlan(input);
+    } else {
+      await reportLive?.(`دور ${round}: اصلاح با دستور منتقد`, 50);
+    }
+    const plan = cachedPlan;
+    if (!plan) {
+      throw new Error('پلن سرپرست در کش پیدا نشد.');
+    }
+    await reportLive?.('مجری‌ها: اجرای مأموریت‌ها', 55);
+    const workersOutput = await executeWorkers(plan, prevInstruction);
+    return { plan, workersOutput };
+  };
+
+  /**
+   * runCritic: منتقد فعلی، با تبدیل خروجی به CriticVerdictV2.
+   * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+   */
+  const runCritic = async (
+    output: WorkerRoundOutput,
+    round: number,
+  ): Promise<CriticVerdictV2> => {
+    await reportLive?.(`منتقد: داوری خروجی (دور ${round})`, 80);
+    const verdict = await judgeWorkers(output.workersOutput);
+    lastRawApproved = verdict.approved === true;
+    lastRawReason =
+      typeof verdict.reason === 'string' && verdict.reason.trim()
+        ? verdict.reason
+        : 'منتقد دلیلی ثبت نکرد.';
+    const reason = lastRawReason;
+
+    if (round === 3) {
+      return {
+        approved: true,
+        reason: '',
+        instruction: '',
+        acceptance: '',
+        finalOpinion: reason,
+      };
+    }
+    if (verdict.approved) {
+      return {
+        approved: true,
+        reason: '',
+        instruction: '',
+        acceptance: '',
+        finalOpinion: reason || undefined,
+      };
+    }
+    return {
+      approved: false,
+      reason,
+      instruction: criticInstructionFromReason(reason),
+      acceptance: criticAcceptanceFromReason(reason),
+    };
+  };
+
+  // تاریخچه دورها برای ثبت دانش + آخرین لاگ دانش برای خلاصه
+  const roundHistory: CriticRoundRecord[] = [];
+  let lastKnowledgeLog = '';
+
+  /**
+   * onRoundKnowledge: ثبت دانش هر دور با extractCriticKnowledge فعلی.
+   */
+  const onRoundKnowledge = async (
+    round: number,
+    verdict: CriticVerdictV2,
+  ): Promise<void> => {
+    const record: CriticRoundRecord = {
+      round,
+      approved: verdict.approved,
+      reason: verdict.approved
+        ? verdict.finalOpinion || 'تأیید شد.'
+        : verdict.reason,
+      instruction: verdict.instruction?.trim() || undefined,
+    };
+    const knowledgeResult = await extractCriticKnowledge(
+      TEAM,
+      {
+        approved: verdict.approved,
+        reason: record.reason,
+        domain: 'آرت‌دایرکشن و تصمیم‌های بصری',
+        instruction: record.instruction,
+        round,
+        rounds: roundHistory.slice(),
+        isFinal: round === 3,
+      },
+      input.runId,
+    );
+    roundHistory.push(record);
+    lastKnowledgeLog = criticKnowledgeLog(knowledgeResult);
+  };
+
+  // ---------- اجرای حلقه نقد ۳ دوره‌ای ----------
+  const loopResult: CriticLoopResult<WorkerRoundOutput> = await runCriticLoop<WorkerRoundOutput>({
+    team: TEAM,
+    runId: input.runId,
+    runWorkers,
+    runCritic,
+    onRoundKnowledge,
+    onProgress: (msg) => reportLive?.(msg, 70),
+  });
 
   const tasks: QueuedTask[] = [];
   const blockers: string[] = [];
 
-  if (verdict.approved) {
+  if (lastRawApproved) {
     tasks.push(
       {
         title: 'ثبت تصمیم‌های آرت‌دایرکشن در DECISIONS-ARTDIR.md',
@@ -147,25 +303,17 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       },
     );
   } else {
-    blockers.push(`منتقد artdir تأیید نکرد: ${verdict.reason}`);
+    blockers.push(`منتقد artdir تأیید نکرد: ${lastRawReason}`);
   }
 
-  const lesson = verdict.approved
-    ? `چرخهٔ موفق: ${verdict.reason}`
-    : `رد منتقد: ${verdict.reason}`;
+  const lesson = lastRawApproved
+    ? `چرخهٔ موفق: ${lastRawReason} (حلقه در دور ${loopResult.finalRound} تمام شد)`
+    : `رد منتقد: ${lastRawReason} (حلقه در دور ${loopResult.finalRound} با نظر نهایی تمام شد)`;
   await writeMemory(TEAM, `learned:${input.runId}`, lesson);
 
-  // استخراج دانش از حکم منتقد (چرخه نقد←دانش)
-  const knowledgeResult = await extractCriticKnowledge(
-    TEAM,
-    { approved: verdict.approved, reason: verdict.reason, domain: 'آرت‌دایرکشن و تصمیم‌های بصری' },
-    input.runId,
-  );
-  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
-
-  const summary = verdict.approved
-    ? `تیم آرت‌دایرکشن این چرخه سه خروجی داد: نقد بصری مشخص با راه‌حل، تصمیم‌های آرت‌دایرکشن با دلیل مستند و بریف اجرایی کامل برای تیم طراحی. ${verdict.reason} هر سه کار بعدی (ثبت تصمیم‌ها، تحویل بریف و پیگیری ایرادها) در صف گذاشته شد. ${knowledgeLog}`
-    : `تیم آرت‌دایرکشن این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${verdict.reason} «چرا»ی تصمیم‌ها یا کامل شدن بریف باید در چرخهٔ بعد جبران شود و بلوکر در گزارش درج شد. ${knowledgeLog}`;
+  const summary = lastRawApproved
+    ? `تیم آرت‌دایرکشن این چرخه سه خروجی داد: نقد بصری مشخص با راه‌حل، تصمیم‌های آرت‌دایرکشن با دلیل مستند و بریف اجرایی کامل برای تیم طراحی. ${lastRawReason} هر سه کار بعدی (ثبت تصمیم‌ها، تحویل بریف و پیگیری ایرادها) در صف گذاشته شد. ${lastKnowledgeLog}`
+    : `تیم آرت‌دایرکشن این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${lastRawReason} «چرا»ی تصمیم‌ها یا کامل شدن بریف باید در چرخهٔ بعد جبران شود و بلوکر در گزارش درج شد. ${lastKnowledgeLog}`;
 
   return {
     team: TEAM,

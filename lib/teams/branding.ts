@@ -2,13 +2,25 @@
  * lib/teams/branding.ts : تیم «صدای برند» تایلندگرد
  *
  * اقتباس از ورک‌فلو n8n: سه خروجی برند (لحن، واژه‌نامهٔ یوایکس‌رایتینگ، شعار)
- * در سه فراخوانی LLM: سرپرست ← مجری‌ها (یکجا) ← منتقد.
+ * در حلقه نقد ۳ دوره‌ای (lib/critic-loop.ts):
+ *   دور ۱: سرپرست ← مجری‌ها (یکجا)
+ *   دور ۲: رد ← دستور دقیق منتقد ← مجری‌ها اصلاح می‌کنند
+ *   دور ۳: فقط نظارت و نظر نهایی (حق رد ندارد)
  */
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
-import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
+import {
+  extractCriticKnowledge,
+  criticKnowledgeLog,
+  type CriticRoundRecord,
+} from '../knowledge/critic-knowledge';
+import {
+  runCriticLoop,
+  type CriticLoopResult,
+  type CriticVerdictV2,
+} from '../critic-loop';
 import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'branding';
@@ -36,8 +48,14 @@ interface CriticVerdict {
   payload: string;
 }
 
+/** خروجی یک دور از مجری‌های حلقه نقد: مأموریت‌ها + خروجی ترکیبی مجری‌ها */
+interface WorkerRoundOutput {
+  missions: string[];
+  workersOutput: string;
+}
+
 /** سرپرست: از زمینه، سه مأموریت مجزا برای مجری‌ها می‌سازد. */
-async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
+async function makeSupervisorPlan(input: TeamInput): Promise<SupervisorPlan> {
   // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
   // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
   let knowledgeSection = '';
@@ -78,8 +96,11 @@ const MIN_WORKER_OUTPUT_CHARS = 200;
  * صریح «خروجی کامل» تکرار می‌شود؛ اگر باز هم خالی بود، خطا برمی‌گردد تا
  * به‌جای سکوت، بلوکر ثبت شود.
  */
-async function runWorkers(missions: string[]): Promise<string> {
+async function executeWorkers(missions: string[], prevInstruction?: string): Promise<string> {
   const prompt = [
+    ...(prevInstruction
+      ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', prevInstruction, '']
+      : []),
     'مأموریت سرپرست:',
     missions.map((w, i) => `${i + 1}. ${w}`).join('\n'),
     '',
@@ -116,7 +137,7 @@ function safeMissions(plan: unknown): string[] {
 }
 
 /** منتقد سخت‌گیر: آیا متن با لحن برند می‌خواند و شعار از کلیشه، موعظه و ادعای بی‌پشتوانه پاک است؟ */
-async function runCritic(workersOutput: string): Promise<CriticVerdict> {
+async function judgeWorkers(workersOutput: string): Promise<CriticVerdict> {
   const prompt = [
     'خروجی مجری‌ها:',
     workersOutput,
@@ -135,10 +156,32 @@ async function remember(runId: string, lesson: string): Promise<void> {
   await writeMemory(TEAM, `learned:${runId}`, lesson);
 }
 
+/**
+ * تبدیل دلیل ردِ منتقد قدیمی به دستور اجرایی (CriticVerdictV2.instruction).
+ * امری و بلندتر از ۵۰ نویسه تا از اعتبارسنجی حلقه رد شود.
+ */
+function criticInstructionFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return [
+    `خروجی را بر اساس این نقد اصلاح کن: «${r}»`,
+    'هر سه بخش را بازنویسی کن: فیلتر لحن را روی متن‌های زنده اعمال کن و به هر مغایرت حکم اصلاح بده؛',
+    'واژه‌نامهٔ یوایکس‌رایتینگ را برای دکمه، فرم، خطا، حالت خالی و اعلان کامل و یکدست بنویس؛',
+    '۳ گزینهٔ شعار را بدون کلیشه، موعظه و ادعای بی‌پشتوانه بازنویسی کن و برای هر کدام دلیل انتخاب بنویس.',
+  ].join(' ');
+}
+
+/**
+ * تبدیل دلیل رد به معیار قبولی (CriticVerdictV2.acceptance).
+ */
+function criticAcceptanceFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return `وقتی درست است که نقد «${r}» دیگر دربارهٔ خروجی صدق نکند: متن با لحن برند می‌خواند و شعار از کلیشه، موعظه و ادعای بی‌پشتوانه پاک است.`;
+}
+
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
   await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
-  const plan = await runSupervisor(input);
+  const plan = await makeSupervisorPlan(input);
   const tasks: QueuedTask[] = [];
   const blockers: string[] = [];
 
@@ -149,30 +192,129 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     return { team: TEAM, summary: msg, blockers, tasks, approved: false };
   }
 
-  await reportLive?.('مجری‌ها: اجرای مأموریت‌ها', 50);
-  let workersOutput: string;
+  // ---------- توابع حلقه نقد ----------
+
+  /**
+   * runWorkers: مجری‌های ترکیبی هر دور.
+   * دور ۱: همان مأموریت‌های سرپرست؛ دور ۲/۳: اصلاح با دستور منتقد.
+   */
+  const runWorkers = async (
+    round: number,
+    prevInstruction?: string,
+  ): Promise<WorkerRoundOutput> => {
+    await reportLive?.(
+      round === 1 ? 'مجری‌ها: اجرای مأموریت‌ها' : `دور ${round}: اصلاح با دستور منتقد`,
+      50,
+    );
+    const workersOutput = await executeWorkers(missions, prevInstruction);
+    return { missions, workersOutput };
+  };
+
+  /**
+   * runCritic: منتقد فعلی، با تبدیل خروجی به CriticVerdictV2.
+   * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+   */
+  const runCritic = async (
+    output: WorkerRoundOutput,
+    round: number,
+  ): Promise<CriticVerdictV2> => {
+    await reportLive?.(`منتقد: داوری خروجی (دور ${round})`, 80);
+    const rawVerdict = await judgeWorkers(output.workersOutput);
+    // حکم ناقص LLM نباید «undefined» چاپ کند یا مسیر اشتباه برود
+    const verdict = {
+      approved: rawVerdict?.approved === true,
+      reason:
+        typeof rawVerdict?.reason === 'string' && rawVerdict.reason.trim()
+          ? rawVerdict.reason
+          : '(دلیل ثبت نشد)',
+      payload: typeof rawVerdict?.payload === 'string' ? rawVerdict.payload : '',
+    };
+    const reason = verdict.reason;
+
+    if (round === 3) {
+      return {
+        approved: true,
+        reason: '',
+        instruction: '',
+        acceptance: '',
+        finalOpinion: reason,
+      };
+    }
+    if (verdict.approved) {
+      return {
+        approved: true,
+        reason: '',
+        instruction: '',
+        acceptance: '',
+        finalOpinion: reason || undefined,
+      };
+    }
+    return {
+      approved: false,
+      reason,
+      instruction: criticInstructionFromReason(reason),
+      acceptance: criticAcceptanceFromReason(reason),
+    };
+  };
+
+  // تاریخچه دورها برای ثبت دانش + آخرین لاگ دانش برای خلاصه
+  const roundHistory: CriticRoundRecord[] = [];
+  let lastKnowledgeLog = '';
+
+  /**
+   * onRoundKnowledge: ثبت دانش هر دور با extractCriticKnowledge فعلی.
+   */
+  const onRoundKnowledge = async (
+    round: number,
+    verdict: CriticVerdictV2,
+  ): Promise<void> => {
+    const record: CriticRoundRecord = {
+      round,
+      approved: verdict.approved,
+      reason: verdict.approved
+        ? verdict.finalOpinion || 'تأیید شد.'
+        : verdict.reason,
+      instruction: verdict.instruction?.trim() || undefined,
+    };
+    const knowledgeResult = await extractCriticKnowledge(
+      TEAM,
+      {
+        approved: verdict.approved,
+        reason: record.reason,
+        domain: 'لحن برند و شعار',
+        instruction: record.instruction,
+        round,
+        rounds: roundHistory.slice(),
+        isFinal: round === 3,
+      },
+      input.runId,
+    );
+    roundHistory.push(record);
+    lastKnowledgeLog = criticKnowledgeLog(knowledgeResult);
+  };
+
+  // ---------- اجرای حلقه نقد ۳ دوره‌ای ----------
+  let loopResult: CriticLoopResult<WorkerRoundOutput>;
   try {
-    workersOutput = await runWorkers(missions);
+    loopResult = await runCriticLoop<WorkerRoundOutput>({
+      team: TEAM,
+      runId: input.runId,
+      runWorkers,
+      runCritic,
+      onRoundKnowledge,
+      onProgress: (msg) => reportLive?.(msg, 70),
+    });
   } catch (err) {
     const msg = `مجری خروجی معتبر نداد: ${err instanceof Error ? err.message : String(err)}؛ کار به چرخهٔ بعد موکول شد.`;
     blockers.push(msg);
     return { team: TEAM, summary: msg, blockers, tasks, approved: false };
   }
 
-  await reportLive?.('منتقد: داوری خروجی', 80);
-  const rawVerdict = await runCritic(workersOutput);
-  // حکم ناقص LLM نباید «undefined» چاپ کند یا مسیر اشتباه برود
-  const verdict = {
-    approved: rawVerdict?.approved === true,
-    reason:
-      typeof rawVerdict?.reason === 'string' && rawVerdict.reason.trim()
-        ? rawVerdict.reason
-        : '(دلیل ثبت نشد)',
-    payload: typeof rawVerdict?.payload === 'string' ? rawVerdict.payload : '',
-  };
+  const finalVerdict = loopResult.verdicts[loopResult.verdicts.length - 1];
+  const reason = finalVerdict.reason || finalVerdict.finalOpinion || '(دلیل ثبت نشد)';
 
-  if (!verdict.approved) {
-    blockers.push(`منتقد branding تأیید نکرد: ${verdict.reason}`);
+  if (!loopResult.approved) {
+    blockers.push(`منتقد branding تأیید نکرد: ${reason}`);
   } else {
     tasks.push(
       {
@@ -199,28 +341,20 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     );
   }
 
-  const lesson = verdict.approved
-    ? `چرخهٔ موفق: ${verdict.reason}`
-    : `رد منتقد: ${verdict.reason}`;
+  const lesson = loopResult.approved
+    ? `چرخهٔ موفق: ${reason} (حلقه در دور ${loopResult.finalRound} تمام شد)`
+    : `رد منتقد: ${reason} (حلقه در دور ${loopResult.finalRound} با نظر نهایی تمام شد)`;
   await remember(input.runId, lesson);
 
-  // استخراج دانش حرفه‌ای از حکم منتقد و ایندکس در RAG
-  // تا چرخه‌های بعد از این درس استفاده کنند، نه اینکه دوباره همان خطا تکرار شود.
-  const knowledgeResult = await extractCriticKnowledge(
-    TEAM,
-    { approved: verdict.approved, reason: verdict.reason, domain: 'لحن برند و شعار' },
-    input.runId,
-  );
-  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
-  const summary = verdict.approved
-    ? `تیم برندینگ این چرخه شعار، واژه‌نامهٔ یوایکس‌رایتینگ و فیلتر لحن را بازبینی و تولید کرد و منتقد آن را تأیید کرد. ${verdict.reason} ۳ گزینهٔ شعار نهایی برای تأیید مسعود آماده است و دو کار بعدی (واژه‌نامه و اصلاح لحن متن‌ها) در صف گذاشته شد. ${knowledgeLog}`
-    : `تیم برندینگ این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${verdict.reason} حکم اصلاح لحن برای متن‌های زنده ثبت شده و بلوکر در گزارش درج شد. ${knowledgeLog}`;
+  const summary = loopResult.approved
+    ? `تیم برندینگ این چرخه شعار، واژه‌نامهٔ یوایکس‌رایتینگ و فیلتر لحن را بازبینی و تولید کرد و منتقد آن را تأیید کرد. ${reason} ۳ گزینهٔ شعار نهایی برای تأیید مسعود آماده است و دو کار بعدی (واژه‌نامه و اصلاح لحن متن‌ها) در صف گذاشته شد. ${lastKnowledgeLog}`
+    : `تیم برندینگ این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${reason} حکم اصلاح لحن برای متن‌های زنده ثبت شده و بلوکر در گزارش درج شد. ${lastKnowledgeLog}`;
 
   return {
     team: TEAM,
     summary,
     blockers,
     tasks: tasks.slice(0, 3),
-    approved: verdict.approved,
+    approved: loopResult.approved,
   };
 }

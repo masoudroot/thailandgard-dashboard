@@ -2,22 +2,30 @@
  * lib/teams/analytics.ts - تیم analytics: رفتار کاربر و متریک تماس (خوانندهٔ داده)
  *
  * اقتباس از ورک‌فلو n8n (v1tgtGJnLhAic4X6)، بخش analytics:
- * سرپرست کار را به سه مجری می‌شکند، منتقد سخت‌گیرانه داوری می‌کند
- * و نتیجه در حافظه ثبت می‌شود.
+ * سرپرست کار را به سه مجری می‌شکند، حلقه نقد ۳ دوره‌ای (lib/critic-loop.ts)
+ * داوری می‌کند و نتیجه در حافظه ثبت می‌شود.
  *
  * خط لوله:
- *  ۱. سرپرست: از روی زمینه، سه مأموریت مجزا برای سه مجری می‌سازد.
- *  ۲. مجری ۱ (analyze): رکوردینگ و هیت‌مپ کلریتی؛ نقطه‌های ریزش تا دکمهٔ تماس.
- *  ۳. مجری ۲ (code): ایونت‌ها و اهداف کلریتی؛ قیف اندازه‌گیری روز اول ترافیک.
- *  ۴. مجری ۳ (write): گزارش هفتگی با سه یافته و دو اقدام؛ هر عدد باید بگوید «پس چه کار کنیم».
- *  ۵. منتقد: داوری با خروجی JSON (approved / reason / payload).
- *  ۶. ثبت حافظه با کلید learned:<runId>.
+ *  ۱. حلقه نقد:
+ *     دور ۱: سرپرست (سه مأموریت) ← ۳ مجری (analyze/code/write)
+ *     دور ۲: رد ← دستور دقیق منتقد ← ۳ مجری همان مأموریت‌ها را اصلاح می‌کنند
+ *     دور ۳: فقط نظارت و نظر نهایی (حق رد ندارد)
+ *  ۲. ثبت حافظه با کلید learned:<runId>.
  */
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
-import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
+import {
+  extractCriticKnowledge,
+  criticKnowledgeLog,
+  type CriticRoundRecord,
+} from '../knowledge/critic-knowledge';
+import {
+  runCriticLoop,
+  type CriticLoopResult,
+  type CriticVerdictV2,
+} from '../critic-loop';
 import type { MemoryEntry, ProgressReporter, QueuedTask, TeamName, TeamResult, TeamProgressInput } from '../types';
 
 export const TEAM: TeamName = 'analytics';
@@ -64,6 +72,12 @@ interface CriticVerdict {
   approved: boolean;
   reason: string;
   payload: unknown;
+}
+
+/** خروجی یک دور از مجری‌های حلقه نقد: مأموریت‌ها + خروجی هر سه مجری */
+interface WorkerRoundOutput {
+  missions: [string, string, string];
+  outputs: [string, string, string];
 }
 
 export interface RunTeamOptions {
@@ -117,10 +131,23 @@ async function planWork(context: string, knowledgeSection = ''): Promise<[string
 }
 
 /** مجری: یک مأموریت را با نقش خودش اجرا می‌کند. */
-async function runWorker(mission: string, index: 0 | 1 | 2): Promise<string> {
+async function runWorker(
+  mission: string,
+  index: 0 | 1 | 2,
+  prevInstruction?: string,
+): Promise<string> {
   const { role, brief } = WORKER_ROLES[index];
   return callLLM(
-    ['مأموریت سرپرست:', mission, '', `نقش تو (${role}): ${brief}`, HONESTY_RULE].join('\n'),
+    [
+      ...(prevInstruction
+        ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', prevInstruction, '']
+        : []),
+      'مأموریت سرپرست:',
+      mission,
+      '',
+      `نقش تو (${role}): ${brief}`,
+      HONESTY_RULE,
+    ].join('\n'),
     { system: WORKER_SYSTEM },
   );
 }
@@ -175,7 +202,29 @@ function extractTasks(payload: unknown): QueuedTask[] {
     }));
 }
 
-/** اجرای کامل تیم analytics در یک چرخه. */
+/**
+ * تبدیل دلیل ردِ منتقد قدیمی به دستور اجرایی (CriticVerdictV2.instruction).
+ * امری و بلندتر از ۵۰ نویسه تا از اعتبارسنجی حلقه رد شود.
+ */
+function criticInstructionFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return [
+    `خروجی را بر اساس این نقد اصلاح کن: «${r}»`,
+    'هر سه خروجی را بازنویسی کن: هر یافتهٔ رفتاری مخرج و بُعد مشخص داشته باشد؛',
+    'حدس‌ها را با شرط ابطال بنویس و عدد بی‌معنا را حذف کن؛',
+    'وقتی دیتا نیست صادقانه بنویس «دیتا نداریم» و حدس نزن.',
+  ].join(' ');
+}
+
+/**
+ * تبدیل دلیل رد به معیار قبولی (CriticVerdictV2.acceptance).
+ */
+function criticAcceptanceFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return `وقتی درست است که نقد «${r}» دیگر دربارهٔ خروجی صدق نکند: هر یافتهٔ رفتاری مخرج و بُعد دارد، حدس‌ها شرط ابطال دارند و هیچ عدد بی‌معنایی گزارش نشده است.`;
+}
+
+/** اجرای کامل تیم analytics در یک چرخه. (مهاجرت به حلقه نقد ۳ دوره‌ای) */
 export async function runTeam(input: AnalyticsTeamInput): Promise<TeamResult> {
   const runId = typeof input?.runId === 'string' ? input.runId : 'unknown';
   const reportLive = input?.reportProgress;
@@ -188,38 +237,148 @@ export async function runTeam(input: AnalyticsTeamInput): Promise<TeamResult> {
     } catch {
       knowledgeSection = '';
     }
+    const context = input.ragContext ?? input.context ?? '';
 
-    await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
-    const missions = await planWork(input.ragContext ?? input.context ?? '', knowledgeSection);
-    await reportLive?.('مجری‌ها: تحلیل رفتار و متریک‌ها', 55);
-    const outputs = (await Promise.all(
-      missions.map((mission, i) => runWorker(mission, i as 0 | 1 | 2)),
-    )) as [string, string, string];
+    // ---------- توابع حلقه نقد ----------
 
-    await reportLive?.('منتقد: داوری خروجی', 85);
-    const verdict = await judge(outputs);
+    // کش دور ۱: مأموریت‌های سرپرست در هر چرخه یک بار ساخته می‌شوند؛
+    // دورهای ۲ و ۳ همان مأموریت‌ها را با دستور منتقد اصلاح می‌کنند.
+    let cachedMissions: [string, string, string] | null = null;
+    // payload آخرین داوری منتقد (برای استخراج کارهای پیشنهادی)
+    let lastPayload: unknown = null;
 
-    await writeMemory(TEAM, `learned:${runId}`, {
-      approved: verdict.approved,
-      reason: verdict.reason,
-      payload: verdict.payload,
-      at: new Date().toISOString(),
+    /**
+     * runWorkers: سرپرست (دور ۱) + سه مجری هر دور.
+     */
+    const runWorkers = async (
+      round: number,
+      prevInstruction?: string,
+    ): Promise<WorkerRoundOutput> => {
+      if (round === 1) {
+        await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
+        cachedMissions = await planWork(context, knowledgeSection);
+      } else {
+        await reportLive?.(`دور ${round}: اصلاح با دستور منتقد`, 50);
+      }
+      const missions = cachedMissions;
+      if (!missions) {
+        throw new Error('مأموریت‌های سرپرست در کش پیدا نشد.');
+      }
+      await reportLive?.('مجری‌ها: تحلیل رفتار و متریک‌ها', 55);
+      const outputs = (await Promise.all(
+        missions.map((mission, i) => runWorker(mission, i as 0 | 1 | 2, prevInstruction)),
+      )) as [string, string, string];
+      return { missions, outputs };
+    };
+
+    /**
+     * runCritic: منتقد فعلی، با تبدیل خروجی به CriticVerdictV2.
+     * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+     */
+    const runCritic = async (
+      output: WorkerRoundOutput,
+      round: number,
+    ): Promise<CriticVerdictV2> => {
+      await reportLive?.(`منتقد: داوری خروجی (دور ${round})`, 85);
+      const verdict = await judge(output.outputs);
+      lastPayload = verdict.payload;
+      const reason = verdict.reason;
+
+      if (round === 3) {
+        return {
+          approved: true,
+          reason: '',
+          instruction: '',
+          acceptance: '',
+          finalOpinion: reason || 'نظر نهایی ثبت شد.',
+        };
+      }
+      if (verdict.approved) {
+        return {
+          approved: true,
+          reason: '',
+          instruction: '',
+          acceptance: '',
+          finalOpinion: reason || undefined,
+        };
+      }
+      return {
+        approved: false,
+        reason,
+        instruction: criticInstructionFromReason(reason),
+        acceptance: criticAcceptanceFromReason(reason),
+      };
+    };
+
+    // تاریخچه دورها برای ثبت دانش + آخرین لاگ دانش برای خلاصه
+    const roundHistory: CriticRoundRecord[] = [];
+    let lastKnowledgeLog = '';
+
+    /**
+     * onRoundKnowledge: ثبت دانش هر دور با extractCriticKnowledge فعلی.
+     */
+    const onRoundKnowledge = async (
+      round: number,
+      verdict: CriticVerdictV2,
+    ): Promise<void> => {
+      const record: CriticRoundRecord = {
+        round,
+        approved: verdict.approved,
+        reason: verdict.approved
+          ? verdict.finalOpinion || 'تأیید شد.'
+          : verdict.reason,
+        instruction: verdict.instruction?.trim() || undefined,
+      };
+      const knowledgeResult = await extractCriticKnowledge(
+        TEAM,
+        {
+          approved: verdict.approved,
+          reason: record.reason,
+          domain: 'تحلیل داده و متریک',
+          instruction: record.instruction,
+          round,
+          rounds: roundHistory.slice(),
+          isFinal: round === 3,
+        },
+        runId,
+      );
+      roundHistory.push(record);
+      lastKnowledgeLog = criticKnowledgeLog(knowledgeResult);
+    };
+
+    // ---------- اجرای حلقه نقد ۳ دوره‌ای ----------
+    const loopResult: CriticLoopResult<WorkerRoundOutput> = await runCriticLoop<WorkerRoundOutput>({
+      team: TEAM,
+      runId,
+      runWorkers,
+      runCritic,
+      onRoundKnowledge,
+      onProgress: (msg) => reportLive?.(msg, 70),
     });
 
-    // استخراج دانش از حکم منتقد (چرخه نقد←دانش)
-    const knowledgeResult = await extractCriticKnowledge(
-      TEAM,
-      { approved: verdict.approved, reason: verdict.reason, domain: 'تحلیل داده و متریک' },
-      runId,
-    );
-    const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+    const finalVerdict = loopResult.verdicts[loopResult.verdicts.length - 1];
+    const finalReason =
+      finalVerdict.reason || finalVerdict.finalOpinion || 'منتقد دلیلی ثبت نکرد.';
+
+    await writeMemory(TEAM, `learned:${runId}`, {
+      approved: loopResult.approved,
+      reason: finalReason,
+      payload: lastPayload,
+      at: new Date().toISOString(),
+      finalRound: loopResult.finalRound,
+      rounds: loopResult.verdicts.map((v, i) => ({
+        round: i + 1,
+        approved: v.approved,
+        reason: v.reason || v.finalOpinion || '',
+      })),
+    });
 
     return {
       team: TEAM,
-      summary: `${verdict.approved ? `داوری گذشت: ${verdict.reason}` : `داوری رد شد: ${verdict.reason}`} ${knowledgeLog}`,
-      blockers: verdict.approved ? [] : [verdict.reason],
-      tasks: extractTasks(verdict.payload),
-      approved: verdict.approved,
+      summary: `${loopResult.approved ? `داوری گذشت: ${finalReason}` : `داوری رد شد: ${finalReason}`} (حلقه در دور ${loopResult.finalRound} تمام شد) ${lastKnowledgeLog}`,
+      blockers: loopResult.approved ? [] : [finalReason],
+      tasks: extractTasks(lastPayload),
+      approved: loopResult.approved,
     };
   } catch (err) {
     const message = sanitize(err instanceof Error ? err.message : String(err));
