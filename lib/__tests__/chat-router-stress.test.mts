@@ -37,6 +37,13 @@ interface MockLlm {
   requests: Array<{ path: string; model: string }>;
   chatRoutes: Record<string, ChatRoute>;
   embRoutes: Record<string, EmbRoute>;
+  /**
+   * فهرست مدل‌های GET /models؛ null یعنی مثل قبل 404 بده
+   * (تست‌های قدیمی دست نخورده می‌مانند).
+   */
+  modelList: string[] | null;
+  /** تعداد فراخوانی‌های GET /models (جدا از requests تا تست‌های قدیمی نشکنند) */
+  modelsHits: number;
   close(): Promise<void>;
 }
 
@@ -55,11 +62,26 @@ async function startMockLlm(): Promise<MockLlm> {
     requests: [],
     chatRoutes: {},
     embRoutes: {},
+    modelList: null,
+    modelsHits: 0,
     close: async () => {},
   };
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const body = JSON.parse((await readBody(req)) || '{}');
     const model = String(body.model || '');
+    if (req.method === 'GET' && req.url === '/models') {
+      mock.modelsHits += 1;
+      if (mock.modelList === null) {
+        res.writeHead(404);
+        res.end('{}');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({ data: mock.modelList.map((id) => ({ id })) }),
+      );
+      return;
+    }
     if (req.method === 'POST' && req.url === '/chat/completions') {
       mock.requests.push({ path: '/chat/completions', model });
       const route = mock.chatRoutes[model] ?? { status: 404, text: 'model not found' };
@@ -431,5 +453,100 @@ describe('تست فشار روتر هوشمند', () => {
       mockA.requests.some((r) => r.model === 'explicit-wanted-model'),
       'مدل صریح باید دقیقاً همان مدلی باشد که درخواست می‌شود',
     );
+  });
+
+  it('سناریو کشف پویا: وقتی مدل‌های تأییدشده می‌میرند، مدل‌های واقعی درگاه امتحان می‌شوند', async () => {
+    mockA.requests.length = 0;
+    mockA.modelsHits = 0;
+    // درگاه ۲ مدل تبلیغ می‌کند: یکی چت، یکی امبدینگ (امبدینگ نباید امتحان شود)
+    mockA.modelList = ['discovered-model-x', 'some-embedding-v1'];
+    mockA.chatRoutes = {
+      't10-primary': { status: 429, text: 'quota exhausted' },
+      'glm-5.3-flash': { status: 503, text: 'overloaded' },
+      'qwen3.8-flash': { status: 503, text: 'overloaded' },
+      'qwen3.5-omni-flash': { status: 503, text: 'overloaded' },
+      'deepseek-v4-flash': { status: 503, text: 'overloaded' },
+      'kimi-k3': { status: 503, text: 'overloaded' },
+      'discovered-model-x': { status: 200, text: 'ok-discovered' },
+    };
+    await seedSettings({
+      llm_endpoints: [ep('epT10', 'mock-reformboss-t10', mockA)],
+      team_models: { dev: { endpointId: 'epT10', model: 't10-primary' } },
+      llm_model_health: {},
+    });
+    const { callLLMSmart } = await import('../llm.js');
+    const text = await callLLMSmart('بگو سلام', {
+      team: 'dev',
+      timeoutMs: 15000,
+      maxTokens: 20,
+    });
+    assert.equal(text, 'ok-discovered');
+    const tried = mockA.requests
+      .filter((r) => r.path === '/chat/completions')
+      .map((r) => r.model);
+    // مدل کشف‌شده باید امتحان شده باشد، بعد از مدل‌های تأییدشده
+    assert.ok(
+      tried.includes('discovered-model-x'),
+      `مدل کشف‌شده باید امتحان می‌شد؛ امتحان‌شده‌ها: ${tried.join(', ')}`,
+    );
+    assert.ok(
+      tried.indexOf('discovered-model-x') > tried.indexOf('kimi-k3'),
+      'مدل کشف‌شده باید بعد از مدل‌های تأییدشده امتحان شود',
+    );
+    // مدل امبدینگ درگاه هرگز نباید در مسیر چت امتحان شود
+    assert.ok(
+      !tried.includes('some-embedding-v1'),
+      'مدل امبدینگ نباید در مسیر چت امتحان شود',
+    );
+    // GET /models باید صدا زده شده باشد
+    assert.ok(
+      mockA.modelsHits > 0,
+      'درگاه باید GET /models را دریافت کرده باشد',
+    );
+    mockA.modelList = null;
+  });
+
+  it('سناریو شفافیت: درگاه ردشده در پیام خطای نهایی توضیح داده می‌شود', async () => {
+    mockA.requests.length = 0;
+    mockA.modelList = []; // کشف خالی؛ فقط رفتار قدیمی
+    mockA.chatRoutes = {
+      't11-primary': { status: 429, text: 'quota exhausted' },
+      'glm-5.3-flash': { status: 429, text: 'quota exhausted' },
+      'qwen3.8-flash': { status: 429, text: 'quota exhausted' },
+      'qwen3.5-omni-flash': { status: 429, text: 'quota exhausted' },
+      'deepseek-v4-flash': { status: 429, text: 'quota exhausted' },
+      'kimi-k3': { status: 429, text: 'quota exhausted' },
+    };
+    await seedSettings({
+      llm_endpoints: [
+        // درگاه بدون کلید: باید در پیام خطا «ردشده» توضیح داده شود
+        { id: 'epT11a', name: 'mock-nokey', baseUrl: mockA.baseUrl, apiKey: '' },
+        ep('epT11b', 'mock-reformboss-t11', mockA),
+      ],
+      team_models: { dev: { endpointId: 'epT11b', model: 't11-primary' } },
+      llm_model_health: {},
+    });
+    const { callLLMSmart } = await import('../llm.js');
+    await assert.rejects(
+      () =>
+        callLLMSmart('بگو سلام', {
+          team: 'dev',
+          timeoutMs: 15000,
+          maxTokens: 20,
+        }),
+      (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        assert.ok(
+          msg.includes('ردشده'),
+          `پیام خطا باید ردشده‌ها را توضیح بدهد، بود: ${msg.slice(0, 200)}`,
+        );
+        assert.ok(
+          msg.includes('mock-nokey'),
+          `پیام خطا باید نام درگاه ردشده را بگوید، بود: ${msg.slice(0, 200)}`,
+        );
+        return true;
+      },
+    );
+    mockA.modelList = null;
   });
 });

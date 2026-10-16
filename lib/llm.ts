@@ -8,15 +8,17 @@
  *
  * روتر هوشمند (callLLMSmart):
  *   ۱. فهرست اولویت‌بندی‌شده‌ی کاندیداها را می‌سازد: مدل اصلی تیم،
- *      بعد مدل‌های برتر همان درگاه، بعد درگاه‌های بعدی به ترتیب تنظیمات.
+ *      بعد مدل‌های برتر همان درگاه، بعد «کشف پویا» (فهرست واقعی مدل‌های
+ *      هر درگاه از GET /models، با اولویت مدل‌هایی که اخیراً موفق بوده‌اند)،
+ *      بعد درگاه‌های بعدی به ترتیب تنظیمات.
  *   ۲. هر کاندیدایی که در cooldown باشد رد می‌شود.
  *   ۳. روی خطای 429/503/404/401/تایم‌اوت/اتصال، خطا ثبت و cooldown می‌شود
  *      و روتر سراغ مدل بعدی می‌رود؛ اگر همه‌ی مدل‌های یک درگاه تمام شد،
  *      درگاه بعدی امتحان می‌شود.
  *   ۴. اگر مدل اصلی تیم با 404 مرده باشد (مدل منسوخ)، جایگزین موفق به‌صورت
  *      خودکار در team_models ذخیره می‌شود تا انتخاب بعدی درست باشد.
- *   ۵. فهرست fallback فقط مدل‌های تأییدشده و باکیفیت است؛ هرگز مدل
- *      به‌دردنخور امتحان نمی‌شود.
+ *   ۵. هیچ درگاه/مدلی بی‌صدا رد نمی‌شود: دلیل رد شدن در لاگ و پیام خطای
+ *      نهایی ثبت می‌شود تا علت «همه مردند» شفاف باشد.
  * - Timeout پیش‌فرض ۱۸۰ ثانیه؛ هیچ فراخوانی برای همیشه گیر نمی‌کند.
  * - آمار فراخوانی‌ها در getLLMStats دیده می‌شود.
  */
@@ -38,6 +40,7 @@ import {
 } from './llm-endpoints';
 import {
   getCooldownKeys,
+  getModelSuccessMap,
   recordModelFailure,
   recordModelSuccess,
   type ModelErrorType,
@@ -212,6 +215,94 @@ function qualityChatModelsFor(ep: Pick<LLMEndpoint, 'name' | 'baseUrl'>): string
 }
 
 /* ------------------------------------------------------------------ */
+/* کشف پویا: فهرست واقعی مدل‌های هر درگاه از GET /models               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * چرا کشف پویا؟ فهرست «مدل‌های تأییدشده» ثابت است ولی هر درگاه ده‌ها مدل
+ * دارد (مثلاً reformboss). وقتی مدل‌های شناخته‌شده می‌میرند، روتر نباید
+ * تسلیم شود؛ باید فهرست واقعی درگاه را بگیرد و یکی‌یکی امتحان کند تا
+ * بالاخره یکی جواب بدهد.
+ */
+
+interface DiscoveredEntry {
+  at: number;
+  models: string[];
+}
+
+/** کش درون‌حافظه‌ای کشف مدل‌ها: endpointId -> { زمان، فهرست } */
+const modelsDiscoveryCache = new Map<string, DiscoveredEntry>();
+/** اعتبار کش موفق: ۱۵ دقیقه */
+const DISCOVERY_TTL_MS = 15 * 60 * 1000;
+/** اعتبار کش ناموفق: ۵ دقیقه (درگاه خراب در هر فراخوانی کوبیده نشود) */
+const DISCOVERY_FAIL_TTL_MS = 5 * 60 * 1000;
+/** تایم‌اوت درخواست GET /models */
+const DISCOVERY_TIMEOUT_MS = 12_000;
+/** سقف مدل‌های کشف‌شده‌ی هر درگاه در هر فراخوانی (جلوگیری از تلاش بی‌پایان) */
+const MAX_DISCOVERED_PER_ENDPOINT = 12;
+
+/** نام مدل امبدینگ است؟ (در مسیر چت نمی‌آید) */
+function isEmbeddingModelName(name: string): boolean {
+  return /embed/i.test(name);
+}
+
+/**
+ * فهرست مدل‌های چتی که خود درگاه تبلیغ می‌کند (GET {baseUrl}/models،
+ * سازگار با OpenAI-style). کش‌دار و fail-soft: روی هر خطا [] برمی‌گردد
+ * و روتر به فهرست تأییدشده برمی‌گردد.
+ */
+async function discoverChatModels(ep: LLMEndpoint): Promise<string[]> {
+  const now = Date.now();
+  const hit = modelsDiscoveryCache.get(ep.id);
+  if (hit) {
+    const ttl = hit.models.length > 0 ? DISCOVERY_TTL_MS : DISCOVERY_FAIL_TTL_MS;
+    if (now - hit.at < ttl) return hit.models;
+  }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DISCOVERY_TIMEOUT_MS);
+    let models: string[] = [];
+    try {
+      const res = await fetch(`${ep.baseUrl.replace(/\/+$/, '')}/models`, {
+        headers: { Authorization: `Bearer ${ep.apiKey}` },
+        signal: controller.signal,
+      });
+      const body: unknown = await res.json().catch(() => ({}));
+      if (res.ok && typeof body === 'object' && body !== null) {
+        const list = Array.isArray((body as { data?: unknown }).data)
+          ? (body as { data: unknown[] }).data
+          : Array.isArray((body as { models?: unknown }).models)
+            ? (body as { models: unknown[] }).models
+            : [];
+        const seen = new Set<string>();
+        for (const m of list) {
+          const id = typeof m === 'string' ? m : (m as { id?: unknown })?.id;
+          if (typeof id !== 'string' || !id.trim()) continue;
+          if (isEmbeddingModelName(id)) continue;
+          const key = normModelName(id);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          models.push(id.trim());
+        }
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+    modelsDiscoveryCache.set(ep.id, { at: now, models });
+    if (models.length > 0) {
+      console.log(`[llm-smart] درگاه ${ep.name}: ${models.length} مدل از /models کشف شد`);
+    }
+    return models;
+  } catch (err) {
+    modelsDiscoveryCache.set(ep.id, { at: now, models: [] });
+    console.log(
+      `[llm-smart] کشف مدل‌های درگاه ${ep.name} ناموفق بود (fail-soft): ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return [];
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* ساخت فهرست کاندیداها                                                */
 /* ------------------------------------------------------------------ */
 
@@ -266,6 +357,8 @@ interface ChatRoutePlan {
   team: TeamName | null;
   /** ورودی اصلی تیم (برای جایگزینی خودکار روی 404) */
   primaryEntry: TeamModelEntry | null;
+  /** یادداشت‌های «رد شد» برای شفافیت در پیام خطای نهایی */
+  skipped: string[];
 }
 
 async function buildChatRouteGroups(opts: LLMCallOptions): Promise<ChatRoutePlan> {
@@ -307,6 +400,19 @@ async function buildChatRouteGroups(opts: LLMCallOptions): Promise<ChatRoutePlan
   // cooldownهای ماندگار (دیتابیس): مدل‌هایی که در ران‌های قبلی 429/503/... گرفتند
   // و هنوز در استراحت‌اند، از چرخه‌ی کاندیداها حذف می‌شوند. (fail-soft)
   const dbCooldowns = await getCooldownKeys(ordered.map((e) => e.id));
+  // نقشه‌ی موفقیت اخیر: مدل‌هایی که اخیراً جواب داده‌اند در کشف پویا اول می‌آیند
+  const successMap = await getModelSuccessMap(ordered.map((e) => e.id));
+
+  // کشف موازی فهرست واقعی مدل‌های هر درگاه (کش‌دار و fail-soft)؛
+  // وقتی مدل‌های شناخته‌شده می‌میرند، روتر از همین فهرست «بالاخره یکی» را پیدا می‌کند.
+  const discoveredByEp = new Map<string, string[]>();
+  await Promise.all(
+    ordered
+      .filter((e) => e.apiKey)
+      .map(async (e) => {
+        discoveredByEp.set(e.id, await discoverChatModels(e));
+      }),
+  );
 
   // مدل صریح کاربر روی درگاه اصلی می‌نشیند؛ اگر درگاه اصلی مشخص نیست
   // (نه team، نه default)، روی اولین درگاه فعال تا مدل صریح هرگز
@@ -314,8 +420,12 @@ async function buildChatRouteGroups(opts: LLMCallOptions): Promise<ChatRoutePlan
   const explicitTargetId = primaryEntry?.endpointId ?? ordered[0]?.id ?? null;
 
   const groups: RouteGroup[] = [];
+  const skipped: string[] = [];
   for (const ep of ordered) {
-    if (!ep.apiKey) continue;
+    if (!ep.apiKey) {
+      skipped.push(`درگاه ${ep.name}: کلید API ثبت نشده است`);
+      continue;
+    }
     const isPrimaryEp = ep.id === primaryEntry?.endpointId;
     const models: RouteCandidate[] = [];
     const seen = new Set<string>();
@@ -333,17 +443,43 @@ async function buildChatRouteGroups(opts: LLMCallOptions): Promise<ChatRoutePlan
     if (isPrimaryEp && primaryEntry) push(primaryEntry.model, true, true);
     // ۳. مدل‌های تأییدشده‌ی همان درگاه (به ترتیب کیفیت)
     for (const m of qualityChatModelsFor(ep)) push(m, false, false);
-    // ۴. بقیه‌ی مدل‌های سالم کش سلامت
+    // ۴. مدل‌های کشف‌شده از خود درگاه (GET /models): اول آن‌هایی که اخیراً
+    //    موفق بوده‌اند، بعد به ترتیب تبلیغ درگاه. کش دستی ۲۴ساعته ممکن است
+    //    کهنه باشد پس برای این‌ها فقط cooldownهای تازه (دیتابیس) اعمال می‌شود،
+    //    نه «خراب» بودن قدیمی؛ اگر واقعاً خراب باشند، خطا می‌گیرند و
+    //    خودکار به استراحت می‌روند.
+    const discovered = (discoveredByEp.get(ep.id) ?? [])
+      .slice()
+      .sort(
+        (a, b) =>
+          (successMap.get(`${ep.id}::${normModelName(b)}`) ?? 0) -
+          (successMap.get(`${ep.id}::${normModelName(a)}`) ?? 0),
+      );
+    let discoveredAdded = 0;
+    for (const m of discovered) {
+      if (discoveredAdded >= MAX_DISCOVERED_PER_ENDPOINT) break;
+      const key = normModelName(m);
+      if (!key || seen.has(key)) continue;
+      if (dbCooldowns.has(`${ep.id}::${key}`)) continue;
+      seen.add(key);
+      models.push({ model: m, isPrimary: false });
+      discoveredAdded++;
+    }
+    // ۵. بقیه‌ی مدل‌های سالم کش سلامت
     for (const m of extraHealthyModels(health, ep.id, seen)) push(m, false, false);
-    if (models.length > 0) groups.push({ endpoint: ep, models });
+    if (models.length === 0) {
+      skipped.push(`درگاه ${ep.name}: هیچ مدل فعالی نماند (همه در استراحت یا خراب)`);
+      continue;
+    }
+    groups.push({ endpoint: ep, models });
   }
 
   if (groups.length === 0) {
     // هیچ endpoint فعالی در تنظیمات نیست؛ مسیر اضطراری env
     // (اگر کلید env هم نباشد، خطای فارسی واضح پرتاب می‌شود)
-    return { groups: buildEnvFallbackGroup(opts), team, primaryEntry: null };
+    return { groups: buildEnvFallbackGroup(opts), team, primaryEntry: null, skipped };
   }
-  return { groups, team, primaryEntry };
+  return { groups, team, primaryEntry, skipped };
 }
 
 /** مسیر اضطراری وقتی settings در دسترس نیست: فقط env */
@@ -507,7 +643,7 @@ export async function callLLMSmart(
       `${tag} خواندن تنظیمات ناموفق بود، مسیر اضطراری env: ${err instanceof Error ? err.message : String(err)}`,
     );
     try {
-      plan = { groups: buildEnvFallbackGroup(opts), team, primaryEntry: null };
+      plan = { groups: buildEnvFallbackGroup(opts), team, primaryEntry: null, skipped: [] };
     } catch (envErr) {
       stats.errors += 1;
       stats.lastError = envErr instanceof Error ? envErr.message : String(envErr);
@@ -537,6 +673,7 @@ export async function callLLMSmart(
   for (const group of usableGroups) {
     const ep = group.endpoint;
     if (isEndpointKeyBad(ep.id)) {
+      trace.push(`${ep.name}: کلید نامعتبر (در استراحت)`);
       console.log(`${tag} درگاه ${ep.name} رد شد (کلید نامعتبر، در استراحت)`);
       continue;
     }
@@ -597,9 +734,11 @@ export async function callLLMSmart(
   }
 
   const detail = trace.length > 0 ? trace.join('؛ ') : 'کاندیدایی برای تلاش نبود';
+  const skipNote =
+    plan.skipped.length > 0 ? ` ردشده‌ها: ${plan.skipped.join('؛ ')}.` : '';
   const msg =
     `همه‌ی مدل‌ها و درگاه‌ها ناموفق بودند و هیچ پاسخی گرفته نشد. ` +
-    `جزئیات: ${detail}. ` +
+    `جزئیات: ${detail}.${skipNote} ` +
     `اگر سهمیه تمام شده، چند دقیقه صبر کنید یا در تنظیمات مدل دیگری انتخاب کنید.`;
   stats.errors += 1;
   stats.lastError = detail;

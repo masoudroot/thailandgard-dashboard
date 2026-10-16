@@ -299,6 +299,35 @@ export async function getCooldownKeys(
   return out;
 }
 
+/**
+ * نگاشت آخرین موفقیت هر مدل: `endpointId::normModel` -> زمان موفقیت (epoch ms).
+ * برای اولویت‌بندی هوشمند کاندیداها: مدل‌هایی که اخیراً جواب داده‌اند اول
+ * امتحان می‌شوند. fail-soft: روی هر خطا نقشه‌ی خالی برمی‌گردد.
+ */
+export async function getModelSuccessMap(
+  endpointIds: string[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const ids = Array.from(new Set(endpointIds.map((s) => s?.trim()).filter(Boolean)));
+  if (ids.length === 0) return out;
+  try {
+    const { data, error } = await getSupabase()
+      .from('llm_model_health')
+      .select('endpoint_id, model, last_success_at')
+      .in('endpoint_id', ids)
+      .not('last_success_at', 'is', null);
+    if (error || !data) return out;
+    for (const r of data as Array<{ endpoint_id: string; model: string; last_success_at: string }>) {
+      const ts = Date.parse(r.last_success_at);
+      if (Number.isNaN(ts)) continue;
+      out.set(`${r.endpoint_id}::${normModelKey(r.model)}`, ts);
+    }
+  } catch (err) {
+    console.warn('[model-health] getModelSuccessMap failed (fail-soft):', err instanceof Error ? err.message : String(err));
+  }
+  return out;
+}
+
 /** فهرست مدل‌های الان‌ناسالم (برای داشبورد/دیباگ). */
 export async function getUnhealthyModels(
   endpointId?: string,
