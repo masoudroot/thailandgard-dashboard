@@ -83,6 +83,19 @@ export interface LLMCallOptions {
    * اگر ست نشود، ترتیب قدیمی حفظ می‌شود.
    */
   tier?: ModelTier;
+  /**
+   * حداقل طول قابل‌قبول پاسخ (نویسه، بعد از trim). اگر پاسخ کوتاه‌تر
+   * باشد، مثل «خطای مدل» رفتار می‌شود: مدل خنثی (cooldown) می‌گیرد و
+   * روتر سراغ ترکیب بعدی می‌رود. پاسخ منحط (مثلاً فقط `{"`) دیگر
+   * «موفق» ثبت نمی‌شود و در تلاش‌های بعدی اولویت نمی‌گیرد.
+   */
+  minLength?: number;
+  /**
+   * اگر true باشد، پاسخ JSON انتظار می‌رود: طول دست‌کم
+   * (minLength ?? 10) نویسه لازم است. این جلوی چرخه‌ی «مدل خراب ←
+   * همان مدل دوباره» را در callLLMJson می‌گیرد.
+   */
+  expectJson?: boolean;
 }
 
 /** رده‌ی مدل: سبک/ارزان، استاندارد، قوی. */
@@ -773,6 +786,27 @@ async function autoReplaceTeamModel(
 /* ------------------------------------------------------------------ */
 
 /**
+ * اعتبارسنجی کیفیت پاسخ خام مدل، پیش از «موفق» ثبت شدن.
+ * برمی‌گرداند: null یعنی قابل‌قبول؛ رشته یعنی دلیل رد (فارسی کوتاه).
+ *
+ * ریشه‌ی باگ: مدل گاهی پاسخ منحط می‌دهد (مثلاً فقط `{"`)؛ چون رشته
+ * خالی نبود، روتر آن را موفقیت ثبت می‌کرد و حتی در تلاش‌های بعدی
+ * اولویتش می‌داد. این تابع چنین پاسخی را «خطای مدل» می‌کند تا روتر
+ * سراغ ترکیب بعدی برود.
+ */
+export function validateResponseQuality(
+  text: string,
+  opts: Pick<LLMCallOptions, 'minLength' | 'expectJson'>,
+): string | null {
+  const trimmed = text.trim();
+  const min = opts.minLength ?? (opts.expectJson ? 10 : 0);
+  if (min > 0 && trimmed.length < min) {
+    return `پاسخ منحط (${trimmed.length} نویسه؛ حداقل ${min})`;
+  }
+  return null;
+}
+
+/**
  * فراخوانی هوشمند LLM:
  * مدل اصلی تیم ← مدل‌های برتر همان درگاه ← درگاه‌های بعدی.
  * روی 429/503/404/401/تایم‌اوت/اتصال، بعدی امتحان می‌شود.
@@ -877,6 +911,16 @@ export async function callLLMSmart(
           prompt,
           callOpts,
         );
+        // اعتبارسنجی کیفیت پاسخ: پاسخ منحط (خیلی کوتاه) موفقیت نیست.
+        // ریشه‌ی باگ seo: مدل فقط `{"` برمی‌گرداند، روتر آن را «موفق» ثبت
+        // می‌کرد و در تلاش‌های بعدی همان مدل خراب را اولویت می‌داد.
+        const qualityError = validateResponseQuality(text, opts);
+        if (qualityError) {
+          await applyFailureCooldown(ep.id, cand.model, 'empty', qualityError);
+          trace.push(`${ep.name}/${cand.model}: ${qualityError}`);
+          console.log(`${tag} ${ep.name}/${cand.model} ← ${qualityError}`);
+          continue;
+        }
         routeCooldowns.delete(cooldownKey(ep.id, cand.model));
         // ردیابی سلامت ماندگار: موفقیت = پاک شدن cooldown و صفر شدن شمارنده
         await recordModelSuccess(ep.id, cand.model);
@@ -1242,6 +1286,10 @@ export async function callLLMJson<T = unknown>(
     // خروجی ساخت‌یافته فارسی به توکن بیشتری نیاز دارد؛ پیش‌فرض را بالاتر می‌بریم
     maxTokens: opts.maxTokens ?? 4000,
     temperature: opts.temperature ?? 0.1, // خنک‌تر برای خروجی ساخت‌یافته
+    // ریشه‌ی باگ seo: پاسخ منحط (`{"`) نباید «موفق» ثبت شود؛ روتر باید
+    // مدل خراب را خنثی کند و سراغ ترکیب بعدی برود، نه اینکه ۳ بار همان
+    // مدل را تکرار کند.
+    expectJson: opts.expectJson ?? true,
   });
 
   const parsed = tryParseJson(raw);
@@ -1250,7 +1298,7 @@ export async function callLLMJson<T = unknown>(
   // تلاش دوم: از خود مدل بخواه خروجی را فقط به JSON معتبر تبدیل کند
   const retry = await callLLM(
     `خروجی قبلی‌ات JSON معتبر نبود. فقط و فقط JSON معتبر برگردان، بدون هیچ توضیح اضافه:\n\n${raw.slice(0, 4000)}`,
-    { ...opts, temperature: 0 },
+    { ...opts, temperature: 0, expectJson: opts.expectJson ?? true },
   );
   const parsed2 = tryParseJson(retry);
   if (parsed2.ok) return parsed2.value as T;
@@ -1259,7 +1307,12 @@ export async function callLLMJson<T = unknown>(
   // «کوتاه و فشرده» می‌خواهیم تا کامل برسد
   const shortRetry = await callLLM(
     `پاسخ قبلی‌ات ناقص یا نامعتبر بود. این بار همان محتوا را «بسیار کوتاه و فشرده» بده تا ناقص نماند. فقط و فقط JSON معتبر برگردان، بدون هیچ توضیح اضافه:\n\n${prompt.slice(0, 3000)}`,
-    { ...opts, temperature: 0, maxTokens: Math.min(opts.maxTokens ?? 4000, 2000) },
+    {
+      ...opts,
+      temperature: 0,
+      maxTokens: Math.min(opts.maxTokens ?? 4000, 2000),
+      expectJson: opts.expectJson ?? true,
+    },
   );
   const parsed3 = tryParseJson(shortRetry);
   if (parsed3.ok) return parsed3.value as T;
