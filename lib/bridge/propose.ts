@@ -19,7 +19,7 @@
 
 import { validatePatch } from './gate';
 import { commitToBridgeBranch, createBridgePR } from './commit';
-import { claimBridgePatch, getBridgePatch, mergeBranchIntoDev, updateBridgePatch } from '../bridge';
+import { claimBridgePatch, getBridgePatch, mergeBranchIntoDev, updateBridgePatch, PreMergeGateError } from '../bridge';
 import type { PatchFile } from '../types';
 
 export interface ProposeResult {
@@ -95,7 +95,7 @@ export async function processProposedPatch(patchId: string): Promise<ProposeResu
 
   // ۴. مرج خودکار به dev (بدون تأیید دستی)
   try {
-    const merge = await mergeBranchIntoDev(branch);
+    const merge = await mergeBranchIntoDev(branch, files);
     const now = new Date().toISOString();
     await updateBridgePatch(patchId, {
       status: 'merged',
@@ -115,7 +115,29 @@ export async function processProposedPatch(patchId: string): Promise<ProposeResu
       mergeSha: merge.sha ?? undefined,
     };
   } catch (err) {
-    // مرج ناموفق: پچ در committed می‌ماند تا بعداً دوباره تلاش شود؛ چرخه نمی‌میرد
+    // رد تایپ‌چک پیش‌مرج دائمی است (با تلاش مجدد درست نمی‌شود): پچ به
+    // needs_review می‌رود تا چرخه گیتِ پرهزینه را روی پچ خراب تکرار نکند.
+    if (err instanceof PreMergeGateError) {
+      const gateMessage = err.message;
+      await updateBridgePatch(patchId, {
+        status: 'needs_review',
+        gate_errors: JSON.stringify([gateMessage]),
+      });
+      console.error(
+        `[bridge] پچ ${patchId} در تایپ‌چک پیش‌مرج رد شد؛ وضعیت needs_review ثبت شد.`,
+      );
+      return {
+        patchId,
+        gated: true,
+        committed: true,
+        merged: false,
+        branch,
+        sha,
+        prUrl,
+        gateErrors: [gateMessage],
+      };
+    }
+    // مرج ناموفق (گذرا): پچ در committed می‌ماند تا بعداً دوباره تلاش شود؛ چرخه نمی‌میرد
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[bridge] مرج خودکار پچ ${patchId} به dev ناموفق بود:`, message);
     return {
