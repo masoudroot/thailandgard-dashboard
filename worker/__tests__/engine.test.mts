@@ -307,7 +307,7 @@ describe('تست ۴: دو ورکر هم‌زمان نمی‌توانند یک ت
 });
 
 describe('تست ۵: ورکر مرده → قفل stale آزاد می‌شود', () => {
-  it('سطح ارکستراتور: قفل running با قدمت بیش از ۱۵۰ دقیقه → beginCycle موفق می‌شود', async () => {
+  it('سطح ارکستراتور: قفل running قدیمی (شکل snake_case) با قدمت بیش از TTL → beginCycle موفق می‌شود (stale-takeover)', async () => {
     await seed({
       cycles: [],
       team_runs: [],
@@ -319,13 +319,17 @@ describe('تست ۵: ورکر مرده → قفل stale آزاد می‌شود',
         },
       ],
     });
-    const { runId } = await orch.beginCycle();
+    const { runId, cycleId } = await orch.beginCycle();
     assert.ok(runId);
     assert.notEqual(runId, 'run-dead', 'باید run_id تازه ساخته شود');
     const t = await tables();
+    assert.equal(t.cycles.length, 1, 'فقط یک چرخه ساخته شده باشد');
+    assert.equal(t.cycles[0].id, cycleId);
     const lock = t.agent_state.find((x: any) => x.agent === 'orchestrator:lock');
     assert.equal(lock.state.status, 'running');
-    assert.equal(lock.state.run_id, runId);
+    // قفل جدید: هویت دارنده + cycleId روی ردیف ثبت می‌شود (نه run_id/cycle_id قدیمی)
+    assert.equal(lock.state.owner?.runId, runId);
+    assert.equal(lock.state.cycleId, cycleId);
   });
 
   it('سطح ورکر: تیمِ بی‌ضربانِ بیش از ۱۵ دقیقه («مرده») → failed می‌شود و چرخه بسته می‌شود', async () => {

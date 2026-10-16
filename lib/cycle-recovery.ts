@@ -6,7 +6,8 @@
  *   ۱. ردیف cycles در وضعیت running می‌ماند و findActiveCycle برای همیشه
  *      همین چرخه مرده را برمی‌گرداند؛ پس اتوماسیون عملاً می‌ایستد.
  *   ۲. قفل ارکستراتور (agent_state/orchestrator:lock) در وضعیت running
- *      می‌ماند و چرخه جدید تا ۱۵۰ دقیقه نمی‌تواند شروع شود.
+ *      می‌ماند و چرخه جدید تا پایان TTL (در قفل جدید ۱۰ دقیقه با heartbeat)
+ *      نمی‌تواند شروع شود.
  *   ۳. پچ‌های پل در وضعیت gated می‌مانند؛ claimBridgePatch فقط از
  *      proposed ادعا می‌کند و جاروی پچ‌های یتیم فقط proposed را پردازش
  *      می‌کند، پس پچ gated برای همیشه گیر می‌کند.
@@ -27,6 +28,7 @@
 
 import { getSupabase } from './api';
 import { ACTIVE_CYCLE_STATUSES, type CycleStatus } from './types';
+import { forceReleaseLock } from './lock';
 
 /** پیشوند خطای چرخه‌های killشده؛ مبنای شروع خودکار چرخه بعدی. */
 export const CYCLE_KILLED_ERROR_PREFIX = 'KILLED:';
@@ -107,33 +109,19 @@ async function isCycleDead(cycle: CycleRow, quietMs: number): Promise<boolean> {
   return true;
 }
 
-/** آزادسازی قفل ارکستراتور اگر متعلق به همین چرخه مرده باشد. */
+/**
+ * آزادسازی قفل ارکستراتور اگر متعلق به همین چرخه مرده باشد.
+ * به قفل جدید (lib/lock.ts) واگذار شده: forceReleaseLock فقط وقتی آزاد
+ * می‌کند که قفل واقعاً مال همین چرخه باشد (cycleId جدید یا cycle_id قدیمی)؛
+ * پس قفلِ چرخه‌ی تازه‌ای که با stale-takeover گرفته شده امن می‌ماند.
+ */
 async function releaseLockForCycle(cycleId: string): Promise<boolean> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from('agent_state')
-    .select('state, updated_at')
-    .eq('agent', 'orchestrator:lock')
-    .maybeSingle();
-  if (error || !data) return false;
-  const state = (data as { state?: Record<string, unknown> }).state;
-  const lockCycleId =
-    (state as { cycle_id?: unknown } | null)?.cycle_id ??
-    (state as { cycleId?: unknown } | null)?.cycleId;
-  if (lockCycleId !== cycleId) return false;
-  const nowIso = new Date().toISOString();
-  const { error: upErr } = await sb
-    .from('agent_state')
-    .update({
-      state: { status: 'idle', cycle_id: cycleId, released_at: nowIso, released_by: 'cycle-recovery' },
-      updated_at: nowIso,
-    })
-    .eq('agent', 'orchestrator:lock');
-  if (upErr) {
-    console.error('[cycle-recovery] failed to release lock:', upErr.message);
+  try {
+    return await forceReleaseLock(cycleId, 'cycle-recovery');
+  } catch (err) {
+    console.error('[cycle-recovery] failed to release lock:', err instanceof Error ? err.message : err);
     return false;
   }
-  return true;
 }
 
 /**

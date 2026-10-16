@@ -10,7 +10,7 @@
 import { getSupabase } from '../lib/api';
 import { WAVES, type TeamName } from '../lib/types';
 import { findActiveCycle, finishCycle, runSingleTeam, beginCycle } from '../lib/orchestrator';
-import { claimTeam, type LockOwner } from '../lib/lock';
+import { claimTeam, readLock, touchLock, type LockOwner } from '../lib/lock';
 import { getSetting } from '../lib/settings';
 import { sweepHungTeams } from '../lib/team-health';
 import { recoverDeadCycles, isAutoRestartableAfterKill } from '../lib/cycle-recovery';
@@ -97,6 +97,31 @@ async function autoStartNextCycleIfNeeded(): Promise<{ cycleId: string; runId: s
   return { cycleId, runId };
 }
 
+/**
+ * ضربان قفل چرخه در هر تیک ورکر (قفل جدید lib/lock.ts با TTL ده‌دقیقه‌ای).
+ *
+ * چرا لازم است؟ beginCycle قفل را با owner می‌گیرد؛ اگر هیچ‌کس heartbeat
+ * نزند، قفل پس از ۱۰ دقیقه stale می‌شود و beginCycle دیگری می‌تواند وسط
+ * همین چرخه قفل را تصاحب کند. ورکر هر ۵ دقیقه تیک می‌زند، پس با این ضربان
+ * قفلِ چرخه‌ی فعال همیشه تازه می‌ماند.
+ *
+ * engine-agnostic است: هویت دارنده را از خود ردیف قفل می‌خواند (چرخه ممکن
+ * است از ورسل شروع شده باشد و ورکر گیت‌هاب آن را ادامه دهد). اگر قفل مال
+ * چرخه‌ی دیگری باشد یا دیگر دست ما نباشد، چیزی نمی‌نویسد (fail-soft).
+ */
+async function heartbeatCycleLock(cycleId: string): Promise<void> {
+  try {
+    const lock = await readLock();
+    const st = lock?.state;
+    if (!st || st.status !== 'running' || !st.owner) return;
+    if (st.cycleId && st.cycleId !== cycleId) return; // مال چرخه‌ی دیگری است
+    await touchLock(st.owner);
+  } catch (err) {
+    // قفل را از دست داده‌ایم یا خطای دیتابیس؛ تیک ادامه می‌یابد
+    console.error('[worker] cycle lock heartbeat failed:', err instanceof Error ? err.message : err);
+  }
+}
+
 async function main(): Promise<void> {
   const sb = getSupabase();
   const action = process.argv[2];
@@ -138,7 +163,11 @@ async function main(): Promise<void> {
       }
       cycleId = auto.cycleId;
       runId = auto.runId;
+      await heartbeatCycleLock(cycleId);
     } else {
+      // چرخه‌ی متوقف‌شده هم قفلش را نگه می‌دارد تا چرخه‌ی دیگری وسط
+      // توقف، قفل stale را تصاحب نکند؛ پس ضربان پیش از بررسی pause.
+      await heartbeatCycleLock(active.id as string);
       if (active.status === 'pausing' || active.status === 'paused') {
         console.log(`cycle ${active.run_id} is ${active.status}; skipping team claim`);
         return;
@@ -217,9 +246,9 @@ async function main(): Promise<void> {
   }
 
   // نکته: heartbeat سطح تیم داخل runSingleTeam انجام می‌شود (ردیف team_runs را
-  // تازه نگه می‌دارد تا تایم‌اوت اشتباه نخورد). heartbeat قفل چرخه در lib/lock
-  // برای این ورکر کاربرد ندارد چون قفل چرخه را beginCycle (سبک قدیمی، بدون owner)
-  // گرفته و touchLock مالکیت owner را می‌خواهد؛ صدا زدنش فقط لاگ خطا تولید می‌کرد.
+  // تازه نگه می‌دارد تا تایم‌اوت اشتباه نخورد). heartbeat قفل چرخه هم در ابتدای
+  // همین تیک با heartbeatCycleLock زده شد (قفل جدید owner دارد و touchLock
+  // با هویت دارنده‌ی خوانده‌شده از ردیف کار می‌کند).
 
   try {
     // چک پیش‌دستانه: مدل تیم سالم است؟ اگر نه، قبل از شروع عوضش کن
