@@ -12,8 +12,7 @@ import { WAVES, type TeamName } from '../lib/types';
 import { findActiveCycle, finishCycle, runSingleTeam, beginCycle } from '../lib/orchestrator';
 import { claimTeam, type LockOwner } from '../lib/lock';
 import { getSetting } from '../lib/settings';
-
-const STUCK_TIMEOUT_MS = 15 * 60 * 1000;
+import { sweepHungTeams } from '../lib/team-health';
 
 /** سقف پردازش پچ‌های یتیم در هر تیک، تا بودجه‌ی زمانی جاب خورده نشود. */
 const ORPHAN_SWEEP_LIMIT = 3;
@@ -141,26 +140,19 @@ async function main(): Promise<void> {
     .eq('cycle_id', cycleId)
     .order('started_at', { ascending: true });
   const teamStatus: Record<string, string> = {};
-  const teamHeartbeat: Record<string, number> = {};
-  for (const r of (runs ?? []) as { team: string; status: string; started_at: string; updated_at?: string }[]) {
+  for (const r of (runs ?? []) as { team: string; status: string }[]) {
     teamStatus[r.team] = r.status;
-    // ضربان: آخرین به‌روزرسانی پیشرفت؛ اگر نبود، زمان شروع
-    teamHeartbeat[r.team] = new Date(r.updated_at ?? r.started_at).getTime();
   }
 
-  // تایم‌اوت تیم‌های گیرکرده: فقط اگر بیش از ۱۵ دقیقه هیچ پیشرفتی
-  // گزارش نکرده باشند (مبنای مرگ، ضربان است نه زمان شروع)
-  const now = Date.now();
-  for (const [team, status] of Object.entries(teamStatus)) {
-    if (status === 'running' && now - (teamHeartbeat[team] ?? 0) > STUCK_TIMEOUT_MS) {
-      console.log(`timing out stuck team (no heartbeat for 15m): ${team}`);
-      await sb
-        .from('team_runs')
-        .update({ status: 'failed', error: 'تایم‌اوت ورکر: بیش از ۱۵ دقیقه بدون هیچ پیشرفتی', finished_at: new Date().toISOString() })
-        .eq('cycle_id', cycleId)
-        .eq('team', team);
-      teamStatus[team] = 'failed';
-    }
+  // جاروی تیم‌های گیرکرده (دو سیگنال جدا: ضربان در برابر پیشرفت).
+  //  - فرایندِ بی‌ضربانِ بیش از ۱۵ دقیقه → «مرده»، ناموفق ثبت می‌شود؛
+  //  - ضربانِ زنده ولی بی‌پیشرفتِ بیش از ۱۰ دقیقه → «هنگ»، ناموفق ثبت می‌شود
+  //    تا موج جلو برود (ری‌استارت چرخه). واچ‌داگ جداگانه هشدار می‌فرستد.
+  // نکته‌ی ریشه‌ای: مبنای «پیشرفت» ستون updated_at است که پس از جداسازی،
+  // ضربان دیگر آن را تازه نمی‌کند؛ پس تیمِ هنگِ ضربان‌زن دیگر «سالم» دیده نمی‌شود.
+  const hung = await sweepHungTeams(sb, cycleId);
+  for (const h of hung) {
+    teamStatus[h.team] = 'failed';
   }
 
   // تیم «ردشده توسط منتقد» موج را بلاک نمی‌کند؛ کارش را انجام داده و در چرخه بعد دوباره تلاش می‌کند
