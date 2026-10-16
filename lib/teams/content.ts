@@ -67,6 +67,11 @@ export interface TeamInput {
   /** ورودی خام ارکستر */
   input?: string;
   /**
+   * زمینهٔ کامل ارکستر (شامل تسک claimشده از صف ساخت).
+   * ارکستر همیشه این را می‌دهد؛ تسک‌های [آپدیت] و [بازنویسی] از همین‌جا خوانده می‌شوند.
+   */
+  ragContext?: string;
+  /**
    * دستور مستقیم منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ بالاترین
    * اولویت را دارد و در ابتدای دستور مجری‌ها تزریق می‌شود.
    */
@@ -118,6 +123,105 @@ interface WorkerRoundOutput {
   pick: SupervisorPick;
   factsText: string;
   draft: GuideDraft;
+}
+
+/* ==========================================================================
+ * سیستم نگهداشت محتوا (دستور مسعود ۱۴۰۵/۰۷/۲۴)
+ *
+ * رهبر تسک‌های «[آپدیت]» و «[بازنویسی]» می‌سازد؛ این تیم آن‌ها را از
+ * ragContext می‌خواند و به‌جای تولید راهنمای تازه، محتوای موجود را
+ * به‌روز یا از نو می‌سازد (با حفظ اسلاگ برای سئو).
+ * ========================================================================== */
+
+/** نوع تسک نگهداشت محتوا. */
+type RefreshKind = 'update' | 'rewrite';
+
+/** تسک نگهداشت استخراج‌شده از زمینهٔ ارکستر. */
+interface RefreshTask {
+  kind: RefreshKind;
+  slug: string;
+  reason: string;
+  work: string;
+  acceptance: string;
+}
+
+/**
+ * استخراج تسک [آپدیت] یا [بازنویسی] از ragContext.
+ * ارکستر تسک claimشده را با قالب «کار تحویل‌شده از صف ساخت» تزریق می‌کند:
+ *   عنوان: [آپدیت] راهنمای xxx
+ *   شرح: اسلاگ: <slug>\nدلیل: <دلیل>\nکار: <کار>
+ *   معیار قبولی: ...
+ */
+function parseRefreshTask(ragContext: string): RefreshTask | null {
+  if (!ragContext) return null;
+  // عنوان تسک: [آپدیت] یا [بازنویسی]
+  const titleMatch = ragContext.match(/عنوان:\s*\[(آپدیت|بازنویسی)\][^\n]*/);
+  if (!titleMatch) return null;
+  const kind: RefreshKind = titleMatch[1] === 'آپدیت' ? 'update' : 'rewrite';
+
+  // اسلاگ از خط «اسلاگ: xxx»
+  const slugMatch = ragContext.match(/اسلاگ:\s*([a-z0-9-]+)/);
+  if (!slugMatch) return null;
+  const slug = slugMatch[1].trim();
+
+  const reasonMatch = ragContext.match(/دلیل:\s*([^\n]+)/);
+  const workMatch = ragContext.match(/کار:\s*([^\n]+)/);
+  const acceptanceMatch = ragContext.match(/معیار قبولی:\s*([^\n]+)/);
+
+  return {
+    kind,
+    slug,
+    reason: (reasonMatch?.[1] ?? '').trim(),
+    work: (workMatch?.[1] ?? '').trim(),
+    acceptance: (acceptanceMatch?.[1] ?? '').trim() || 'ثبت نشده',
+  };
+}
+
+/**
+ * استخراج بلوک TS راهنمای موجود از فایل guides.ts.
+ * بلوک از «{» پیش از «slug: "<slug>"» تا «},» متناظر ادامه دارد.
+ */
+function extractGuideBlock(fileContent: string, slug: string): string | null {
+  const slugMarker = `slug: "${slug}"`;
+  const markerIdx = fileContent.indexOf(slugMarker);
+  if (markerIdx < 0) return null;
+  // ابتدای بلوک: نزدیک‌ترین «  {» قبل از مارکر
+  const blockStart = fileContent.lastIndexOf('\n  {', markerIdx);
+  if (blockStart < 0) return null;
+  // پایان بلوک: «  },» بعد از مارکر (با شمارش آکولاد برای اطمینان)
+  let depth = 0;
+  let i = blockStart;
+  let started = false;
+  while (i < fileContent.length) {
+    const ch = fileContent[i];
+    if (ch === '{') {
+      depth++;
+      started = true;
+    } else if (ch === '}') {
+      depth--;
+      if (started && depth === 0) {
+        // پایان بلوک؛ «,» بعدی هم جزو بلوک است
+        let end = i + 1;
+        if (fileContent[end] === ',') end++;
+        return fileContent.slice(blockStart, end);
+      }
+    }
+    i++;
+  }
+  return null;
+}
+
+/**
+ * جایگزینی بلوک راهنمای موجود با نسخهٔ تازه (به‌جای درج).
+ * اسلاگ حفظ می‌شود؛ بقیهٔ فیلدها از نسخهٔ تازه می‌آیند.
+ */
+function replaceGuide(fileContent: string, slug: string, newGuideTs: string): string {
+  const oldBlock = extractGuideBlock(fileContent, slug);
+  if (!oldBlock) {
+    throw new Error(`بلوک راهنمای «${slug}» در فایل پیدا نشد؛ جایگزینی ممکن نیست.`);
+  }
+  const idx = fileContent.indexOf(oldBlock);
+  return fileContent.slice(0, idx) + newGuideTs.trim() + fileContent.slice(idx + oldBlock.length);
 }
 
 const SYSTEM_SUPERVISOR = 'تو سرپرست تیم content تایلندگرد هستی.';
@@ -246,6 +350,195 @@ function criticAcceptanceFromReason(reason: string): string {
   return `وقتی درست است که نقد «${r}» دیگر دربارهٔ متن صدق نکند و هر چهار معیار داوری (فارسی طبیعی، بدون U+2014، اعداد سنددار، کاربردی بودن) رعایت شده باشند.`;
 }
 
+/* ==========================================================================
+ * جریان نگهداشت: آپدیت و بازنویسی راهنمای موجود
+ * ========================================================================== */
+
+/**
+ * اجرای تسک نگهداشت ([آپدیت] یا [بازنویسی]).
+ * به‌جای تولید راهنمای تازه، محتوای موجودِ اسلاگ را به‌روز یا از نو می‌سازد.
+ * خروجی: پچ جایگزینی روی همان فایل guides.ts (اسلاگ حفظ می‌شود).
+ */
+async function runRefreshFlow(
+  task: RefreshTask,
+  guidesFile: string,
+  knowledgeSection: string,
+  input: TeamInput,
+  reportLive: ProgressReporter | undefined,
+): Promise<TeamResult> {
+  const blockers: string[] = [];
+  const patches: PatchFile[] = [];
+  const kindFa = task.kind === 'update' ? 'آپدیت' : 'بازنویسی';
+
+  await reportLive?.(`${kindFa}: خواندن نسخهٔ فعلی راهنما`, 15);
+  const oldBlock = extractGuideBlock(guidesFile, task.slug);
+  if (!oldBlock) {
+    const msg = `راهنمای «${task.slug}» در فایل پیدا نشد؛ ${kindFa} ممکن نیست.`;
+    return { team: TEAM, summary: msg, blockers: [msg], tasks: [], approved: false };
+  }
+
+  // استخراج تیتر فعلی برای زمینه
+  const titleMatch = oldBlock.match(/title:\s*"([^"]+)"/);
+  const currentTitle = titleMatch?.[1] ?? task.slug;
+
+  await reportLive?.(`${kindFa}: تولید نسخهٔ تازه با LLM`, 45);
+  const isUpdate = task.kind === 'update';
+  let draft: GuideDraft;
+  try {
+    draft = await callLLMJson<GuideDraft>(
+      [
+        `تو نویسندهٔ حرفه‌ای فارسی تیم content تایلندگرد هستی.`,
+        '',
+        `مأموریت: ${kindFa} راهنمای موجود «${currentTitle}» (اسلاگ: ${task.slug}).`,
+        `دلیل ${kindFa}: ${task.reason || 'ثبت نشده'}`,
+        `کار خواسته‌شده: ${task.work || 'ثبت نشده'}`,
+        `معیار قبولی: ${task.acceptance}`,
+        '',
+        'نسخهٔ فعلی راهنما (TypeScript):',
+        oldBlock.slice(0, 6000),
+        '',
+        ...(knowledgeSection ? ['دانش تیم:', knowledgeSection, ''] : []),
+        isUpdate
+          ? [
+              'قواعد آپدیت (تعمیر، نه بازسازی):',
+              '- ساختار کلی و تیترها را حفظ کن؛ فقط جاهای کهنه را درست کن',
+              '- اطلاعات تازه و مفید اضافه کن؛ اطلاعات غلط یا قدیمی را حذف کن',
+              '- اگر عددی سند ندارد، آن را نیاور یا با «نامشخص» علامت بزن',
+              '- حداقل ۲ لینک داخلی تازه به راهنماهای دیگر اضافه کن با قالب [[متن|/guide/اسلاگ]]',
+              '- بخش‌هایی که دیگر کاربردی نیستند را حذف کن',
+            ]
+          : [
+              'قواعد بازنویسی (از نو ساختن):',
+              '- ساختار کاملاً جدید بساز؛ از نسخهٔ قدیمی فقط موضوع را بگیر',
+              '- تیتر، h1، چکیده، بخش‌ها و سؤال‌ها همه تازه باشند',
+              '- نیت فعلی کاربر را پوشش بده (نه نیت قدیمی)',
+              '- لینک داخلی به راهنماهای مرتبط اضافه کن با قالب [[متن|/guide/اسلاگ]]',
+            ],
+        '',
+        'قواعد همیشگی:',
+        '- رجیستر «شما»؛ لحن گرم و انسانی',
+        '- ۳ تا ۵ بخش، هر بخش ۲ تا ۳ پاراگراف کوتاه و کاربردی',
+        '- ۳ تا ۴ سؤال متداول با جواب مستقیم',
+        '- هیچ عددی بدون سند؛ کاراکتر U+2014 مطلقاً ممنوع',
+        '',
+        'فقط JSON معتبر بده با کلیدهای: title, h1, excerpt, category, readingMinutes (عدد)،',
+        'sections (آرایه‌ای از {heading, paragraphs}), faqs (آرایه‌ای از {question, answer}).',
+        'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
+      ].join('\n'),
+      { system: SYSTEM_WORKER, maxTokens: 4000 },
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    blockers.push(`تولید نسخهٔ تازه ناموفق بود: ${msg}`);
+    return { team: TEAM, summary: blockers[0], blockers, tasks: [], approved: false };
+  }
+
+  const draftError = validateDraft(draft);
+  if (draftError) {
+    blockers.push(`پیش‌نویس ${kindFa} نامعتبر است: ${draftError}`);
+    return { team: TEAM, summary: blockers[0], blockers, tasks: [], approved: false };
+  }
+
+  // تمیزکاری فارسی
+  const cleanDraft: GuideDraft = {
+    title: sanitizePersian(draft.title),
+    h1: sanitizePersian(draft.h1),
+    excerpt: sanitizePersian(draft.excerpt),
+    category: sanitizePersian(draft.category),
+    readingMinutes: draft.readingMinutes,
+    sections: draft.sections.map((s) => ({
+      heading: sanitizePersian(s.heading),
+      paragraphs: s.paragraphs.map((p) => sanitizePersian(p)),
+    })),
+    faqs: draft.faqs.map((f) => ({
+      question: sanitizePersian(f.question),
+      answer: sanitizePersian(f.answer),
+    })),
+  };
+
+  if (hasForbiddenDash(JSON.stringify(cleanDraft))) {
+    blockers.push('متن نهایی هنوز خط تیرهٔ ممنوعه دارد؛ پچ ساخته نشد.');
+    return { team: TEAM, summary: blockers[0], blockers, tasks: [], approved: false };
+  }
+
+  // داوری سریع منتقد روی نسخهٔ تازه (تک‌دور؛ رد = بلاکر، نه حلقه)
+  await reportLive?.('منتقد: داوری نسخهٔ تازه', 70);
+  try {
+    const draftText = [
+      `تیتر: ${cleanDraft.title}`,
+      `h1: ${cleanDraft.h1}`,
+      `چکیده: ${cleanDraft.excerpt}`,
+      ...cleanDraft.sections.flatMap((s) => [`## ${s.heading}`, ...s.paragraphs]),
+      ...cleanDraft.faqs.flatMap((f) => [`س: ${f.question}`, `ج: ${f.answer}`]),
+    ].join('\n\n');
+    const verdict = await callLLMJson<CriticVerdict>(
+      [
+        `${kindFa} راهنمای «${currentTitle}»:`,
+        draftText,
+        '',
+        'داوری کن. معیارها: فارسی طبیعی، بدون U+2014، اعداد سنددار، کاربردی بودن.',
+        isUpdate
+          ? 'برای آپدیت: آیا اطلاعات تازه اضافه و کهنه حذف شده؟'
+          : 'برای بازنویسی: آیا ساختار واقعاً تازه است؟',
+        'فقط JSON معتبر بده: {"approved": true/false, "score": ۰ تا ۱۰۰, "reason": "یک جمله"}',
+        CRITIC_SCORE_PROMPT_LINE,
+        'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
+      ].join('\n'),
+      { system: SYSTEM_CRITIC },
+    );
+    if (!verdict.approved) {
+      const msg = `منتقد نسخهٔ ${kindFa} را رد کرد: ${verdict.reason || 'بدون دلیل'}`;
+      return { team: TEAM, summary: msg, blockers: [msg], tasks: [], approved: false };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    blockers.push(`داوری منتقد ناموفق بود: ${msg}`);
+    return { team: TEAM, summary: blockers[0], blockers, tasks: [], approved: false };
+  }
+
+  // ساخت پچ جایگزینی (اسلاگ حفظ می‌شود)
+  await reportLive?.('ساخت پچ جایگزینی', 90);
+  let newFileContent = '';
+  try {
+    const guideTs = buildGuideTs(
+      {
+        slug: task.slug, // اسلاگ حفظ می‌شود (قانون سئو)
+        title: cleanDraft.title,
+        keyword: '',
+        angle: '',
+        category: cleanDraft.category,
+      },
+      cleanDraft,
+    );
+    newFileContent = replaceGuide(guidesFile, task.slug, guideTs);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    blockers.push(`ساخت پچ جایگزینی ناموفق بود: ${msg}`);
+    return { team: TEAM, summary: blockers[0], blockers, tasks: [], approved: false };
+  }
+
+  patches.push({ path: GUIDES_PATH, content: newFileContent });
+
+  // ثبت در حافظه
+  await writeMemory({
+    team: TEAM,
+    key: `learned:${input.runId}`,
+    value: JSON.stringify({
+      kind: task.kind,
+      slug: task.slug,
+      title: cleanDraft.title,
+      reason: task.reason,
+      sectionsCount: cleanDraft.sections.length,
+      faqsCount: cleanDraft.faqs.length,
+    }),
+  });
+
+  const summary =
+    `${kindFa} راهنمای «${cleanDraft.title}» (اسلاگ: ${task.slug}) انجام شد؛ ` +
+    `پچ جایگزینی آماده است و تاریخ به‌روزرسانی تازه شد.`;
+  return { team: TEAM, summary, blockers, tasks: [], approved: true, patches };
+}
+
 /**
  * اجرای یک نوبت تیم content: تولید یک راهنمای واقعی + پچ.
  * (پایلوت مهاجرت به حلقه نقد ۳ دوره‌ای lib/critic-loop.ts)
@@ -279,6 +572,18 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   if (!guidesFile) {
     blockers.push('فایل site/lib/guides.ts در ریپوی سایت پیدا نشد.');
     return { team: TEAM, summary: blockers[0], blockers, tasks: [], approved: false };
+  }
+
+  // ---------- مسیر نگهداشت: اگر تسک [آپدیت] یا [بازنویسی] از صف آمده ----------
+  // ارکستر تسک claimشده را در ragContext تزریق می‌کند؛ رهبر تسک‌های نگهداشت
+  // را با همین قالب می‌سازد. این مسیر بالاترین اولویت را دارد.
+  const refreshTask = parseRefreshTask(input.ragContext ?? '');
+  if (refreshTask) {
+    await reportLive?.(
+      `تسک نگهداشت دریافت شد: ${refreshTask.kind === 'update' ? 'آپدیت' : 'بازنویسی'} «${refreshTask.slug}»`,
+      10,
+    );
+    return runRefreshFlow(refreshTask, guidesFile, knowledgeSection, input, reportLive);
   }
 
   // ---------- توابع حلقه نقد ----------

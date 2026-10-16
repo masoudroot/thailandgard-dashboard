@@ -240,6 +240,70 @@ function summarizePages(rows: PageRow[]): string {
 }
 
 /**
+ * تشخیص صفحه‌های راهنما که نیاز به آپدیت یا بازنویسی دارند (دستور مسعود ۱۴۰۵/۰۷/۲۴).
+ *
+ * منطق:
+ * - آپدیت: صفحهٔ /guide/* با ایمپرشن بالا ولی CTR پایین یا در حال افت
+ *   (محتوا کهنه شده؛ تعمیر می‌خواهد نه بازسازی)
+ * - بازنویسی: ایمپرشن خیلی بالا ولی CTR خیلی پایین (محتوا با نیت کاربر
+ *   جور نیست؛ از نو ساختن می‌خواهد)
+ */
+interface StaleGuide {
+  slug: string;
+  pagePath: string;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  kind: 'update' | 'rewrite';
+  reason: string;
+}
+
+function detectStaleGuides(rows: PageRow[]): StaleGuide[] {
+  const out: StaleGuide[] = [];
+  for (const r of rows) {
+    const m = /^\/guide\/([a-z0-9-]+)\/?$/.exec(r.page_path.trim());
+    if (!m) continue;
+    const slug = m[1];
+    const impressions = r.impressions || 0;
+    const clicks = r.clicks || 0;
+    if (impressions < 100) continue; // ترافیک کم؛ اولویت نیست
+    const ctr = impressions > 0 ? clicks / impressions : 0;
+    if (impressions >= 500 && ctr < 0.01) {
+      out.push({
+        slug,
+        pagePath: r.page_path,
+        impressions,
+        clicks,
+        ctr,
+        kind: 'rewrite',
+        reason: `ایمپرشن بالا (${impressions}) ولی CTR خیلی پایین (${(ctr * 100).toFixed(1)}٪)؛ محتوا با نیت جست‌وجو جور نیست`,
+      });
+    } else if (ctr < 0.03) {
+      out.push({
+        slug,
+        pagePath: r.page_path,
+        impressions,
+        clicks,
+        ctr,
+        kind: 'update',
+        reason: `CTR پایین (${(ctr * 100).toFixed(1)}٪) با ${impressions} ایمپرشن؛ اطلاعات احتمالاً کهنه شده`,
+      });
+    }
+  }
+  return out.slice(0, 5);
+}
+
+function summarizeStaleGuides(guides: StaleGuide[]): string {
+  if (guides.length === 0) return '(صفحهٔ راهنمایی که نیاز به آپدیت/بازنویسی داشته باشد پیدا نشد)';
+  return guides
+    .map(
+      (g, i) =>
+        `${i + 1}. [${g.kind === 'update' ? 'آپدیت' : 'بازنویسی'}] اسلاگ: ${g.slug} | ${g.reason}`,
+    )
+    .join('\n');
+}
+
+/**
  * اجرای یک نوبت تیم leader: ساخت بک‌لاگ روزانه از داده و درج در build_queue.
  */
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
@@ -271,6 +335,9 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   }
   const budget = EMERGENCY_TASK_CEILING - todayCount;
 
+  // تشخیص صفحه‌های نیازمند آپدیت/بازنویسی (سیستم نگهداشت محتوا، دستور مسعود ۱۴۰۵/۰۷/۲۴)
+  const staleGuides = detectStaleGuides(pages);
+
   const directive = (input.reviewDirective ?? '').trim();
   await reportLive?.('طراحی تسک‌ها از داده', 40);
 
@@ -296,6 +363,9 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         '== آنالیتیکس صفحات (۷ روز اخیر) ==',
         summarizePages(pages),
         '',
+        '== صفحه‌های راهنمای نیازمند نگهداشت (آپدیت/بازنویسی) ==',
+        summarizeStaleGuides(staleGuides),
+        '',
         directive ? `دستور اصلاح رهبر (حتماً رعایت کن):\n${directive}\n` : '',
         `فقط برای داده‌ای که واقعاً تازه و ارزش اجرا دارد تسک بساز؛ حداکثر ${budget} تسک. صفر تسک هم اشکالی ندارد — برای پر کردن سهمیه تسک نساز.`,
         'قواعد:',
@@ -306,6 +376,14 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         '- files_hint: مسیر فایل‌های مرتبط در ریپو (اگر می‌دانی)، وگرنه رشتهٔ خالی',
         '- هیچ عددی نساز؛ فقط از داده‌های بالا استفاده کن',
         '- کاراکتر U+2014 مطلقاً ممنوع',
+        '',
+        'قواعد نگهداشت محتوا (آپدیت/بازنویسی):',
+        '- برای هر صفحه در فهرست «نیازمند نگهداشت»، یک تسک برای تیم content بساز',
+        '- عنوان تسک آپدیت با «[آپدیت]» شروع شود؛ مثل: [آپدیت] راهنمای best-time-to-visit-thailand',
+        '- عنوان تسک بازنویسی با «[بازنویسی]» شروع شود؛ مثل: [بازنویسی] راهنمای thailand-visa-guide',
+        '- در description حتماً این سه خط باشد: «اسلاگ: <slug>» در خط اول، «دلیل: <دلیل از فهرست>» در خط دوم، «کار: <چه کاری>» در خط سوم',
+        '- کار آپدیت: اطلاعات تازه و مفید اضافه، اطلاعات غلط/قدیمی حذف، لینک داخلی به محتواهای جدید، تاریخ به‌روزرسانی عوض شود',
+        '- کار بازنویسی: ساختار کاملاً جدید ولی اسلاگ حفظ شود (برای سئو)',
         '',
         'فقط JSON معتبر بده: {"tasks": [{"team": "content|seo|design|dev", "title": "...", "description": "...", "acceptance": "...", "estimate": 1|2|3, "priority": "low|medium|high|critical", "files_hint": "..."}]}',
         'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
@@ -364,7 +442,8 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   await reportLive?.('پایان کار', 100);
   const summary =
     `رهبر ${queued.length} تسک تازه از داده ساخت و در صف ثبت کرد ` +
-    `(اینتل: ${intel.length} آیتم، سرچ کنسول: ${gsc.length} کوئری، آنالیتیکس: ${pages.length} صفحه).` +
+    `(اینتل: ${intel.length} آیتم، سرچ کنسول: ${gsc.length} کوئری، آنالیتیکس: ${pages.length} صفحه، ` +
+    `نگهداشت محتوا: ${staleGuides.length} صفحه نیازمند آپدیت/بازنویسی).` +
     (skippedDup > 0 ? ` ${skippedDup} مورد تکراری رد شد.` : '') +
     (skippedInvalid > 0 ? ` ${skippedInvalid} مورد نامعتبر رد شد.` : '') +
     (blockers.length > 0 ? ` ${blockers.length} خطای ثبت.` : '');
