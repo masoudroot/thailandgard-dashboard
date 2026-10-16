@@ -716,14 +716,25 @@ export async function runSingleTeam(
       subagentId = created.id as string;
     }
     await enforceControl(subagentId, task);
-    // مرحله‌ی قبلی تمام شد؛ بقیه‌ی «در حال اجرا»ها موفق ثبت می‌شوند.
-    const { error: closeErr } = await sb
+    // مرحله‌ی قبلی تمام شد؛ بقیه‌ی «در حال اجرا»ها بسته می‌شوند.
+    // صادقانه: اگر لیبل مرحله نشان‌دهندهٔ خطا/تلاش مجدد است، «موفق» ثبت نمی‌شود؛
+    // «خطا» ثبت می‌شود تا داشبورد گمراه‌کننده نباشد (دستور مسعود: وضعیت باید نتیجهٔ واقعی را نشان بدهد).
+    const { data: prevRunning } = await sb
       .from('subagents')
-      .update({ status: 'success', finished_at: new Date().toISOString() })
+      .select('id, label')
       .eq('team_run_id', runRowId)
       .eq('status', 'running')
       .neq('id', subagentId);
-    if (closeErr) console.error('[orchestrator] failed to close previous subagents:', closeErr.message);
+    const nowIso = new Date().toISOString();
+    for (const prev of prevRunning ?? []) {
+      const label = (prev as { label?: string }).label ?? '';
+      const isErrorStep = /خطا|ناموفق|شکست|error|failed/i.test(label);
+      const { error: closeOneErr } = await sb
+        .from('subagents')
+        .update({ status: isErrorStep ? 'failed' : 'success', finished_at: nowIso })
+        .eq('id', (prev as { id: string }).id);
+      if (closeOneErr) console.error('[orchestrator] failed to close previous subagent:', closeOneErr.message);
+    }
     await sb
       .from('subagents')
       .update({ current_task: task.slice(0, 500), progress: pct })

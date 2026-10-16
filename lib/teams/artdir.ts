@@ -95,10 +95,19 @@ async function makeSupervisorPlan(input: TeamInput): Promise<SupervisorPlan> {
   ]
     .filter((l) => l!== '')
     .join('\n');
-  return callLLMJson<SupervisorPlan>(prompt, {
+  const plan = await callLLMJson<SupervisorPlan>(prompt, {
     system: 'تو سرپرست تیم artdir تایلندگرد هستی. فقط JSON معتبر می‌دهی؛ بدون حدس.',
     temperature: 0.3,
   });
+  // اعتبارسنجی ساختاری: callLLMJson فقط JSON بودن را تضمین می‌کند، نه ساختار را.
+  // اگر workers آرایهٔ سه‌تایی نباشد، خطای واضح می‌دهیم تا retry واقعاً سرپرست را دوباره صدا بزند
+  // (نه اینکه در plan.workers.map با «Cannot read properties of undefined» بمیرد).
+  if (!plan || !Array.isArray(plan.workers) || plan.workers.length !== 3 || !plan.workers.every((w) => typeof w === 'string' && w.trim().length > 0)) {
+    throw new Error(
+      `پلن سرپرست نامعتبر است: کلید workers باید آرایه‌ای از سه رشتهٔ مأموریت باشد؛ دریافت شد: ${JSON.stringify(plan).slice(0, 200)}`
+    );
+  }
+  return plan;
 }
 
 /**
