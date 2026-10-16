@@ -256,6 +256,7 @@ export async function claimTeam(
       wave,
       status: 'running',
       started_at: new Date().toISOString(),
+      heartbeat_at: new Date().toISOString(),
       current_task: `claimed by ${owner.engine}:${owner.runId}`,
     })
     .select('id')
