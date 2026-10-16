@@ -20,7 +20,12 @@ import { faDigits } from './format';
 import { runKnowledgeSubagent } from './knowledge-subagent';
 import { runWithTeamContext } from './llm';
 import { notifyTeamReport } from './notify';
-import { claimNextTaskForTeam, listApprovedTasksForTeam } from './taskqueue';
+import {
+  claimNextTaskForTeam,
+  listApprovedTasksForTeam,
+  settleClaimedTask,
+  type ClaimedTaskOutcome,
+} from './taskqueue';
 import {
   ACTIVE_CYCLE_STATUSES,
   normalizeCycleStatus,
@@ -677,6 +682,35 @@ export async function runSingleTeam(
     (heartbeat as unknown as { unref(): void }).unref();
   }
 
+  // رفع ریشه‌ای زامبی‌شدن صف (مشکل ۲): تسک claimشده باید در پایان هر اجرا
+  // (موفق/ردشده/ناموفق/متوقف/ناتمام) حتماً done شود. شناسه بیرون از بلوک
+  // claim نگه داشته می‌شود؛ settleClaimedTaskOnce با گارد once از مسیرهای
+  // صریح صدا زده می‌شود و finally هم تور آخر است — هیچ مسیری جا نمی‌ماند.
+  let claimedTask: { id: string; title: string } | null = null;
+  let claimedTaskSettled = false;
+  const settleClaimedTaskOnce = async (
+    outcome: ClaimedTaskOutcome,
+    summary: string,
+  ): Promise<void> => {
+    if (!claimedTask || claimedTaskSettled) return;
+    claimedTaskSettled = true;
+    try {
+      await settleClaimedTask(claimedTask.id, outcome, {
+        team,
+        title: claimedTask.title,
+        summary,
+      });
+      console.log(
+        `[orchestrator] تسک claimشدهٔ تیم ${team} با سرنوشت «${outcome}» بسته شد (id=${claimedTask.id})`,
+      );
+    } catch (err) {
+      console.error(
+        `[orchestrator] بستن تسک claimشده ${claimedTask.id} خطا داد:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  };
+
   try {
     await reportProgress('شروع اجرا', 5);
     // ساب‌ایجنت دانش: گردآوری نکته‌های تازه از منابع معتبر، قبل از سرپرست.
@@ -712,6 +746,8 @@ export async function runSingleTeam(
     try {
       const claimed = await claimNextTaskForTeam(team);
       if (claimed) {
+        // شناسه بیرون نگه داشته می‌شود تا در پایان اجرا (هر سرنوشتی) بسته شود.
+        claimedTask = { id: claimed.id, title: claimed.title };
         claimedTaskContext =
           `\n\nکار تحویل‌شده از صف ساخت (در اولویت اجرا):\n` +
           `عنوان: ${claimed.title}\n` +
@@ -864,6 +900,12 @@ export async function runSingleTeam(
       // لاگ همهٔ دورهای حلقهٔ بازبینی (دستور مسعود): دور، تأیید/رد، دلیل، دستور
       review_rounds: roundLog,
     });
+    // بستن قطعی تسک claimشده (مشکل ۲): موفق یا ردشده، هر دو done می‌شوند؛
+    // سرنوشت واقعی در result ثبت می‌ماند. best-effort: خطایش نتیجه تیم را خراب نمی‌کند.
+    await settleClaimedTaskOnce(
+      teamStatus === 'success' ? 'success' : 'rejected',
+      result.summary?.slice(0, 4000) ?? '(خلاصه‌ای ثبت نشد)',
+    );
     // دروازه ثبت پچ (دستور مسعود): فقط پچ تیم موفقِ تأییدشده وارد پل می‌شود.
     // تیم ردشده (approved=false → rejected) یا ناموفق (failed) اصلاً در bridge_patches ثبت نمی‌شود.
     if (teamStatus !== 'success') {
@@ -927,6 +969,10 @@ export async function runSingleTeam(
         message: `تیم در چرخه ${ctx.runId} توسط کاربر متوقف شد (مرحله: ${err.stage}).`,
         cycleId,
       });
+      await settleClaimedTaskOnce(
+        'stopped',
+        `تیم در چرخه ${ctx.runId} توسط کاربر متوقف شد (مرحله: ${err.stage}).`,
+      );
       return null;
     }
     const message = err instanceof Error ? err.message : String(err);
@@ -938,6 +984,7 @@ export async function runSingleTeam(
       message: `تیم در چرخه ${ctx.runId} ناموفق بود:\n\n${message.slice(0, 1500)}`,
       cycleId,
     });
+    await settleClaimedTaskOnce('failed', message.slice(0, 4000));
     // خودترمیمی در لحظه (دستور مسعود): اگر این خطا الگو شد (۲ بار پیاپی همسان)،
     // مدل تیم خودکار عوض می‌شود. fail-soft.
     try {
@@ -949,6 +996,12 @@ export async function runSingleTeam(
     return null;
   } finally {
     clearInterval(heartbeat);
+    // تور آخر (مشکل ۲): اگر هیچ‌کدام از مسیرهای بالا تسک claimشده را نبستند،
+    // اینجا با سرنوشت interrupted بسته می‌شود. گارد once از دوباره‌بستن جلوگیری می‌کند.
+    await settleClaimedTaskOnce(
+      'interrupted',
+      'اجرای تیم بدون رسیدن به نقطهٔ پایانی شناخته‌شده تمام شد.',
+    );
   }
 }
 
