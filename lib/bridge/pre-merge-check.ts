@@ -25,8 +25,10 @@ export interface PreMergeCheckResult {
   message: string;
 }
 
-/** حداکثر زمان مجاز برای کلون + tsc (میلی‌ثانیه). */
-const TIMEOUT_MS = 180_000;
+/** حداکثر زمان مجاز برای کلون سبک + نصب وابستگی‌ها + tsc (میلی‌ثانیه).
+ * نصب وابستگی‌ها به‌تنهایی چند دقیقه طول می‌کشد؛ اگر این سقف تنگ باشد،
+ * گیتِ fail-closed همهٔ مرج‌ها را بلاک می‌کند. */
+const TIMEOUT_MS = 900_000;
 
 /**
  * پچ را روی کلون تازه از ریپوی سایت اعمال و tsc را اجرا می‌کند.
@@ -41,8 +43,20 @@ export async function preMergeTypeCheck(
 ): Promise<PreMergeCheckResult> {
   const workdir = await mkdtemp(join(tmpdir(), 'premerge-'));
   try {
-    // ۱. کلون کم‌عمق از شاخه مبنا
-    await execFileAsync('git', ['clone', '--depth', '1', '--branch', baseBranch, siteRepoUrl, workdir + '/site'], { timeout: TIMEOUT_MS });
+    // ۱. کلون سبک از شاخه مبنا: فقط تاریخچهٔ یک‌کامتی، بدون بلاب‌ها،
+    //    و فقط پوشهٔ site (جایی که کد تایپ‌اسکریپت و package.json است).
+    //    کلون کامل در عمل از سقف زمانی رد می‌شد و گیتِ fail-closed همهٔ
+    //    مرج‌ها را بلاک می‌کرد.
+    const cloneDir = workdir + '/site';
+    await execFileAsync(
+      'git',
+      ['clone', '--depth', '1', '--filter=blob:none', '--sparse', '--branch', baseBranch, siteRepoUrl, cloneDir],
+      { timeout: TIMEOUT_MS },
+    );
+    await execFileAsync('git', ['sparse-checkout', 'set', 'site'], {
+      cwd: cloneDir,
+      timeout: TIMEOUT_MS,
+    });
 
     const siteDir = workdir + '/site/site'; // ریپو thailandgard، پوشه site/
 
@@ -72,6 +86,17 @@ export async function preMergeTypeCheck(
     } catch (err: any) {
       const output = String(err.stdout || '') + String(err.stderr || '');
       const errors = output.split('\n').filter((l) => l.includes('error TS')).slice(0, 20);
+      if (errors.length === 0) {
+        // tsc خطای تایپی نداد ولی خروجیش غیرصفر بود: یعنی اصلاً درست اجرا نشد
+        // (مثلاً نصب وابستگی‌ها ناقص ماند). علت خام می‌ماند تا دیباگ ممکن شود؛
+        // پیام «۰ خطا» گمراه‌کننده است پس ساخته نمی‌شود.
+        const tail = output.split('\n').filter((l) => l.trim()).slice(-5).join(' | ').slice(0, 500);
+        return {
+          passed: false,
+          errors: [tail || 'خروجی tsc خالی بود'],
+          message: `بررسی پیش‌مرج انجام نشد: ${tail || 'tsc اجرا نشد'}`,
+        };
+      }
       return {
         passed: false,
         errors,

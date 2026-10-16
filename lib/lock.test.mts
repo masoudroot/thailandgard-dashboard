@@ -132,6 +132,88 @@ test('claimTeam اتمیک است: دومی null می‌گیرد', { skip: !hasE
   }
 });
 
+test('acquireLock هم‌زمان: فقط یکی برنده می‌شود (تست race)', { skip: !hasEnv }, async () => {
+  const beforeLock = await readRawLock();
+  try {
+    // دو فراخوان واقعاً هم‌زمان (نه پشت سر هم)
+    const results = await Promise.allSettled([
+      lock.acquireLock(OWNER_A, 'cycle-race-1'),
+      lock.acquireLock(OWNER_B, 'cycle-race-1'),
+    ]);
+    const won = results.filter((r) => r.status === 'fulfilled');
+    const lost = results.filter((r) => r.status === 'rejected');
+    assert.equal(won.length, 1, 'دقیقاً یک برنده باید باشد');
+    assert.equal(lost.length, 1, 'دقیقاً یک بازنده باید باشد');
+    assert.ok(
+      lost[0].status === 'rejected' && lost[0].reason instanceof lock.LockAcquisitionError,
+      'بازنده باید LockAcquisitionError بگیرد',
+    );
+    // قفل دست برنده است
+    const cur = await readRawLock();
+    const winnerId = won[0].status === 'fulfilled' ? cur?.state?.owner?.runId : null;
+    assert.ok(winnerId === 'owner-a' || winnerId === 'owner-b', 'قفل باید دست یکی از دو مالک باشد');
+    // برنده آزاد می‌کند؛ بازنده حالا می‌تواند بگیرد (انقضا/آزادسازی)
+    await lock.releaseLock(winnerId === 'owner-a' ? OWNER_A : OWNER_B);
+    const loserOwner = winnerId === 'owner-a' ? OWNER_B : OWNER_A;
+    await lock.acquireLock(loserOwner, 'cycle-race-1');
+    const cur2 = await readRawLock();
+    assert.equal(cur2?.state?.owner?.runId, loserOwner.runId, 'پس از آزادسازی، دیگری باید بتواند بگیرد');
+    await lock.releaseLock(loserOwner);
+  } finally {
+    if (beforeLock) {
+      await sb.from('agent_state').upsert({ agent: 'orchestrator:lock', state: beforeLock.state, updated_at: beforeLock.updated_at }, { onConflict: 'agent' });
+    } else {
+      await sb.from('agent_state').delete().eq('agent', 'orchestrator:lock');
+    }
+  }
+});
+
+test('claimTeam هم‌زمان: فقط یکی برنده می‌شود (تست race)', { skip: !hasEnv }, async () => {
+  const runId = `lock-test-race-${Date.now()}`;
+  const { data: cycle, error: cErr } = await sb.from('cycles').insert({ run_id: runId, status: 'running' }).select('id').single();
+  assert.ok(!cErr, `ساخت چرخه‌ی تستی: ${cErr?.message}`);
+  const cycleId = cycle.id as string;
+  try {
+    // ۱۰ claim هم‌زمان برای یک تیم؛ فقط یکی باید موفق شود
+    const results = await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        lock.claimTeam(cycleId, 'seo', 1, { engine: 'lock-test', runId: `racer-${i}` }),
+      ),
+    );
+    const winners = results.filter((r) => r !== null);
+    assert.equal(winners.length, 1, `دقیقاً یک claim باید موفق شود، شد: ${winners.length}`);
+    // فقط یک ردیف running برای این تیم هست
+    const { data: rows } = await sb.from('team_runs').select('id').eq('cycle_id', cycleId).eq('team', 'seo').eq('status', 'running');
+    assert.equal((rows as unknown[]).length, 1, 'فقط یک ردیف running باید وجود داشته باشد');
+  } finally {
+    await sb.from('cycles').delete().eq('id', cycleId);
+  }
+});
+
+test('forceReleaseLock: فقط قفل همین چرخه را آزاد می‌کند', { skip: !hasEnv }, async () => {
+  const beforeLock = await readRawLock();
+  try {
+    await lock.acquireLock(OWNER_A, 'cycle-force-1');
+    // چرخه‌ی اشتباه → آزاد نمی‌شود
+    assert.equal(await lock.forceReleaseLock('cycle-other', 'test'), false);
+    let cur = await readRawLock();
+    assert.equal(cur?.state?.status, 'running', 'قفل باید همچنان دست مالک باشد');
+    // چرخه‌ی درست → آزاد می‌شود
+    assert.equal(await lock.forceReleaseLock('cycle-force-1', 'test'), true);
+    cur = await readRawLock();
+    assert.equal(cur?.state?.status, 'idle');
+    assert.equal(cur?.state?.releasedBy, 'test');
+    // قفل آزاد → دوباره false
+    assert.equal(await lock.forceReleaseLock('cycle-force-1', 'test'), false);
+  } finally {
+    if (beforeLock) {
+      await sb.from('agent_state').upsert({ agent: 'orchestrator:lock', state: beforeLock.state, updated_at: beforeLock.updated_at }, { onConflict: 'agent' });
+    } else {
+      await sb.from('agent_state').delete().eq('agent', 'orchestrator:lock');
+    }
+  }
+});
+
 test('releaseTeamClaim ردیف running را failed می‌کند', { skip: !hasEnv }, async () => {
   const runId = `lock-test-${Date.now()}`;
   const { data: cycle } = await sb.from('cycles').insert({ run_id: runId, status: 'running' }).select('id').single();

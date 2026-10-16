@@ -200,6 +200,29 @@ export function startFakePostgrest() {
               out.push(r);
             }
           } else {
+            // وفاداری به دیتابیس واقعی:
+            //  - agent_state.agent کلید یکتاست (INSERT تکراری → 409/23505)
+            //  - team_runs ایندکس یکتای جزئی دارد: فقط یک ردیف running
+            //    برای هر (cycle_id, team) (مایگریشن 20261015190000)
+            if (name === 'agent_state' && table.some((x) => x.agent === r.agent)) {
+              return json(res, 409, {
+                code: '23505',
+                message: 'duplicate key value violates unique constraint "agent_state_pkey"',
+              });
+            }
+            if (
+              name === 'team_runs' &&
+              r.status === 'running' &&
+              table.some(
+                (x) => x.status === 'running' && x.cycle_id === r.cycle_id && x.team === r.team,
+              )
+            ) {
+              return json(res, 409, {
+                code: '23505',
+                message:
+                  'duplicate key value violates unique constraint "team_runs_one_running_per_team"',
+              });
+            }
             table.push(r);
             out.push(r);
           }

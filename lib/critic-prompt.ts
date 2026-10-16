@@ -49,6 +49,11 @@ export interface BuiltCriticPrompt {
 /** شکل استاندارد حکم منتقد در قرارداد تازه. */
 export interface SmartCriticVerdict {
   approved: boolean;
+  /**
+   * امتیاز کیفی ۰ تا ۱۰۰؛ تعیین‌کننده نهایی: تأیید فقط با امتیاز ≥ ۸۰
+   * (CRITIC_PASS_SCORE در lib/critic-loop.ts).
+   */
+  score?: number;
   /** شرح کامل با جزئیات دلیل رد؛ وقتی approved=true رشته خالی. */
   rejection_detail: string;
   /** دستور دقیق قدم‌به‌قدم برای مجری؛ وقتی approved=true رشته خالی. */
@@ -79,8 +84,8 @@ const faNum = (n: number): string =>
   String(n).replace(/[0-9]/g, (d) => FA_DIGITS[Number(d)]);
 
 const JSON_KEYS_LINE =
-  'فقط JSON معتبر بده با دقیقاً این چهار کلید: ' +
-  '"approved" (بولین)، "rejection_detail" (رشته)، ' +
+  'فقط JSON معتبر بده با دقیقاً این پنج کلید: ' +
+  '"approved" (بولین)، "score" (عدد صحیح ۰ تا ۱۰۰؛ تأیید فقط با ۸۰ یا بالاتر)، "rejection_detail" (رشته)، ' +
   '"fix_instructions" (رشته)، "final_opinion" (رشته). ' +
   'هیچ متنی بیرون از JSON ننویس.';
 

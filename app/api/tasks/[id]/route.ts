@@ -1,9 +1,9 @@
 import { NextRequest } from 'next/server';
 import { ok, fail } from '../../../../lib/api';
 import { InputError } from '../../../../lib/llm-endpoints';
-import { approveTask, rejectTask, completeTask, setTaskLLM } from '../../../../lib/taskqueue';
+import { applyTaskCriticVerdict, approveTask, rejectTask, completeTask, setTaskLLM } from '../../../../lib/taskqueue';
 
-type Action = 'approve' | 'reject' | 'done' | 'set-model';
+type Action = 'approve' | 'reject' | 'done' | 'set-model' | 'critic';
 
 interface PatchBody {
   action?: Action;
@@ -14,11 +14,13 @@ interface PatchBody {
   endpointId?: string | null;
   /** for action 'set-model': نام مدل */
   model?: string;
+  /** for action 'critic': حکم منتقد (بولین الزامی) */
+  approved?: boolean;
 }
 
 /**
  * PATCH /api/tasks/:id: drives the queue lifecycle.
- * Body: { action: 'approve' | 'reject' | 'done' | 'set-model', reason?, result?, commitSha?, endpointId?, model? }
+ * Body: { action: 'approve' | 'reject' | 'done' | 'set-model' | 'critic', reason?, result?, commitSha?, endpointId?, model?, approved? }
  */
 export async function PATCH(
   request: NextRequest,
@@ -50,6 +52,19 @@ export async function PATCH(
       return ok({ id, status: 'done' });
     }
 
+    if (action === 'critic') {
+      // حکم منتقد روی کار pending: رد => rejected؛ تأیید کم‌ریسک (estimate=1) => خودکار approved؛
+      // تأیید بقیه => pending می‌ماند (منتظر تأیید دستی).
+      if (typeof body.approved !== 'boolean') {
+        return fail('Field "approved" (boolean) is required for critic.', 400);
+      }
+      const status = await applyTaskCriticVerdict(id, {
+        approved: body.approved,
+        reason: typeof body.reason === 'string' ? body.reason : undefined,
+      });
+      return ok({ id, status });
+    }
+
     if (action === 'set-model') {
       const endpointId =
         typeof body.endpointId === 'string' ? body.endpointId.trim() : '';
@@ -64,7 +79,7 @@ export async function PATCH(
       return ok({ id, llm: { endpointId, model: body.model.trim() } });
     }
 
-    return fail("Field \"action\" must be one of 'approve', 'reject', 'done', 'set-model'.", 400);
+    return fail("Field \"action\" must be one of 'approve', 'reject', 'done', 'set-model', 'critic'.", 400);
   } catch (err) {
     if (err instanceof InputError) return fail(err.message, 400);
     return fail(err instanceof Error ? err.message : 'Unknown error', 500);

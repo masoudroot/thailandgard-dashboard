@@ -19,6 +19,7 @@ import {
   getBridgePatch,
   mergeBranchIntoDev,
   updateBridgePatch,
+  PreMergeGateError,
 } from '../../../../../../lib/bridge';
 import { GithubError } from '../../../../../../lib/github-changes';
 
@@ -56,10 +57,14 @@ export async function POST(
 
     let merge: { sha: string | null; already_merged: boolean; pr_number: number | null };
     try {
-      merge = await mergeBranchIntoDev(patch.branch);
+      merge = await mergeBranchIntoDev(patch.branch, patch.files ?? []);
     } catch (err) {
       if (err instanceof GithubError) {
         return fail(err.message, err.status >= 400 && err.status < 600 ? err.status : 502);
+      }
+      // رد تایپ‌چک پیش‌مرج: ۴۰۹ با شرح خطاهای تایپ؛ وضعیت پچ دست نمی‌خورد.
+      if (err instanceof PreMergeGateError) {
+        return fail(err.message, 409);
       }
       throw err;
     }

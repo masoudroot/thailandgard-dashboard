@@ -212,7 +212,10 @@ function LiveTeamCard({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          آخرین به‌روزرسانی: <span className="font-medium text-card-foreground">{relativeFa(run?.updated_at)}</span>
+          آخرین پیشرفت: <span className="font-medium text-card-foreground">{relativeFa(run?.updated_at)}</span>
+          {run?.heartbeat_at && (
+            <span> · آخرین ضربان: <span className="font-medium text-card-foreground">{relativeFa(run.heartbeat_at)}</span></span>
+          )}
           {outcome && <span> · {outcome}</span>}
         </p>
       </div>

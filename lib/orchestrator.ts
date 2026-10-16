@@ -18,9 +18,24 @@
 import { getSupabase } from './api';
 import { faDigits } from './format';
 import { runKnowledgeSubagent } from './knowledge-subagent';
+import {
+  acquireLock as acquireLockNew,
+  claimTeam as claimTeamAtomic,
+  forceReleaseLock,
+  readLock as readLockNew,
+  releaseLock as releaseLockNew,
+  touchLock,
+  LockAcquisitionError,
+  type LockOwner,
+} from './lock';
 import { runWithTeamContext } from './llm';
 import { notifyTeamReport } from './notify';
-import { listApprovedTasksForTeam } from './taskqueue';
+import {
+  claimNextTaskForTeam,
+  listApprovedTasksForTeam,
+  settleClaimedTask,
+  type ClaimedTaskOutcome,
+} from './taskqueue';
 import {
   ACTIVE_CYCLE_STATUSES,
   normalizeCycleStatus,
@@ -35,13 +50,27 @@ import {
   type TeamRunStatus,
 } from './types';
 
+/**
+ * @deprecated قفل قدیمی (read-then-write با TTL ۱۵۰ دقیقه‌ای و بدون heartbeat).
+ * race condition دارد: دو فراخوان هم‌زمان می‌توانستند هر دو قفل را بگیرند.
+ * به‌جایش از lib/lock.ts استفاده کن (acquireLock/touchLock/releaseLock).
+ * این توابع فقط برای سازگاری نگه داشته شده‌اند و دیگر هیچ‌جا صدا زده نمی‌شوند.
+ */
 const LOCK_KEY = 'orchestrator:lock';
-/** A lock counts as "someone else is running" only while running and younger than this. */
+/**
+ * @deprecated بخشی از قفل قدیمی است؛ نگاه کن به LOCK_TTL_MS در lib/lock.ts.
+ */
 const LOCK_TTL_MINUTES = 150;
 /** How often a paused cycle re-reads its status while waiting for resume/cancel. */
 const PAUSE_POLL_MS = 5000;
 
-export class CycleLockedError extends Error {}
+/**
+ * چرخه‌ای دیگر در حال اجراست. از LockAcquisitionError ارث می‌برد تا هم
+ * قرارداد قدیمی API (گرفتن instanceof در روت‌ها => 409) حفظ شود، هم
+ * مصرف‌کننده‌های قفل جدید بتوانند آن را به‌عنوان «قفل دست دیگری است»
+ * بگیرند. پیام، همان پیام قفل جدید است (مالک + سن قفل).
+ */
+export class CycleLockedError extends LockAcquisitionError {}
 
 /** وقتی کاربر ساب‌ایجنت را متوقف می‌کند، در مرز مرحله‌ی بعدی پرتاب می‌شود. */
 export class SubagentStoppedError extends Error {
@@ -109,6 +138,7 @@ function makeRunId(): string {
   return `run-${stamp}-${rand}`;
 }
 
+/** @deprecated شکل قدیمی ردیف قفل (snake_case)؛ شکل جدید LockState در lib/lock.ts است. */
 interface LockRow {
   state:
     | {
@@ -122,7 +152,9 @@ interface LockRow {
   updated_at: string;
 }
 
+/** @deprecated به‌جایش readLock از lib/lock.ts. */
 async function readLock(): Promise<LockRow | null> {
+  console.warn('[orchestrator] deprecated: readLock قدیمی صدا زده شد؛ از lib/lock.ts استفاده کن');
   const { data, error } = await getSupabase()
     .from('agent_state')
     .select('state, updated_at')
@@ -132,7 +164,9 @@ async function readLock(): Promise<LockRow | null> {
   return data as LockRow | null;
 }
 
+/** @deprecated به‌جایش touchLock/releaseLock/forceReleaseLock از lib/lock.ts. */
 async function writeLock(state: Record<string, unknown>): Promise<void> {
+  console.warn('[orchestrator] deprecated: writeLock قدیمی صدا زده شد؛ از lib/lock.ts استفاده کن');
   const { error } = await getSupabase()
     .from('agent_state')
     .upsert(
@@ -142,7 +176,12 @@ async function writeLock(state: Record<string, unknown>): Promise<void> {
   if (error) throw new Error(`failed to write orchestrator lock: ${error.message}`);
 }
 
+/**
+ * @deprecated race دارد (read-then-write). به‌جایش acquireLock از lib/lock.ts
+ * که با compare-and-swap اتمیک است.
+ */
 async function acquireLock(runId: string): Promise<void> {
+  console.warn('[orchestrator] deprecated: acquireLock قدیمی صدا زده شد؛ از lib/lock.ts استفاده کن');
   const existing = await readLock();
   if (existing?.state?.status === 'running') {
     const ref =
@@ -165,25 +204,39 @@ async function acquireLock(runId: string): Promise<void> {
 
 /** فقط قفل گرفتن + ساخت ردیف cycles (بدون اجرای موج‌ها). */
 export async function beginCycle(): Promise<{ cycleId: string; runId: string }> {
+  // رفع ریشه‌ای مشکل kill (مشکل ۶): پیش از گرفتن قفل، بقایای چرخه مرده
+  // (قفل stale، تسک‌های claimشده رها، وضعیت‌های ناتمام، پچ‌های gated یتیم)
+  // بازیابی می‌شوند تا چرخه جدید تمیز شروع شود. fail-soft است.
+  try {
+    const { recoverDeadCycles } = await import('./cycle-recovery');
+    await recoverDeadCycles();
+  } catch (err) {
+    console.error('[orchestrator] cycle recovery before beginCycle failed (continuing):', err instanceof Error ? err.message : err);
+  }
   const runId = makeRunId();
-  await acquireLock(runId);
+  // شناسه‌ی چرخه را همین‌جا می‌سازیم تا در همان لحظه‌ی گرفتن قفل، cycleId
+  // روی قفل ثبت شود؛ بازیابی چرخه‌ی مرده (cycle-recovery) با همین cycleId
+  // قفل را به چرخه‌ی درست وصل می‌کند. قفل جدید اتمیک است (CAS)؛ برخلاف
+  // قفل قدیمی، دو beginCycle هم‌زمان نمی‌توانند هر دو موفق شوند.
+  const cycleId = crypto.randomUUID();
+  const owner: LockOwner = {
+    engine: process.env.GITHUB_RUN_ID ? 'github-actions' : 'vercel',
+    runId,
+  };
+  try {
+    await acquireLockNew(owner, cycleId);
+  } catch (err) {
+    // قرارداد API حفظ می‌شود: روت‌ها instanceof CycleLockedError را می‌گیرند (409)
+    if (err instanceof LockAcquisitionError) throw new CycleLockedError(err.message);
+    throw err;
+  }
   const sb = getSupabase();
-  const { data, error } = await sb
-    .from('cycles')
-    .insert({ run_id: runId, status: 'running' })
-    .select('id')
-    .single();
+  const { error } = await sb.from('cycles').insert({ id: cycleId, run_id: runId, status: 'running' });
   if (error) {
-    await writeLock({ status: 'idle', run_id: runId, released_at: new Date().toISOString() });
+    // ردیف چرخه ساخته نشد؛ قفل را پس بده تا چرخه‌ی بعدی گیر نکند
+    await releaseLockNew(owner).catch(() => {});
     throw new Error(`failed to create cycle row: ${error.message}`);
   }
-  const cycleId = data.id as string;
-  await writeLock({
-    status: 'running',
-    run_id: runId,
-    cycle_id: cycleId,
-    started_at: new Date().toISOString(),
-  });
   return { cycleId, runId };
 }
 
@@ -221,14 +274,22 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function touchPausedLock(cycleId: string, runId: string | null): Promise<void> {
-  await writeLock({
-    status: 'running',
-    paused: true,
-    run_id: runId,
-    cycle_id: cycleId,
-    paused_at: new Date().toISOString(),
-  });
+/**
+ * ضربان قفل در حلقه‌ی انتظار pause: قفل را تازه نگه می‌دارد تا stale حساب
+ * نشود. برخلاف نسخه‌ی قدیمی (writeLock بدون بررسی مالکیت و raceدار)، فقط
+ * با هویت دارنده‌ی فعلی قفل heartbeat می‌زند؛ اگر قفل دست چرخه‌ی دیگری
+ * باشد، چیزی نمی‌نویسد. fail-soft است تا حلقه‌ی انتظار نشکند.
+ */
+async function touchPausedLock(cycleId: string): Promise<void> {
+  try {
+    const lock = await readLockNew();
+    const st = lock?.state;
+    if (!st || st.status !== 'running' || !st.owner) return;
+    if (st.cycleId && st.cycleId !== cycleId) return; // مال چرخه‌ی دیگری است
+    await touchLock(st.owner);
+  } catch (err) {
+    console.error('[orchestrator] touchPausedLock failed:', err instanceof Error ? err.message : err);
+  }
 }
 
 /**
@@ -248,7 +309,7 @@ async function checkpointBeforeWave(
   if (status === 'paused') {
     // تیم‌های موج جاری تمام شده‌اند؛ موج بعدی شروع نمی‌شود تا ادامه یا لغو برسد.
     for (;;) {
-      await touchPausedLock(cycleId, runId);
+      await touchPausedLock(cycleId);
       await sleep(PAUSE_POLL_MS);
       const s = await readCycleStatus(cycleId);
       if (s === 'canceled') return 'canceled';
@@ -287,15 +348,21 @@ export async function resumeCycle(cycleId: string): Promise<void> {
   }
   await setCycleStatus(cycleId, 'running');
 
-  // قفل را تازه می‌کنیم تا ورکر گیت‌هاب اکشنز در تیک بعدی چرخه را ادامه دهد.
-  // اجرا روی ورسل انجام نمی‌شود؛ ورسل فقط داشبورد و API مدیریتی است.
-  await writeLock({
-    status: 'running',
-    run_id: row.run_id,
-    cycle_id: cycleId,
-    resumed_at: new Date().toISOString(),
-    started_at: new Date().toISOString(),
-  });
+  // قفل را تازه نگه می‌داریم تا ورکر گیت‌هاب اکشنز در تیک بعدی چرخه را ادامه دهد.
+  // فقط اگر قفل هنوز دست همین چرخه است ضربان می‌زنیم؛ هرگز قفل چرخه‌ی
+  // دیگری را نمی‌دزدیم. fail-soft است چون سیگنال اصلی، وضعیت cycles است.
+  try {
+    const lock = await readLockNew();
+    const st = lock?.state;
+    if (st?.status === 'running' && st.owner && (!st.cycleId || st.cycleId === cycleId)) {
+      await touchLock(st.owner);
+    }
+  } catch (err) {
+    console.error(
+      '[orchestrator] resumeCycle: lock refresh failed (continuing):',
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 /** لغو چرخهٔ فعال: وضعیت canceled + آزاد شدن قفل. حلقه‌ی اجرا در اولین ایست‌بازرسی می‌ایستد. */
@@ -316,11 +383,9 @@ export async function cancelCycle(cycleId: string): Promise<void> {
     })
     .eq('id', cycleId);
   if (error) throw new Error(`failed to cancel cycle: ${error.message}`);
-  await writeLock({
-    status: 'canceled',
-    cycle_id: cycleId,
-    finished_at: new Date().toISOString(),
-  });
+  // آزادسازی قفل بدون توجه به مالکیت (لغو دستی از داشبورد)؛
+  // فقط اگر قفل مال همین چرخه باشد تا قفل چرخه‌ی تازه‌ای آزاد نشود.
+  await forceReleaseLock(cycleId, 'cancelCycle');
 }
 
 /** آیا چرخهٔ فعالی (running/pausing/paused) در دیتابیس هست؟ */
@@ -531,15 +596,18 @@ export async function runSingleTeam(
     // ردیف از قبل با claimTeam اتمیک ساخته شده؛ فقط استفاده کن
     runRowId = teamRunId;
   } else {
-    const { data: runRow, error: insertErr } = await sb
-      .from('team_runs')
-      .insert({ cycle_id: cycleId, team, wave, status: 'running' })
-      .select('id')
-      .single();
-    if (insertErr || !runRow) {
-      throw new Error(`failed to create team_runs row for ${team}: ${insertErr?.message}`);
+    // claim اتمیک از lib/lock.ts (ایندکس یکتای team_runs_one_running_per_team):
+    // اگر ورکر دیگری هم‌زمان همین تیم را برداشت، null برمی‌گردد و این اجرا
+    // بی‌صدا رد می‌شود؛ برخلاف insert خام قبلی که race داشت و throw می‌کرد.
+    const claimed = await claimTeamAtomic(cycleId, team, wave, {
+      engine: 'orchestrator',
+      runId: ctx.runId,
+    });
+    if (!claimed) {
+      console.log(`[orchestrator] team ${team} already claimed by another worker; skipping`);
+      return null;
     }
-    runRowId = runRow.id as string;
+    runRowId = claimed;
   }
 
   const finish = async (patch: Record<string, unknown>) => {
@@ -662,12 +730,14 @@ export async function runSingleTeam(
       .eq('id', subagentId);
   };
 
-  // ضربان: اگر تیم مدتی مرحله‌ای گزارش نکرد، ردیف لمس می‌شود تا معلوم باشد
-  // فرایند هنوز زنده است (updated_at تازه می‌ماند).
+  // ضربانِ زنده‌بودن: هر ۶۰ ثانیه فقط heartbeat_at نوشته می‌شود.
+  // عمداً updated_at لمس نمی‌شود تا «زنده‌بودن فرایند» از «پیشرفت واقعی»
+  // جدا بماند؛ وگرنه نگهبان (واچ‌داگ/ورکر) تیمِ هنگ‌کرده‌ی ضربان‌زن را
+  // «سالم» می‌بیند. تریگر دیتابیس هم همین جدایی را تضمین می‌کند.
   const heartbeat = setInterval(() => {
     void sb
       .from('team_runs')
-      .update({ current_task: lastTask || 'در حال اجرا', progress: Math.max(0, lastPct) })
+      .update({ heartbeat_at: new Date().toISOString() })
       .eq('id', runRowId)
       .then(({ error }) => {
         if (error) console.error(`[orchestrator] heartbeat failed for ${team}:`, error.message);
@@ -676,6 +746,37 @@ export async function runSingleTeam(
   if (typeof heartbeat === 'object' && 'unref' in heartbeat) {
     (heartbeat as unknown as { unref(): void }).unref();
   }
+
+  // رفع ریشه‌ای زامبی‌شدن صف (مشکل ۲): تسک claimشده باید در پایان هر اجرا
+  // (موفق/ردشده/ناموفق/متوقف/ناتمام) حتماً done شود. شناسه بیرون از بلوک
+  // claim نگه داشته می‌شود؛ settleClaimedTaskOnce با گارد once از مسیرهای
+  // صریح صدا زده می‌شود و finally هم تور آخر است — هیچ مسیری جا نمی‌ماند.
+  // گارد محلی فقط پس از موفقیت واقعی ست می‌شود تا خطای گذرای دیتابیس،
+  // تلاش مجدد در finally را از بین نبرد.
+  let claimedTask: { id: string; title: string } | null = null;
+  let claimedTaskSettled = false;
+  const settleClaimedTaskOnce = async (
+    outcome: ClaimedTaskOutcome,
+    summary: string,
+  ): Promise<void> => {
+    if (!claimedTask || claimedTaskSettled) return;
+    try {
+      await settleClaimedTask(claimedTask.id, outcome, {
+        team,
+        title: claimedTask.title,
+        summary,
+      });
+      claimedTaskSettled = true;
+      console.log(
+        `[orchestrator] تسک claimشدهٔ تیم ${team} با سرنوشت «${outcome}» بسته شد (id=${claimedTask.id})`,
+      );
+    } catch (err) {
+      console.error(
+        `[orchestrator] بستن تسک claimشده ${claimedTask.id} خطا داد:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  };
 
   try {
     await reportProgress('شروع اجرا', 5);
@@ -706,6 +807,32 @@ export async function runSingleTeam(
     resetLLMStats();
     const runTeam = await loadRunTeam(team);
     const memory = await loadTeamMemory(team);
+    // قدم ۳: تحویل اتمیک تسک از صف ساخت. اگر تسک بود، بریف آن (عنوان/شرح/معیار
+    // قبولی) به ورودی تیم تزریق می‌شود؛ اگر نبود، رفتار فعلی (حدسی) حفظ می‌شود.
+    let claimedTaskContext = '';
+    try {
+      const claimed = await claimNextTaskForTeam(team);
+      if (claimed) {
+        // شناسه بیرون نگه داشته می‌شود تا در پایان اجرا (هر سرنوشتی) بسته شود.
+        claimedTask = { id: claimed.id, title: claimed.title };
+        claimedTaskContext =
+          `\n\nکار تحویل‌شده از صف ساخت (در اولویت اجرا):\n` +
+          `عنوان: ${claimed.title}\n` +
+          `شرح: ${(claimed.description ?? '').trim() || 'ثبت نشده'}\n` +
+          `معیار قبولی: ${(claimed.acceptance ?? '').trim() || 'ثبت نشده'}\n`;
+        console.log(`[orchestrator] تیم ${team}: کار «${claimed.title}» از صف claim شد (id=${claimed.id})`);
+        const { error: curErr } = await sb
+          .from('team_runs')
+          .update({ current_task: `کار صف: ${claimed.title}`.slice(0, 500) })
+          .eq('id', runRowId);
+        if (curErr) console.error(`[orchestrator] failed to set current_task for ${team}:`, curErr.message);
+      }
+    } catch (err) {
+      console.error(
+        `[orchestrator] claim تسک برای تیم ${team} خطا داد (رفتار فعلی حفظ شد):`,
+        err instanceof Error ? err.message : err,
+      );
+    }
     // کارهای تأییدشدهٔ این تیم («برود در چرخه») در اولویت زمینهٔ اجرا قرار می‌گیرند.
     let approvedContext = '';
     try {
@@ -720,7 +847,7 @@ export async function runSingleTeam(
       console.error(`[orchestrator] failed to load approved tasks for ${team}:`, err instanceof Error ? err.message : err);
     }
     const baseRagContext =
-      buildRagContext(ctx.previousWavesOutput) + approvedContext + knowledgeSnippet;
+      buildRagContext(ctx.previousWavesOutput) + claimedTaskContext + approvedContext + knowledgeSnippet;
     // دانش ذخیره‌شده تیم (قانون مسعود): همه تیم‌ها باید از دانششان استفاده کنند.
     // به‌جای تکیه بر input.memory (که ۱۱ تیم نادیده می‌گرفتند)، مستقیم در ragContext تزریق می‌شود.
     let teamKnowledgeContext = '';
@@ -840,6 +967,12 @@ export async function runSingleTeam(
       // لاگ همهٔ دورهای حلقهٔ بازبینی (دستور مسعود): دور، تأیید/رد، دلیل، دستور
       review_rounds: roundLog,
     });
+    // بستن قطعی تسک claimشده (مشکل ۲): موفق یا ردشده، هر دو done می‌شوند؛
+    // سرنوشت واقعی در result ثبت می‌ماند. best-effort: خطایش نتیجه تیم را خراب نمی‌کند.
+    await settleClaimedTaskOnce(
+      teamStatus === 'success' ? 'success' : 'rejected',
+      result.summary?.slice(0, 4000) ?? '(خلاصه‌ای ثبت نشد)',
+    );
     // دروازه ثبت پچ (دستور مسعود): فقط پچ تیم موفقِ تأییدشده وارد پل می‌شود.
     // تیم ردشده (approved=false → rejected) یا ناموفق (failed) اصلاً در bridge_patches ثبت نمی‌شود.
     if (teamStatus !== 'success') {
@@ -903,6 +1036,10 @@ export async function runSingleTeam(
         message: `تیم در چرخه ${ctx.runId} توسط کاربر متوقف شد (مرحله: ${err.stage}).`,
         cycleId,
       });
+      await settleClaimedTaskOnce(
+        'stopped',
+        `تیم در چرخه ${ctx.runId} توسط کاربر متوقف شد (مرحله: ${err.stage}).`,
+      );
       return null;
     }
     const message = err instanceof Error ? err.message : String(err);
@@ -914,6 +1051,7 @@ export async function runSingleTeam(
       message: `تیم در چرخه ${ctx.runId} ناموفق بود:\n\n${message.slice(0, 1500)}`,
       cycleId,
     });
+    await settleClaimedTaskOnce('failed', message.slice(0, 4000));
     // خودترمیمی در لحظه (دستور مسعود): اگر این خطا الگو شد (۲ بار پیاپی همسان)،
     // مدل تیم خودکار عوض می‌شود. fail-soft.
     try {
@@ -925,6 +1063,12 @@ export async function runSingleTeam(
     return null;
   } finally {
     clearInterval(heartbeat);
+    // تور آخر (مشکل ۲): اگر هیچ‌کدام از مسیرهای بالا تسک claimشده را نبستند،
+    // اینجا با سرنوشت interrupted بسته می‌شود. گارد once از دوباره‌بستن جلوگیری می‌کند.
+    await settleClaimedTaskOnce(
+      'interrupted',
+      'اجرای تیم بدون رسیدن به نقطهٔ پایانی شناخته‌شده تمام شد.',
+    );
   }
 }
 
@@ -973,16 +1117,12 @@ export async function finishCycle(
       .eq('id', cycleId);
     if (error) console.error('[orchestrator] failed to update cycles row:', error.message);
     // آزاد کردن قفل: وضعیت دیگر running نیست، ولی ردیف برای حسابرسی می‌ماند.
-    await writeLock({
-      status,
-      run_id: (cycle as { run_id?: string } | null)?.run_id ?? null,
-      cycle_id: cycleId,
-      finished_at: new Date().toISOString(),
-    });
+    // فقط اگر قفل مال همین چرخه باشد (تا قفل چرخه‌ی تازه‌ای را آزاد نکنیم).
+    await forceReleaseLock(cycleId, 'finishCycle');
   } catch (err) {
     console.error('[orchestrator] finishCycle failed:', err instanceof Error ? err.message : err);
     try {
-      await writeLock({ status, cycle_id: cycleId, finished_at: new Date().toISOString() });
+      await forceReleaseLock(cycleId, 'finishCycle');
     } catch {
       /* best effort */
     }

@@ -6,6 +6,7 @@
 import { fail, getSupabase, ok } from '../../../../../../../lib/api';
 import { requireManagerAuth } from '../../../../../../../lib/manager-auth';
 import { indexKnowledge, RAGError } from '../../../../../../../lib/rag';
+import { reportIndexOutcome } from '../../../../../../../lib/rag-index-health';
 import {
   contentHash,
   fetchPageText,
@@ -91,12 +92,25 @@ export async function POST(
       return fail(`ثبت دانش ناموفق بود: ${insertErr?.message ?? 'خطای ناشناخته'}`, 500);
     }
 
-    // ۴. ایندکس RAG (best-effort)
+    // ۴. ایندکس RAG (best-effort)؛ خطا دیگر بی‌صدا نیست (رفع ریشه‌ای مشکل ۳).
     let warning: string | null = null;
     try {
       await indexKnowledge(item.id, source.team as string, title, content);
+      await reportIndexOutcome({
+        knowledgeId: item.id,
+        team: source.team as string,
+        ok: true,
+        source: 'api/manager/knowledge/sources/refresh',
+      });
     } catch (err) {
       warning = err instanceof RAGError ? err.message : 'ایندکس معنایی انجام نشد.';
+      await reportIndexOutcome({
+        knowledgeId: item.id,
+        team: source.team as string,
+        ok: false,
+        error: warning,
+        source: 'api/manager/knowledge/sources/refresh',
+      });
     }
 
     await markFetch('ok', null);

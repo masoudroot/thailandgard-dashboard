@@ -29,6 +29,9 @@ import {
 import {
   runCriticLoop,
   retryInCycle,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -121,6 +124,8 @@ interface WorkerRoundOutput {
 /** حکم منتقد روی کد واقعی. */
 interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
   /** کد نهایی تأییدشده یا اصلاح‌شده؛ در صورت رد می‌تواند تهی باشد. */
   files: PatchFile[];
@@ -249,14 +254,16 @@ async function judgeWorker(files: PatchFile[]): Promise<CriticVerdict> {
     'ت) U+2014 در کد یا متن نیست؟',
     'ث) فقط توکن‌های تم وایب‌فارسی/گرافیت به کار رفته؟ (بدون hex من‌درآوردی، بدون سایه)',
     'اگر ایراد کوچکی هست، خودت در files اصلاحش کن و approved بده. فقط اگر ایراد ساختاری جدی است رد کن.',
-    'فقط JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جملهٔ فارسی)، files (آرایهٔ {path، content} نهایی؛ در صورت رد می‌تواند تهی باشد).',
+    'فقط JSON معتبر بده با کلیدهای: approved (بولین)، score (عدد ۰ تا ۱۰۰)، reason (یک جملهٔ فارسی)، files (آرایهٔ {path، content} نهایی؛ در صورت رد می‌تواند تهی باشد).',
+    CRITIC_SCORE_PROMPT_LINE,
   ].join('\n');
-  return callLLMJson<CriticVerdict>(prompt, {
+  const verdict = await callLLMJson<CriticVerdict>(prompt, {
     system:
       'تو منتقد سخت‌گیر کد تیم design هستی. کد واقعی را داوری می‌کنی نه توضیح را. فقط JSON معتبر می‌دهی.',
     temperature: 0.2,
     maxTokens: 6000,
   });
+  return { ...verdict, score: parseCriticScore(verdict.score) ?? undefined };
 }
 
 /** یادگیری چرخه در حافظه؛ اگر ماژول حافظه هنوز ساخته نشده باشد، بی‌صدا رد می‌شود. */
@@ -350,13 +357,9 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       50,
     );
     // دستور صریح حلقهٔ بیرونی (ارکستراتور) در همین چرخه — اولویت بالا، جدا از ragContext.
-    const outerDirective = input.reviewDirective?.trim()
-      ? `دستور مستقیم منتقد از حلقهٔ بیرونی (همین چرخه — بالاترین اولویت، حتماً اعمال کن):\n${input.reviewDirective.trim()}`
-      : undefined;
-    const combinedInstruction = [outerDirective, prevInstruction]
-      .filter(Boolean)
-      .join('\n\n');
-    const workerOut = await executeWorker(component, combinedInstruction || undefined);
+    // با همان قرارداد مشترک همه تیم‌ها (combineReviewDirectives).
+    const combinedInstruction = combineReviewDirectives(input.reviewDirective, prevInstruction);
+    const workerOut = await executeWorker(component, combinedInstruction);
     const localError = validatePatches(workerOut.files);
     if (localError) {
       throw new Error(`خروجی مجری نامعتبر است: ${localError}`);
@@ -377,6 +380,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     // حکم ناقص LLM نباید «undefined» چاپ کند
     const verdict: CriticVerdict = {
       approved: rawVerdict?.approved === true,
+      score: rawVerdict?.score,
       reason:
         typeof rawVerdict?.reason === 'string' && rawVerdict.reason.trim()
           ? rawVerdict.reason
@@ -387,10 +391,12 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     lastRawReason = verdict.reason;
     lastCriticFiles = verdict.files;
     const reason = verdict.reason;
+    const score = verdict.score;
 
     if (round === 3) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -400,6 +406,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     if (verdict.approved) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -408,6 +415,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     }
     return {
       approved: false,
+      score,
       reason,
       instruction: criticInstructionFromReason(reason),
       acceptance: criticAcceptanceFromReason(reason),

@@ -10,10 +10,10 @@
 import { getSupabase } from '../lib/api';
 import { WAVES, type TeamName } from '../lib/types';
 import { findActiveCycle, finishCycle, runSingleTeam, beginCycle } from '../lib/orchestrator';
-import { claimTeam, type LockOwner } from '../lib/lock';
+import { claimTeam, readLock, touchLock, type LockOwner } from '../lib/lock';
 import { getSetting } from '../lib/settings';
-
-const STUCK_TIMEOUT_MS = 15 * 60 * 1000;
+import { sweepHungTeams } from '../lib/team-health';
+import { recoverDeadCycles, isAutoRestartableAfterKill } from '../lib/cycle-recovery';
 
 /** سقف پردازش پچ‌های یتیم در هر تیک، تا بودجه‌ی زمانی جاب خورده نشود. */
 const ORPHAN_SWEEP_LIMIT = 3;
@@ -62,7 +62,9 @@ async function sweepOrphanedBridgePatches(): Promise<void> {
  * اگر آخرین چرخه با success بسته شده و تنظیم auto_start_next_cycle مخالف
  * صریح (false) نیست، خودکار beginCycle می‌زند تا سیستم تا دخالت دستی نخوابد.
  * (دستور مسعود: سایت کاملاً خودکار باشد.)
- * اگر آخرین چرخه failed بود، چرخه‌ی تازه نمی‌سازد — نیاز به توجه دارد.
+ * اگر آخرین چرخه failed بود، چرخه‌ی تازه نمی‌سازد — نیاز به توجه دارد؛
+ * استثنا: چرخه‌ای که با kill مرده و بازیابی شده (KILLED) — آن خودکار
+ * با چرخه‌ای تمیز ادامه می‌یابد، چون kill رویداد زیرساختی است نه سیگنال کیفی.
  * اگر اصلاً چرخه‌ای نبود هم هیچ‌چیز نمی‌سازد؛ شروع اول دستی است.
  */
 async function autoStartNextCycleIfNeeded(): Promise<{ cycleId: string; runId: string } | null> {
@@ -74,7 +76,7 @@ async function autoStartNextCycleIfNeeded(): Promise<{ cycleId: string; runId: s
   const sb = getSupabase();
   const { data, error } = await sb
     .from('cycles')
-    .select('id, status')
+    .select('id, status, error')
     .order('started_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -82,19 +84,56 @@ async function autoStartNextCycleIfNeeded(): Promise<{ cycleId: string; runId: s
     console.log('no previous cycle; waiting for manual start');
     return null;
   }
-  const last = data as { id: string; status: string };
-  if (last.status !== 'success') {
+  const last = data as { id: string; status: string; error?: string | null };
+  if (last.status !== 'success' && !isAutoRestartableAfterKill(last)) {
     console.log(`last cycle ${last.id} ended with '${last.status}'; not auto-starting (needs attention)`);
     return null;
+  }
+  if (isAutoRestartableAfterKill(last)) {
+    console.log(`last cycle ${last.id} was killed and recovered; auto-starting a clean cycle`);
   }
   const { cycleId, runId } = await beginCycle();
   console.log(`auto-started next cycle: ${runId} (${cycleId})`);
   return { cycleId, runId };
 }
 
+/**
+ * ضربان قفل چرخه در هر تیک ورکر (قفل جدید lib/lock.ts با TTL ده‌دقیقه‌ای).
+ *
+ * چرا لازم است؟ beginCycle قفل را با owner می‌گیرد؛ اگر هیچ‌کس heartbeat
+ * نزند، قفل پس از ۱۰ دقیقه stale می‌شود و beginCycle دیگری می‌تواند وسط
+ * همین چرخه قفل را تصاحب کند. ورکر هر ۵ دقیقه تیک می‌زند، پس با این ضربان
+ * قفلِ چرخه‌ی فعال همیشه تازه می‌ماند.
+ *
+ * engine-agnostic است: هویت دارنده را از خود ردیف قفل می‌خواند (چرخه ممکن
+ * است از ورسل شروع شده باشد و ورکر گیت‌هاب آن را ادامه دهد). اگر قفل مال
+ * چرخه‌ی دیگری باشد یا دیگر دست ما نباشد، چیزی نمی‌نویسد (fail-soft).
+ */
+async function heartbeatCycleLock(cycleId: string): Promise<void> {
+  try {
+    const lock = await readLock();
+    const st = lock?.state;
+    if (!st || st.status !== 'running' || !st.owner) return;
+    if (st.cycleId && st.cycleId !== cycleId) return; // مال چرخه‌ی دیگری است
+    await touchLock(st.owner);
+  } catch (err) {
+    // قفل را از دست داده‌ایم یا خطای دیتابیس؛ تیک ادامه می‌یابد
+    console.error('[worker] cycle lock heartbeat failed:', err instanceof Error ? err.message : err);
+  }
+}
+
 async function main(): Promise<void> {
   const sb = getSupabase();
   const action = process.argv[2];
+
+  // رفع ریشه‌ای مشکل kill (مشکل ۶): در شروع هر تیک، اول بقایای چرخه مرده
+  // (قفل stale، تسک‌های claimشده رها، وضعیت‌های ناتمام، پچ‌های gated یتیم)
+  // بازیابی می‌شود؛ بعد تصمیم‌گیری عادی. fail-soft است.
+  try {
+    await recoverDeadCycles();
+  } catch (err) {
+    console.error('[worker] cycle recovery at tick start failed (continuing):', err instanceof Error ? err.message : err);
+  }
 
   // ساخت چرخه جدید
   if (action === 'start-cycle') {
@@ -124,7 +163,11 @@ async function main(): Promise<void> {
       }
       cycleId = auto.cycleId;
       runId = auto.runId;
+      await heartbeatCycleLock(cycleId);
     } else {
+      // چرخه‌ی متوقف‌شده هم قفلش را نگه می‌دارد تا چرخه‌ی دیگری وسط
+      // توقف، قفل stale را تصاحب نکند؛ پس ضربان پیش از بررسی pause.
+      await heartbeatCycleLock(active.id as string);
       if (active.status === 'pausing' || active.status === 'paused') {
         console.log(`cycle ${active.run_id} is ${active.status}; skipping team claim`);
         return;
@@ -141,26 +184,19 @@ async function main(): Promise<void> {
     .eq('cycle_id', cycleId)
     .order('started_at', { ascending: true });
   const teamStatus: Record<string, string> = {};
-  const teamHeartbeat: Record<string, number> = {};
-  for (const r of (runs ?? []) as { team: string; status: string; started_at: string; updated_at?: string }[]) {
+  for (const r of (runs ?? []) as { team: string; status: string }[]) {
     teamStatus[r.team] = r.status;
-    // ضربان: آخرین به‌روزرسانی پیشرفت؛ اگر نبود، زمان شروع
-    teamHeartbeat[r.team] = new Date(r.updated_at ?? r.started_at).getTime();
   }
 
-  // تایم‌اوت تیم‌های گیرکرده: فقط اگر بیش از ۱۵ دقیقه هیچ پیشرفتی
-  // گزارش نکرده باشند (مبنای مرگ، ضربان است نه زمان شروع)
-  const now = Date.now();
-  for (const [team, status] of Object.entries(teamStatus)) {
-    if (status === 'running' && now - (teamHeartbeat[team] ?? 0) > STUCK_TIMEOUT_MS) {
-      console.log(`timing out stuck team (no heartbeat for 15m): ${team}`);
-      await sb
-        .from('team_runs')
-        .update({ status: 'failed', error: 'تایم‌اوت ورکر: بیش از ۱۵ دقیقه بدون هیچ پیشرفتی', finished_at: new Date().toISOString() })
-        .eq('cycle_id', cycleId)
-        .eq('team', team);
-      teamStatus[team] = 'failed';
-    }
+  // جاروی تیم‌های گیرکرده (دو سیگنال جدا: ضربان در برابر پیشرفت).
+  //  - فرایندِ بی‌ضربانِ بیش از ۱۵ دقیقه → «مرده»، ناموفق ثبت می‌شود؛
+  //  - ضربانِ زنده ولی بی‌پیشرفتِ بیش از ۱۰ دقیقه → «هنگ»، ناموفق ثبت می‌شود
+  //    تا موج جلو برود (ری‌استارت چرخه). واچ‌داگ جداگانه هشدار می‌فرستد.
+  // نکته‌ی ریشه‌ای: مبنای «پیشرفت» ستون updated_at است که پس از جداسازی،
+  // ضربان دیگر آن را تازه نمی‌کند؛ پس تیمِ هنگِ ضربان‌زن دیگر «سالم» دیده نمی‌شود.
+  const hung = await sweepHungTeams(sb, cycleId);
+  for (const h of hung) {
+    teamStatus[h.team] = 'failed';
   }
 
   // تیم «ردشده توسط منتقد» موج را بلاک نمی‌کند؛ کارش را انجام داده و در چرخه بعد دوباره تلاش می‌کند
@@ -210,9 +246,9 @@ async function main(): Promise<void> {
   }
 
   // نکته: heartbeat سطح تیم داخل runSingleTeam انجام می‌شود (ردیف team_runs را
-  // تازه نگه می‌دارد تا تایم‌اوت اشتباه نخورد). heartbeat قفل چرخه در lib/lock
-  // برای این ورکر کاربرد ندارد چون قفل چرخه را beginCycle (سبک قدیمی، بدون owner)
-  // گرفته و touchLock مالکیت owner را می‌خواهد؛ صدا زدنش فقط لاگ خطا تولید می‌کرد.
+  // تازه نگه می‌دارد تا تایم‌اوت اشتباه نخورد). heartbeat قفل چرخه هم در ابتدای
+  // همین تیک با heartbeatCycleLock زده شد (قفل جدید owner دارد و touchLock
+  // با هویت دارنده‌ی خوانده‌شده از ردیف کار می‌کند).
 
   try {
     // چک پیش‌دستانه: مدل تیم سالم است؟ اگر نه، قبل از شروع عوضش کن

@@ -1,0 +1,28 @@
+name: gsc-daily
+
+on:
+  schedule:
+    # هر روز ساعت ۰۶:۰۰ تهران (۰۲:۳۰ UTC): دادهٔ سرچ کنسول → page_analytics و gsc_queries
+    # (دادهٔ GSC حدود ۳ روز تأخیر دارد؛ اسکریپت خودش روزِ «۳ روز قبل» را می‌گیرد)
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      # npm install به‌جای npm ci: اگر قفل ناهمگام باشد، خودکار همگام می‌شود
+      - run: npm install --legacy-peer-deps
+      - name: collect search console data
+        run: npx tsx worker/gsc-daily.ts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GSC_SERVICE_ACCOUNT_JSON: ${{ secrets.GSC_SERVICE_ACCOUNT_JSON }}
+          GSC_SITE_URL: ${{ secrets.GSC_SITE_URL }}

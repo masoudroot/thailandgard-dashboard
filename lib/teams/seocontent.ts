@@ -22,6 +22,9 @@ import {
 } from '../knowledge/critic-knowledge';
 import {
   runCriticLoop,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -46,6 +49,11 @@ export interface RunTeamInput {
   wave: number;
   /** خروجی تیم‌های موج‌های قبلی؛ seocontent به تیم content وابسته است. */
   previousWavesOutput: Record<string, TeamResult | undefined>;
+  /**
+   * دستور مستقیم منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ بالاترین
+   * اولویت را دارد و در ابتدای دستور مجری‌ها تزریق می‌شود.
+   */
+  reviewDirective?: string;
 }
 
 interface SupervisorPlan {
@@ -54,6 +62,8 @@ interface SupervisorPlan {
 
 interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
   payload?: unknown;
 }
@@ -167,7 +177,8 @@ async function judgeWorkers(outputs: [string, string, string]): Promise<CriticVe
     '',
     `خروجی مجری ۳:\n${outputs[2]}`,
     '',
-    'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جمله)، payload.',
+    'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، score (عدد ۰ تا ۱۰۰)، reason (یک جمله)، payload.',
+    CRITIC_SCORE_PROMPT_LINE,
     'تمرکز داوری: آیا بهینه‌سازی برای انسان هم بهتر شده (نه فقط موتور) و صفحه از کلمهٔ کلیدی پر نشده؟',
     'در payload این‌ها را بگذار: summary (خلاصهٔ یک‌پاراگرافی خروجی تیم)، tasks (آرایه‌ای از کارهای قابل اجرا با title، description، files_hint و priority یکی از low/medium/high/critical)، و learned (یک تا سه درس ماندگار این چرخه).',
   ].join('\n');
@@ -181,7 +192,7 @@ async function judgeWorkers(outputs: [string, string, string]): Promise<CriticVe
   if (typeof verdict?.approved !== 'boolean' || typeof verdict?.reason !== 'string') {
     throw new Error('منتقد حکم معتبر (approved/reason) برنگرداند.');
   }
-  return verdict;
+  return { ...verdict, score: parseCriticScore(verdict.score) ?? undefined };
 }
 
 function coerceTasks(raw: unknown): QueuedTask[] {
@@ -266,7 +277,14 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
 
       await reportLive?.('مجری‌ها: سه خروجی موازی', 60);
       const outputs = (await Promise.all(
-        missions.map((mission, i) => executeWorker(i, mission, contentSummary, prevInstruction)),
+        missions.map((mission, i) =>
+          executeWorker(
+            i,
+            mission,
+            contentSummary,
+            combineReviewDirectives(input.reviewDirective, prevInstruction),
+          ),
+        ),
       )) as [string, string, string];
       return { missions, outputs };
     };
@@ -283,10 +301,12 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
       const verdict = await judgeWorkers(output.outputs);
       lastVerdict = verdict;
       const reason = verdict.reason;
+      const score = verdict.score;
 
       if (round === 3) {
         return {
           approved: true,
+          score,
           reason: '',
           instruction: '',
           acceptance: '',
@@ -296,6 +316,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
       if (verdict.approved) {
         return {
           approved: true,
+          score,
           reason: '',
           instruction: '',
           acceptance: '',
@@ -304,6 +325,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
       }
       return {
         approved: false,
+        score,
         reason,
         instruction: criticInstructionFromReason(reason),
         acceptance: criticAcceptanceFromReason(reason),

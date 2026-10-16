@@ -25,6 +25,9 @@ import {
 } from '../knowledge/critic-knowledge';
 import {
   runCriticLoop,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -49,6 +52,11 @@ export interface RunTeamInput {
   runId: string;
   /** خروجی موج‌های قبلی؛ کلیدها نام تیم‌اند. این تیم previousWavesOutput['content'] را می‌خواند. */
   previousWavesOutput: Record<string, unknown>;
+  /**
+   * دستور مستقیم منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ بالاترین
+   * اولویت را دارد و در ابتدای دستور مجری‌ها تزریق می‌شود.
+   */
+  reviewDirective?: string;
 }
 
 /** یک یافتهٔ ممیزی از زبان منتقد. */
@@ -67,6 +75,8 @@ export interface AuditFinding {
 /** داوری منتقد. */
 export interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
   payload: {
     findings: AuditFinding[];
@@ -161,7 +171,9 @@ ${w2}
 خروجی مجری ۳:
 ${w3}
 
-داوری کن و فقط JSON معتبر بده با همین کلیدها: approved (بولین)، reason (یک جمله)، payload.
+داوری کن و فقط JSON معتبر بده با همین کلیدها: approved (بولین)، score (عدد ۰ تا ۱۰۰)، reason (یک جمله)، payload.
+
+${CRITIC_SCORE_PROMPT_LINE}
 
 تمرکز داوری:
 ۱. آیا در متن هیچ‌یک از مجری‌ها خط تیرهٔ بلند نیست؟
@@ -253,6 +265,7 @@ async function judge(w1: string, w2: string, w3: string): Promise<CriticVerdict>
   });
   const parsed = parseJson<{
     approved?: unknown;
+    score?: unknown;
     reason?: unknown;
     payload?: { findings?: unknown; notes?: unknown };
   }>(raw);
@@ -267,7 +280,12 @@ async function judge(w1: string, w2: string, w3: string): Promise<CriticVerdict>
     typeof parsed.reason === 'string' && parsed.reason.trim()
       ? parsed.reason.trim()
       : 'منتقد دلیلی ثبت نکرد.';
-  return { approved: parsed.approved === true, reason, payload: { findings, notes } };
+  return {
+    approved: parsed.approved === true,
+    score: parseCriticScore(parsed.score) ?? undefined,
+    reason,
+    payload: { findings, notes },
+  };
 }
 
 function severityToPriority(
@@ -394,7 +412,10 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
 
     // ۲. سه مجری، موازی
     await reportLive?.('مجری‌ها: سه خروجی موازی', 55);
-    const outputs = await executeWorkers(missions, prevInstruction);
+    const outputs = await executeWorkers(
+      missions,
+      combineReviewDirectives(input.reviewDirective, prevInstruction),
+    );
     return { missions, outputs };
   };
 
@@ -414,6 +435,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     if (round === 3) {
       return {
         approved: true,
+        score: verdict.score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -423,6 +445,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     if (verdict.approved) {
       return {
         approved: true,
+        score: verdict.score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -431,6 +454,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     }
     return {
       approved: false,
+      score: verdict.score,
       reason,
       instruction: criticInstructionFromReason(reason),
       acceptance: criticAcceptanceFromReason(reason),

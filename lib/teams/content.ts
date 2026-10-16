@@ -33,6 +33,9 @@ import { sanitizePersian, hasForbiddenDash, escapeTsString } from '../persian-te
 import { formatJalali } from '../jalali';
 import {
   runCriticLoop,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -63,6 +66,11 @@ export interface TeamInput {
   context?: string;
   /** ورودی خام ارکستر */
   input?: string;
+  /**
+   * دستور مستقیم منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ بالاترین
+   * اولویت را دارد و در ابتدای دستور مجری‌ها تزریق می‌شود.
+   */
+  reviewDirective?: string;
 }
 
 /** خروجی سرپرست: یک موضوع مشخص برای این چرخه */
@@ -100,6 +108,8 @@ interface GuideDraft {
 /** رأی منتقد روی متن واقعی (الگوی تک‌دور قدیمی) */
 interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
 }
 
@@ -347,11 +357,13 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     const factsText = cachedFacts;
 
     // ۳. مجری ۲: نگارش متن کامل راهنما (منطق فعلی؛ در دور ۲/۳ دستور منتقد تزریق می‌شود)
+    // دستور مستقیم حلقهٔ بیرونی (reviewDirective) بالاترین اولویت را دارد.
+    const combinedInstruction = combineReviewDirectives(input.reviewDirective, prevInstruction);
     await reportLive?.('مجری ۲: نگارش راهنما', 60);
     const draft = await callLLMJson<GuideDraft>(
       [
-        ...(prevInstruction
-          ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', prevInstruction, '']
+        ...(combinedInstruction
+          ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', combinedInstruction, '']
           : []),
         `موضوع: ${pick.title}`,
         `کلمهٔ کلیدی اصلی: ${pick.keyword}`,
@@ -431,16 +443,19 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         '۲. کاراکتر U+2014 دارد؟ (اگر دارد، رد کن)',
         '۳. هر عدد سند دارد یا حدسی است؟',
         '۴. برای مسافر واقعی کاربردی است یا حرف کلی می‌زند؟',
-        'فقط JSON معتبر بده: {"approved": true/false, "reason": "یک جمله"}',
+        'فقط JSON معتبر بده: {"approved": true/false, "score": ۰ تا ۱۰۰, "reason": "یک جمله"}',
+        CRITIC_SCORE_PROMPT_LINE,
         'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
       ].join('\n'),
       { system: SYSTEM_CRITIC },
     );
     const reason = String(verdict.reason || '').trim();
+    const score = parseCriticScore(verdict.score) ?? undefined;
 
     if (round === 3) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -450,6 +465,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     if (verdict.approved) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -458,6 +474,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     }
     return {
       approved: false,
+      score,
       reason,
       instruction: criticInstructionFromReason(reason),
       acceptance: criticAcceptanceFromReason(reason),

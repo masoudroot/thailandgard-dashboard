@@ -49,6 +49,9 @@ export interface LockState {
   /** آخرین heartbeat دارنده؛ اگر نباشد از updated_at ردیف استفاده می‌شود. */
   heartbeatAt?: string;
   startedAt?: string;
+  /** فقط روی ردیف idle: کی و چرا آزاد شد (لغو دستی، بازیابی چرخه‌ی مرده، پایان چرخه). */
+  releasedAt?: string;
+  releasedBy?: string;
 }
 
 /** یعنی قفل دست کس دیگری است و هنوز تازه است؛ بعداً دوباره تلاش کن. */
@@ -88,16 +91,22 @@ export async function isLockStale(nowMs: number = Date.now()): Promise<boolean> 
 }
 
 /**
- * تصاحب اتمیک قفل با compare-and-swap روی updated_at.
+ * تصاحب اتمیک قفل.
  *
- * اگر قفل دست دیگری و تازه باشد => LockAcquisitionError.
- * اگر قفل stale باشد یا آزاد => تصاحب می‌شود.
- * اگر بین خواندن و نوشتن، ورکر دیگری قفل را تغییر داده باشد => LockAcquisitionError
- * (فراخوان باید با backoff دوباره تلاش کند).
+ * چرا INSERT اول؟ upsert-then-verify اتمیک نیست: دو فراخوان هم‌زمان
+ * می‌توانستند هر دو upsert کنند و هر دو در read-back مالک خودشان را
+ * ببینند (هر دو «برنده»). در عوض:
+ *  - اگر ردیفی نیست: INSERT می‌زنیم؛ ستون agent یکتاست، پس فقط سازنده
+ *    برنده است و دومی 409 می‌گیرد (همان یک گزاره‌ی اتمیک).
+ *  - اگر ردیف هست (409 یا از قبل): می‌خوانیم؛ اگر idle است یا stale است
+ *    (running ولی بی‌ضربان بیش از LOCK_TTL_MS)، با یک UPDATE مشروط به
+ *    updated_at (compare-and-swap) تصاحبش می‌کنیم؛ در مسابقه‌ی هم‌زمان
+ *    فقط یکی مچ می‌شود و بقیه LockAcquisitionError می‌گیرند.
+ *  - اگر running و تازه است: LockAcquisitionError (فراخوان با backoff
+ *    دوباره تلاش می‌کند).
  */
 export async function acquireLock(owner: LockOwner, cycleId?: string): Promise<void> {
   const sb = getSupabase();
-  const existing = await readLock();
   const nowIso = new Date().toISOString();
 
   const newState: LockState = {
@@ -108,43 +117,85 @@ export async function acquireLock(owner: LockOwner, cycleId?: string): Promise<v
     startedAt: nowIso,
   };
 
-  // قفل آزاد یا هرگز ثبت نشده
-  if (!existing?.state || existing.state.status !== 'running') {
-    const { error } = await sb.from('agent_state').upsert(
-      { agent: ORCHESTRATOR_LOCK_KEY, state: newState, updated_at: nowIso },
-      { onConflict: 'agent' },
-    );
-    if (error) throw new Error(`failed to acquire lock: ${error.message}`);
-    // مسابقه‌ی ثبت هم‌زمان: دوباره بخوان و مطمئن شو مال ماست
-    const check = await readLock();
-    if (check?.state?.owner?.runId !== owner.runId || check?.state?.owner?.engine !== owner.engine) {
+  // مسیر ۱: ردیف قفل وجود ندارد → INSERT اتمیک؛ فقط سازنده برنده است.
+  const { error: insErr } = await sb.from('agent_state').insert({
+    agent: ORCHESTRATOR_LOCK_KEY,
+    state: newState,
+    updated_at: nowIso,
+  });
+  if (!insErr) return;
+
+  if (!isUniqueViolation(insErr)) {
+    throw new Error(`failed to acquire lock: ${insErr.message}`);
+  }
+
+  // مسیر ۲: ردیف هست → بخوان و تصمیم بگیر
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const existing = await readLock();
+    if (!existing?.state) {
+      // بین 409 و خواندن، ردیف پاک شده؛ یک بار دیگر INSERT را امتحان کن
+      const retry = await sb.from('agent_state').insert({
+        agent: ORCHESTRATOR_LOCK_KEY,
+        state: { ...newState, heartbeatAt: new Date().toISOString() },
+        updated_at: new Date().toISOString(),
+      });
+      if (!retry.error) return;
+      if (!isUniqueViolation(retry.error)) {
+        throw new Error(`failed to acquire lock: ${retry.error.message}`);
+      }
+      continue;
+    }
+
+    // قفل آزاد یا idle → با CAS بگیر
+    if (existing.state.status !== 'running') {
+      if (await casTakeLock(sb, existing.updated_at, newState)) return;
       throw new LockAcquisitionError('lock was taken by another worker during acquire');
     }
-    return;
-  }
 
-  // قفل running است؛ تازه یا stale؟
-  const ref = existing.state.heartbeatAt || existing.updated_at;
-  const ageMs = Date.now() - new Date(ref).getTime();
-  if (ageMs < LOCK_TTL_MS) {
-    throw new LockAcquisitionError(
-      `lock held by ${existing.state.owner?.engine ?? 'unknown'}` +
-        ` (run_id=${existing.state.owner?.runId ?? 'unknown'}, age=${Math.round(ageMs / 60000)}m);` +
-        ` back off and retry`,
-    );
-  }
+    // قفل running است؛ تازه یا stale؟
+    const ref = existing.state.heartbeatAt || existing.updated_at;
+    const ageMs = Date.now() - new Date(ref).getTime();
+    if (ageMs < LOCK_TTL_MS) {
+      throw new LockAcquisitionError(
+        `lock held by ${existing.state.owner?.engine ?? 'unknown'}` +
+          ` (run_id=${existing.state.owner?.runId ?? 'unknown'}, age=${Math.round(ageMs / 60000)}m);` +
+          ` back off and retry`,
+      );
+    }
 
-  // stale است؛ با CAS تصاحبش کن تا با ورکری که هم‌زمان همین کار را می‌کند مسابقه ندهیم
+    // stale است → با CAS بگیر تا با ورکری که هم‌زمان همین کار را می‌کند مسابقه ندهیم
+    if (await casTakeLock(sb, existing.updated_at, newState)) return;
+    throw new LockAcquisitionError('stale lock was taken by another worker during acquire');
+  }
+  throw new LockAcquisitionError('lock was taken by another worker during acquire');
+}
+
+/** آیا این خطا نقض یکتایی (409/23505) است؟ */
+function isUniqueViolation(err: { code?: string; message?: string }): boolean {
+  return (
+    (err as { code?: string }).code === '23505' || /23505|duplicate key|unique constraint/i.test(err.message ?? '')
+  );
+}
+
+/**
+ * تصاحب مشروط قفل: فقط اگر updated_at ردیف از زمان خواندن ما عوض نشده
+ * باشد، جایگزین می‌شود. یک گزاره‌ی اتمیک دیتابیس است؛ در مسابقه‌ی
+ * هم‌زمان فقط یک فراخوان true می‌گیرد.
+ */
+async function casTakeLock(
+  sb: ReturnType<typeof getSupabase>,
+  expectedUpdatedAt: string,
+  newState: LockState,
+): Promise<boolean> {
+  const nowIso = new Date().toISOString();
   const { data, error } = await sb
     .from('agent_state')
     .update({ state: newState, updated_at: nowIso })
     .eq('agent', ORCHESTRATOR_LOCK_KEY)
-    .eq('updated_at', existing.updated_at)
+    .eq('updated_at', expectedUpdatedAt)
     .select('updated_at');
-  if (error) throw new Error(`failed to acquire stale lock: ${error.message}`);
-  if (!data || data.length === 0) {
-    throw new LockAcquisitionError('stale lock was taken by another worker during acquire');
-  }
+  if (error) throw new Error(`failed to acquire lock: ${error.message}`);
+  return !!data && data.length > 0;
 }
 
 /**
@@ -230,6 +281,54 @@ export function startHeartbeat(owner: LockOwner, intervalMs: number = LOCK_HEART
 }
 
 /**
+ * آزادسازی اجباری قفل بدون بررسی مالکیت.
+ *
+ * فقط برای سه مصرف‌کننده مجاز است:
+ *  - cancelCycle: لغو دستی چرخه توسط کاربر (از داشبورد، نه دارنده‌ی قفل)
+ *  - cycle-recovery: بازیابی چرخه‌ی مرده (دارنده مرده و نمی‌تواند آزاد کند)
+ *  - finishCycle: پایان چرخه (آزادسازی امن: فقط اگر قفل مال همین چرخه باشد)
+ *
+ * اگر cycleId داده شود، فقط وقتی آزاد می‌کند که قفل متعلق به همان چرخه باشد
+ * (cycleId جدید یا cycle_id قدیمی)؛ در غیر این صورت false برمی‌گرداند تا
+ * قفلِ چرخه‌ی تازه‌ای که با stale-takeover گرفته شده اشتباهی آزاد نشود.
+ * برمی‌گرداند: true اگر قفلِ running آزاد شد، false در غیر این صورت.
+ */
+export async function forceReleaseLock(cycleId?: string, reason = 'force'): Promise<boolean> {
+  const sb = getSupabase();
+  let existing: LockRow | null;
+  try {
+    existing = await readLock();
+  } catch (err) {
+    console.error('[lock] forceReleaseLock: failed to read lock:', (err as Error).message);
+    return false;
+  }
+  if (!existing?.state || existing.state.status !== 'running') return false;
+  if (cycleId) {
+    const newCycleId = existing.state.cycleId;
+    const legacyCycleId = (existing.state as unknown as { cycle_id?: string }).cycle_id;
+    if (newCycleId !== cycleId && legacyCycleId !== cycleId) return false;
+  }
+  const nowIso = new Date().toISOString();
+  const { error } = await sb
+    .from('agent_state')
+    .update({
+      state: {
+        status: 'idle',
+        cycleId: cycleId ?? existing.state.cycleId,
+        releasedAt: nowIso,
+        releasedBy: reason,
+      } as LockState,
+      updated_at: nowIso,
+    })
+    .eq('agent', ORCHESTRATOR_LOCK_KEY);
+  if (error) {
+    console.error('[lock] forceReleaseLock: failed to release:', error.message);
+    return false;
+  }
+  return true;
+}
+
+/**
  * Claim اتمیک یک تیم در یک چرخه.
  *
  * فقط یک ورکر می‌تواند موفق شود؛ بقیه null می‌گیرند.
@@ -256,6 +355,7 @@ export async function claimTeam(
       wave,
       status: 'running',
       started_at: new Date().toISOString(),
+      heartbeat_at: new Date().toISOString(),
       current_task: `claimed by ${owner.engine}:${owner.runId}`,
     })
     .select('id')

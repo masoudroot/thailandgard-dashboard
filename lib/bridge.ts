@@ -6,8 +6,11 @@
  *   (+ 20261015201000 برای rejection_reason)
  *
  * - تنها منبع حقیقت وضعیت پچ‌ها، جدول bridge_patches است.
- * - مرج به dev فقط با تأیید صریح مدیر انجام می‌شود؛ این فایل هیچ مسیری
- *   برای مرج خودکار ندارد. مرج فقط از روت approve صدا زده می‌شود.
+ * - مرج به dev از دو مسیر می‌گذرد که هر دو به mergeBranchIntoDev می‌رسند:
+ *   حلقهٔ خودکار (lib/bridge/propose.ts) و روت approve (تأیید صریح مدیر).
+ * - چوک‌پوینت mergeBranchIntoDev هوک تایپ‌چک پیش‌مرج (runPreMergeTypeGate)
+ *   را پیش از هر فراخوانی مرج اجرا می‌کند؛ بدون تایپ‌چک سبز، مرج انجام
+ *   نمی‌شود (fail-closed).
  * - شاخه‌های پل روی ریپوی سایت زندگی می‌کنند و مبنای مقایسه و مرج، dev است
  *   (ثابت‌های مشترک از lib/bridge/commit).
  * - قانون مسعود: هیچ دادهٔ نمایشی. اگر جدول نیست یا گیت‌هاب وصل نیست،
@@ -18,6 +21,7 @@ import { getSupabase } from './api';
 import { getGithubConfig } from './github';
 import { GithubError } from './github-changes';
 import { BRIDGE_BASE_BRANCH, SITE_REPO } from './bridge/commit';
+import { preMergeTypeCheck } from './bridge/pre-merge-check';
 
 /** وضعیت‌های پچ طبق ماشین حالت docs/execution-bridge.md بخش ۶. */
 export type BridgePatchStatus =
@@ -449,13 +453,63 @@ async function findOpenPR(
 }
 
 /**
- * مرج شاخهٔ پل به dev. فقط از روت approve صدا زده می‌شود (قانون بخش ۳ سند).
+ * خطای رد تایپ‌چک پیش‌مرج.
+ * دائمی است: با تلاش مجدد درست نمی‌شود. صداکننده باید پچ را به needs_review
+ * ببرد (نه این‌که گیتِ پرهزینه را بیهوده تکرار کند).
+ */
+export class PreMergeGateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PreMergeGateError';
+  }
+}
+
+/**
+ * هوک تایپ‌چک پیش‌مرج: گلوگاه اجباری و fail-closed.
+ *
+ * ریشهٔ حادثهٔ مهر ۱۴۰۵: این بررسی در lib/bridge/pre-merge-check.ts نوشته شده
+ * بود ولی هیچ‌وقت در مسیر واقعی مرج صدا زده نمی‌شد (فقط pipeline.ts که خودش
+ * هیچ صداکننده‌ای ندارد)؛ پچ خراب مرج شد و بیلد ۲ بار شکست.
+ *
+ * قانون: پچ روی کلون تازه‌ای از dev ریپوی سایت اعمال و tsc اجرا می‌شود.
+ * - تایپ‌چک سبز ← resolve، مرج می‌تواند ادامه یابد.
+ * - تایپ‌چک قرمز یا انجام‌نشدنِ خودِ بررسی (خطای کلون/اجرا) ← throw؛
+ *   هیچ مرجی انجام نمی‌شود (fail-closed).
+ */
+export async function runPreMergeTypeGate(files: BridgePatchFile[]): Promise<void> {
+  const siteRepoUrl = `https://github.com/${SITE_REPO}.git`;
+  const check = await preMergeTypeCheck(files, siteRepoUrl, BRIDGE_BASE_BRANCH);
+  if (!check.passed) {
+    const firstErrors = check.errors.slice(0, 3).join(' | ');
+    throw new PreMergeGateError(
+      `مرج بلاک شد: تایپ‌چک پیش‌مرج رد شد. ${check.message}` +
+        (firstErrors ? ` نخستین خطاها: ${firstErrors}` : ''),
+    );
+  }
+}
+
+/**
+ * مرج شاخهٔ پل به dev.
+ *
+ * صداکننده‌ها:
+ * - lib/bridge/propose.ts (حلقهٔ خودکار؛ تنها مسیر تولیدی)
+ * - app/api/bridge/patches/[id]/approve (مسیر دستی/اضطراری با احراز مدیر)
+ *
+ * گام صفرِ اجباری: هوک تایپ‌چک پیش‌مرج (runPreMergeTypeGate). بدون تایپ‌چک
+ * سبز هیچ فراخوانی مرجی به گیت‌هاب زده نمی‌شود.
  * - اگر PR بازی برای شاخه باشد، همان PR مرج می‌شود؛
  * - وگرنه شاخه مستقیم به dev مرج می‌شود.
  */
-export async function mergeBranchIntoDev(branch: string): Promise<BridgeMergeResult> {
+export async function mergeBranchIntoDev(
+  branch: string,
+  files: BridgePatchFile[],
+): Promise<BridgeMergeResult> {
   const { token } = await getGithubConfig();
   if (!token) throw new GithubError(GITHUB_NOT_CONNECTED, { notConnected: true, status: 503 });
+
+  // هوک تایپ‌چک پیش‌مرج (fail-closed): پیش از هر فراخوانی مرج به گیت‌هاب.
+  await runPreMergeTypeGate(files);
+
   const h = githubHeaders(token);
   const api = `https://api.github.com/repos/${SITE_REPO}`;
 

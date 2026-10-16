@@ -21,6 +21,9 @@ import {
 } from '../knowledge/critic-knowledge';
 import {
   runCriticLoop,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -40,6 +43,11 @@ export interface RunTeamInput {
   runId: string;
   /** خروجی موج‌های قبلی؛ تیم design منبع اصلی ممیزی است */
   previousWavesOutput: Record<string, string | null | undefined>;
+  /**
+   * دستور مستقیم منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ بالاترین
+   * اولویت را دارد و در ابتدای دستور مجری‌ها تزریق می‌شود.
+   */
+  reviewDirective?: string;
 }
 
 interface SupervisorPlan {
@@ -48,6 +56,8 @@ interface SupervisorPlan {
 
 interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
   payload: unknown;
 }
@@ -132,7 +142,8 @@ function criticPrompt(text1: string, text2: string, text3: string): string {
     'خروجی مجری ۳:',
     text3,
     '',
-    'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جمله)، payload.',
+    'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، score (عدد ۰ تا ۱۰۰)، reason (یک جمله)، payload.',
+    CRITIC_SCORE_PROMPT_LINE,
     'تمرکز داوری: آیا کپی آیتم بایت‌به‌بایت است، همه‌چیز از توکن می‌آید و هیچ تصمیمی بدون slug نیست؟',
   ].join('\n');
 }
@@ -218,10 +229,12 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     }
 
     // قدم ۲: سه مجری به‌صورت موازی
+    // دستور مستقیم حلقهٔ بیرونی (reviewDirective) بالاترین اولویت را دارد.
+    const instruction = combineReviewDirectives(input.reviewDirective, prevInstruction);
     const outputs = (await Promise.all([
-      callLLM(worker1Prompt(missions[0], prevInstruction), { system: SYSTEM_WORKER, temperature: 0.3 }),
-      callLLM(worker2Prompt(missions[1], prevInstruction), { system: SYSTEM_WORKER, temperature: 0.3 }),
-      callLLM(worker3Prompt(missions[2], prevInstruction), { system: SYSTEM_WORKER, temperature: 0.3 }),
+      callLLM(worker1Prompt(missions[0], instruction), { system: SYSTEM_WORKER, temperature: 0.3 }),
+      callLLM(worker2Prompt(missions[1], instruction), { system: SYSTEM_WORKER, temperature: 0.3 }),
+      callLLM(worker3Prompt(missions[2], instruction), { system: SYSTEM_WORKER, temperature: 0.3 }),
     ])) as [string, string, string];
     return { missions, outputs };
   };
@@ -249,10 +262,12 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
         ? verdict.reason
         : 'منتقد دلیلی ثبت نکرد.';
     const approved = verdict?.approved === true;
+    const score = parseCriticScore(verdict?.score) ?? undefined;
 
     if (round === 3) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -262,6 +277,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     if (approved) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -270,6 +286,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     }
     return {
       approved: false,
+      score,
       reason,
       instruction: criticInstructionFromReason(reason),
       acceptance: criticAcceptanceFromReason(reason),

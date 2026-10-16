@@ -12,7 +12,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  */
 
 export const TEAM_RUNS_FULL_COLS =
-  'id, cycle_id, team, wave, status, started_at, finished_at, output_summary, llm_calls, error, progress, current_task, updated_at';
+  'id, cycle_id, team, wave, status, started_at, finished_at, output_summary, llm_calls, error, progress, current_task, updated_at, heartbeat_at';
 
 export const TEAM_RUNS_BASE_COLS =
   'id, cycle_id, team, wave, status, started_at, finished_at, output_summary, llm_calls, error';

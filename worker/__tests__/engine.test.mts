@@ -307,7 +307,7 @@ describe('تست ۴: دو ورکر هم‌زمان نمی‌توانند یک ت
 });
 
 describe('تست ۵: ورکر مرده → قفل stale آزاد می‌شود', () => {
-  it('سطح ارکستراتور: قفل running با قدمت بیش از ۱۵۰ دقیقه → beginCycle موفق می‌شود', async () => {
+  it('سطح ارکستراتور: قفل running قدیمی (شکل snake_case) با قدمت بیش از TTL → beginCycle موفق می‌شود (stale-takeover)', async () => {
     await seed({
       cycles: [],
       team_runs: [],
@@ -319,16 +319,20 @@ describe('تست ۵: ورکر مرده → قفل stale آزاد می‌شود',
         },
       ],
     });
-    const { runId } = await orch.beginCycle();
+    const { runId, cycleId } = await orch.beginCycle();
     assert.ok(runId);
     assert.notEqual(runId, 'run-dead', 'باید run_id تازه ساخته شود');
     const t = await tables();
+    assert.equal(t.cycles.length, 1, 'فقط یک چرخه ساخته شده باشد');
+    assert.equal(t.cycles[0].id, cycleId);
     const lock = t.agent_state.find((x: any) => x.agent === 'orchestrator:lock');
     assert.equal(lock.state.status, 'running');
-    assert.equal(lock.state.run_id, runId);
+    // قفل جدید: هویت دارنده + cycleId روی ردیف ثبت می‌شود (نه run_id/cycle_id قدیمی)
+    assert.equal(lock.state.owner?.runId, runId);
+    assert.equal(lock.state.cycleId, cycleId);
   });
 
-  it('سطح ورکر: تیم گیرکرده‌ی بیش از ۱۵ دقیقه → failed می‌شود و چرخه بسته می‌شود', async () => {
+  it('سطح ورکر: تیمِ بی‌ضربانِ بیش از ۱۵ دقیقه («مرده») → failed می‌شود و چرخه بسته می‌شود', async () => {
     const doneTeams = ALL_TEAMS.filter((t) => t !== 'inspector');
     await seed({
       cycles: [activeCycleSeed()],
@@ -345,7 +349,7 @@ describe('تست ۵: ورکر مرده → قفل stale آزاد می‌شود',
       ],
     });
     const r = await runWorker([]);
-    assert.match(r.stdout, /timing out stuck team.*: inspector/);
+    assert.match(r.stdout, /تیم inspector «مرده» شناخته/, 'مدل دوسیگناله: ۲۰ دقیقه بی‌ضربان = مرده');
     const insp = r.tables.team_runs.find((x: any) => x.team === 'inspector');
     assert.equal(insp.status, 'failed', 'تیم گیرکرده باید failed شود');
     // حالا همه تمام شده‌اند → چرخه بسته می‌شود
@@ -354,6 +358,30 @@ describe('تست ۵: ورکر مرده → قفل stale آزاد می‌شود',
     assert.equal(cycle.status, 'failed');
     const lock = r.tables.agent_state.find((x: any) => x.agent === 'orchestrator:lock');
     assert.notEqual(lock.state.status, 'running');
+  });
+
+  it('سطح ورکر: تیمِ ضربان‌زنِ بی‌پیشرفتِ بیش از ۱۰ دقیقه («هنگ») → failed می‌شود', async () => {
+    // بازتولید ریشه‌ی باگ: ضربان تازه ولی آخرین پیشرفت واقعی ۱۱ دقیقه پیش.
+    // در منطق قدیمی updated_at با ضربان تازه می‌ماند و تیم «سالم» دیده می‌شد.
+    const doneTeams = ALL_TEAMS.filter((t) => t !== 'inspector');
+    await seed({
+      cycles: [activeCycleSeed()],
+      team_runs: [
+        ...doneTeams.map((t) => teamRun(t, 'success')),
+        {
+          ...teamRun('inspector', 'running', 30),
+          heartbeat_at: nowIso(), // ضربان زنده
+          updated_at: minAgoIso(11), // ولی ۱۱ دقیقه بدون هیچ پیشرفتی
+          current_task: 'تست هنگ',
+        },
+      ],
+      agent_state: [],
+    });
+    const r = await runWorker([]);
+    assert.match(r.stdout, /تیم inspector «هنگ» شناخته/, 'ضربانِ زنده نباید هنگ را بپوشاند');
+    const insp = r.tables.team_runs.find((x: any) => x.team === 'inspector');
+    assert.equal(insp.status, 'failed', 'تیم هنگ باید failed شود تا موج جلو برود');
+    assert.match(insp.error ?? '', /هنگ شناسایی شد/, 'خطا باید «هنگ» را نام ببرد');
   });
 });
 
@@ -400,7 +428,7 @@ describe('تست ۶: ترتیب موج‌ها و عدم اجرای تکراری 
       agent_state: [],
     });
     const r = await runWorker([]);
-    assert.doesNotMatch(r.stdout, /timing out stuck team/, 'تیم سالم نباید تایم‌اوت شود');
+    assert.doesNotMatch(r.stdout, /شناخته و ناموفق ثبت شد/, 'تیم سالم نباید تایم‌اوت شود');
     assert.match(r.stdout, /has a running team; waiting/);
     const row = r.tables.team_runs.find((x: any) => x.team === 'artdir');
     assert.equal(row.status, 'running');

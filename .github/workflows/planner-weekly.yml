@@ -1,0 +1,26 @@
+name: planner-weekly
+
+on:
+  schedule:
+    # شنبه‌ها ساعت ۶:۳۰ تهران.
+    # تهران DST ندارد (از ۱۴۰۱ لغو شد) پس ‎+۳:۳۰‎ در کل سال ثابت است:
+    # ۰۶:۳۰ تهران = ۰۳:۳۰ UTC → روز شنبه
+    - cron: '30 3 * * 6'
+  workflow_dispatch:
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install --legacy-peer-deps
+      - name: generate weekly backlog
+        run: npx tsx worker/planner-worker.ts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

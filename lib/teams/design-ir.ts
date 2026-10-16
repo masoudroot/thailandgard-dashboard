@@ -23,6 +23,9 @@ import {
 } from '../knowledge/critic-knowledge';
 import {
   runCriticLoop,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -40,6 +43,11 @@ export interface RunTeamInput {
   runId: string;
   /** خروجی تیم‌های موج‌های قبلی؛ این تیم ورودی previousWavesOutput['design'] را می‌خواند */
   previousWavesOutput: Record<string, TeamResult | null | undefined>;
+  /**
+   * دستور مستقیم منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ بالاترین
+   * اولویت را دارد و در ابتدای دستور مجری‌ها تزریق می‌شود.
+   */
+  reviewDirective?: string;
 }
 
 const TEAM_SYSTEM = 'تو سرپرست تیم design-ir تایلندگرد هستی.';
@@ -55,6 +63,8 @@ interface SupervisorPlan {
 
 interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
   payload?: unknown;
 }
@@ -228,7 +238,10 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
 
     // ۲. سه مجری به‌صورت موازی
     await reportLive?.('مجری‌ها: سه خروجی موازی', 55);
-    const texts = await executeWorkers(missions, prevInstruction);
+    const texts = await executeWorkers(
+      missions,
+      combineReviewDirectives(input.reviewDirective, prevInstruction),
+    );
     return { missions, texts };
   };
 
@@ -249,12 +262,14 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
         '',
         `خروجی مجری ۳:\n${output.texts[2]}`,
         '',
-        'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جمله)، payload.',
+        'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، score (عدد ۰ تا ۱۰۰)، reason (یک جمله)، payload.',
+        CRITIC_SCORE_PROMPT_LINE,
         'تمرکز داوری: آیا نقد راه‌حل دارد، سلیقهٔ شخصی بدون استدلال فرهنگی نیست و طرح به مسافر حسی می‌دهد نه بی‌روح؟',
       ].join('\n'),
       { system: CRITIC_SYSTEM, temperature: 0.2 },
     );
     const approved = Boolean(verdict.approved);
+    const score = parseCriticScore(verdict.score) ?? undefined;
     const reason =
       typeof verdict.reason === 'string' && verdict.reason.trim()
         ? verdict.reason
@@ -264,6 +279,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     if (round === 3) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -273,6 +289,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     if (approved) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -281,6 +298,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     }
     return {
       approved: false,
+      score,
       reason,
       instruction: criticInstructionFromReason(reason),
       acceptance: criticAcceptanceFromReason(reason),
