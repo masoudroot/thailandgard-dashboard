@@ -109,7 +109,7 @@ export function buildFeedbackRoundContent(
   round: CriticRoundRecord,
   domain?: string,
 ): { title: string; content: string } {
-  const shortRun = runId.slice(0, 8);
+  const shortRun = String(runId ?? '').slice(0, 8);
   const d = domain?.trim() || team;
   const title = `حلقه نقد دور ${round.round}: ${roundStatusFa(round.approved)} (${d}، ${shortRun})`;
   const lines = [
@@ -143,7 +143,7 @@ export function buildFinalVerdictContent(
   finalNote: string,
   domain?: string,
 ): { title: string; content: string } {
-  const shortRun = runId.slice(0, 8);
+  const shortRun = String(runId ?? '').slice(0, 8);
   const d = domain?.trim() || team;
   const title = `نظر نهایی منتقد (${d}، ${shortRun})`;
   const lines = [
@@ -220,9 +220,13 @@ export async function extractCriticKnowledge(
   verdict: CriticVerdictInput,
   runId: string,
 ): Promise<CriticKnowledgeResult> {
-  const shortRun = runId.slice(0, 8);
+  const shortRun = String(runId ?? '').slice(0, 8);
   const domain = verdict.domain?.trim() || team;
-  const rejectedPattern = verdict.rejectedPattern?.trim() || verdict.reason.slice(0, 200);
+  // reason ممکن است از JSON ناقص LLM خالی/نامعتبر بیاید؛ slice روی
+  // undefined کل تیم را می‌انداخت (Cannot read properties of undefined)
+  const reasonText = typeof verdict.reason === 'string' ? verdict.reason : '';
+  const rejectedPattern =
+    verdict.rejectedPattern?.trim() || reasonText.slice(0, 200) || '(دلیل ثبت نشد)';
 
   const roundTag = verdict.round ? ` (دور ${verdict.round})` : '';
   const title = verdict.isFinal
@@ -233,7 +237,7 @@ export async function extractCriticKnowledge(
 
   const lines = [
     `الگوی مردود: ${verdict.approved ? '(ندارد؛ الگو تأیید شد)' : rejectedPattern}`,
-    `دلیل: ${verdict.reason}`,
+    `دلیل: ${reasonText || '(دلیل ثبت نشد)'}`,
   ];
   if (verdict.instruction?.trim()) {
     lines.push(`دستور منتقد برای اصلاح: ${verdict.instruction.trim()}`);

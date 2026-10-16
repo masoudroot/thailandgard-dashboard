@@ -45,11 +45,20 @@ interface CriticVerdict {
 /**
  * حذف شماره تماس (لاتین و فارسی) از هر متنی که به گزارش یا حافظه می‌رود.
  * قانون تیم: در گزارش فقط شناسهٔ لید می‌آید، نه شماره تماس.
+ * ورودی غیررشته‌ای (خروجی ناقص LLM) به رشته‌ی امن تبدیل می‌شود تا
+ * فراخوانی‌های بعدی (.slice و .replace) روی undefined نیفتند.
  */
-function sanitizePII(text: string): string {
-  return text
+function sanitizePII(text: unknown): string {
+  const s = typeof text === 'string' ? text : String(text ?? '');
+  return s
     .replace(/\b09\d{9}\b/g, '(شمارهٔ مخفی)')
     .replace(/\b۰۹[۰-۹]{9}\b/g, '(شمارهٔ مخفی)');
+}
+
+/** آرایه‌ی امن از خروجی LLM: اگر آرایه نبود، آرایه‌ی خالی. */
+function safeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((v) => (typeof v === 'string' ? v : String(v ?? '')));
 }
 
 /** سرپرست: از زمینه، سه مأموریت مجزا برای سه مجری می‌سازد. */
@@ -150,6 +159,25 @@ async function runCritic(outputs: [string, string, string]): Promise<CriticVerdi
   });
 }
 
+/** نرمال‌سازی حکم منتقد: خروجی ناقص/نامعتبر LLM هرگز نباید تیم را بیندازد. */
+function normalizeVerdict(v: unknown): CriticVerdict {
+  const o =
+    v && typeof v === 'object' && !Array.isArray(v) ? (v as Partial<CriticVerdict>) : {};
+  const payload =
+    o.payload && typeof o.payload === 'object' && !Array.isArray(o.payload)
+      ? (o.payload as Partial<CriticPayload>)
+      : {};
+  return {
+    approved: o.approved === true,
+    reason: typeof o.reason === 'string' ? o.reason : '',
+    payload: {
+      summary: typeof payload.summary === 'string' ? payload.summary : '',
+      alerts: Array.isArray(payload.alerts) ? payload.alerts : [],
+      tasks: Array.isArray(payload.tasks) ? payload.tasks : [],
+    },
+  };
+}
+
 /** یادگیری چرخه در حافظه؛ اگر ماژول حافظه هنوز ساخته نشده باشد، بی‌صدا رد می‌شود. */
 async function remember(runId: string, lesson: string): Promise<void> {
   try {
@@ -166,7 +194,11 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
   await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
   const plan = await runSupervisor(input);
-  const [mission1 = '', mission2 = '', mission3 = ''] = plan.workers ?? [];
+  const rawWorkers =
+    plan && typeof plan === 'object' && Array.isArray(plan.workers) ? plan.workers : [];
+  const [mission1 = '', mission2 = '', mission3 = ''] = rawWorkers.map((w) =>
+    typeof w === 'string' ? w : String(w ?? ''),
+  );
 
   await reportLive?.('مجری‌ها: پایش، SLA و تبدیل', 50);
   const outputs = await Promise.all([
@@ -175,13 +207,13 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     runWorkerConversion(mission3),
   ]);
   await reportLive?.('منتقد: داوری خروجی', 80);
-  const verdict = await runCritic(outputs as [string, string, string]);
+  const verdict = normalizeVerdict(await runCritic(outputs as [string, string, string]));
 
   const safeReason = sanitizePII(verdict.reason ?? '');
   const payload: CriticPayload = {
     summary: sanitizePII(verdict.payload?.summary ?? ''),
-    alerts: (verdict.payload?.alerts ?? []).map(sanitizePII),
-    tasks: (verdict.payload?.tasks ?? []).map(sanitizePII),
+    alerts: safeStringArray(verdict.payload?.alerts).map(sanitizePII),
+    tasks: safeStringArray(verdict.payload?.tasks).map(sanitizePII),
   };
 
   const blockers: string[] = [];

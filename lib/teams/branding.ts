@@ -67,24 +67,52 @@ async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
   });
 }
 
+/** حداقل طول قابل‌قبول خروجی مجری (نویسه). */
+const MIN_WORKER_OUTPUT_CHARS = 200;
+
 /**
  * هر سه مجری در یک فراخوانی: تحلیل + تولید.
  * (فشرده‌سازی آگاهانه برای سقف ۳ فراخوانی هر چرخه)
+ *
+ * خروجی خالی/خیلی کوتاه (مدل گاهی فقط چند کلمه می‌دهد) یک بار با دستور
+ * صریح «خروجی کامل» تکرار می‌شود؛ اگر باز هم خالی بود، خطا برمی‌گردد تا
+ * به‌جای سکوت، بلوکر ثبت شود.
  */
-async function runWorkers(plan: SupervisorPlan): Promise<string> {
+async function runWorkers(missions: string[]): Promise<string> {
   const prompt = [
     'مأموریت سرپرست:',
-    plan.workers.map((w, i) => `${i + 1}. ${w}`).join('\n'),
+    missions.map((w, i) => `${i + 1}. ${w}`).join('\n'),
     '',
     'نقش تو: مجری تیم branding تایلندگرد. هر سه خروجی زیر را بده؛ فقط واقعیت، بدون حدس:',
     'الف) فیلتر لحن برند: چند متن زندهٔ فرضی سایت را از فیلتر لحن رد کن و به مغایرت‌ها حکم اصلاح بده.',
     'ب) واژه‌نامهٔ یوایکس‌رایتینگ: نمونهٔ استاندارد برای دکمه، فرم، خطا، حالت خالی و اعلان.',
     'پ) شعار: ۳ گزینهٔ نهایی بر اساس اصول مصوب، هر کدام با دلیل انتخاب، برای تأیید مسعود.',
   ].join('\n');
-  return callLLM(prompt, {
-    system: 'تو مجری تیم branding تایلندگرد هستی. فارسی تمیز، بدون ادعای بی‌پشتوانه.',
-    temperature: 0.7,
-  });
+  const system =
+    'تو مجری تیم branding تایلندگرد هستی. فارسی تمیز، بدون ادعای بی‌پشتوانه.';
+  const first = await callLLM(prompt, { system, temperature: 0.7 });
+  if (first.trim().length >= MIN_WORKER_OUTPUT_CHARS) return first;
+  // تلاش دوم: خروجی ناقص بود؛ صریح بخواه کامل بدهد
+  const second = await callLLM(
+    `${prompt}\n\nتأکید: خروجی قبلی‌ات ناقص بود. این بار هر سه بخش (الف، ب، پ) را «کامل و مفصل» بنویس؛ خروجی کوتاه یا خالی قبول نیست.`,
+    { system, temperature: 0.7 },
+  );
+  if (second.trim().length >= MIN_WORKER_OUTPUT_CHARS) return second;
+  throw new Error(
+    `مجری خروجی خالی/ناقص برگرداند (${second.trim().length} نویسه پس از دو تلاش)`,
+  );
+}
+
+/** مأموریت‌های امن از خروجی سرپرست: اگر آرایه‌ی معتبر نبود، خالی. */
+function safeMissions(plan: unknown): string[] {
+  const workers =
+    plan && typeof plan === 'object'
+      ? (plan as { workers?: unknown }).workers
+      : undefined;
+  if (!Array.isArray(workers)) return [];
+  return workers
+    .map((w) => (typeof w === 'string' ? w.trim() : String(w ?? '').trim()))
+    .filter((w) => w.length > 0);
 }
 
 /** منتقد سخت‌گیر: آیا متن با لحن برند می‌خواند و شعار از کلیشه، موعظه و ادعای بی‌پشتوانه پاک است؟ */
@@ -111,13 +139,37 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
   await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
   const plan = await runSupervisor(input);
-  await reportLive?.('مجری‌ها: اجرای مأموریت‌ها', 50);
-  const workersOutput = await runWorkers(plan);
-  await reportLive?.('منتقد: داوری خروجی', 80);
-  const verdict = await runCritic(workersOutput);
-
   const tasks: QueuedTask[] = [];
   const blockers: string[] = [];
+
+  const missions = safeMissions(plan);
+  if (missions.length === 0) {
+    const msg = 'سرپرست مأموریت معتبری نداد (خروجی JSON ناقص)؛ کار به چرخهٔ بعد موکول شد.';
+    blockers.push(msg);
+    return { team: TEAM, summary: msg, blockers, tasks, approved: false };
+  }
+
+  await reportLive?.('مجری‌ها: اجرای مأموریت‌ها', 50);
+  let workersOutput: string;
+  try {
+    workersOutput = await runWorkers(missions);
+  } catch (err) {
+    const msg = `مجری خروجی معتبر نداد: ${err instanceof Error ? err.message : String(err)}؛ کار به چرخهٔ بعد موکول شد.`;
+    blockers.push(msg);
+    return { team: TEAM, summary: msg, blockers, tasks, approved: false };
+  }
+
+  await reportLive?.('منتقد: داوری خروجی', 80);
+  const rawVerdict = await runCritic(workersOutput);
+  // حکم ناقص LLM نباید «undefined» چاپ کند یا مسیر اشتباه برود
+  const verdict = {
+    approved: rawVerdict?.approved === true,
+    reason:
+      typeof rawVerdict?.reason === 'string' && rawVerdict.reason.trim()
+        ? rawVerdict.reason
+        : '(دلیل ثبت نشد)',
+    payload: typeof rawVerdict?.payload === 'string' ? rawVerdict.payload : '',
+  };
 
   if (!verdict.approved) {
     blockers.push(`منتقد branding تأیید نکرد: ${verdict.reason}`);

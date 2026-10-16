@@ -886,30 +886,123 @@ export async function callLLMJson<T = unknown>(
   const parsed2 = tryParseJson(retry);
   if (parsed2.ok) return parsed2.value as T;
 
+  // تلاش سوم: بریدگی خروجی معمولاً از سقف توکن می‌آید؛ همان محتوا را
+  // «کوتاه و فشرده» می‌خواهیم تا کامل برسد
+  const shortRetry = await callLLM(
+    `پاسخ قبلی‌ات ناقص یا نامعتبر بود. این بار همان محتوا را «بسیار کوتاه و فشرده» بده تا ناقص نماند. فقط و فقط JSON معتبر برگردان، بدون هیچ توضیح اضافه:\n\n${prompt.slice(0, 3000)}`,
+    { ...opts, temperature: 0, maxTokens: Math.min(opts.maxTokens ?? 4000, 2000) },
+  );
+  const parsed3 = tryParseJson(shortRetry);
+  if (parsed3.ok) return parsed3.value as T;
+
   throw new LLMError(
     `LLM output was not valid JSON: ${raw.trim().slice(0, 200)}${raw.length > 200 ? "..." : ""}`,
     { retried: true },
   );
 }
 
-/** استخراج تحمل‌پذیر JSON از متن: fence، بعد اولین { تا آخرین }. */
-function tryParseJson(text: string): { ok: boolean; value?: unknown } {
+/** JSON.parse امن: هرگز throw نمی‌کند. */
+export function safeJsonParse(text: string): { ok: boolean; value?: unknown } {
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * استخراج بازه‌های کاندیدای JSON از متن.
+ * اول گسترده‌ترین بازه‌ها (از اولین براکت تا انتهای متن؛ برای خروجی بریده‌شده)،
+ * بعد بازه‌های دقیق، و آخر از آخرین براکت باز (برای وقتی نثرِ قبل از JSON
+ * خودش آکولاد دارد).
+ */
+function extractJsonSpans(text: string): string[] {
+  const spans: string[] = [];
+  const objStart = text.indexOf('{');
+  const arrStart = text.indexOf('[');
+  const objEnd = text.lastIndexOf('}');
+  const arrEnd = text.lastIndexOf(']');
+  if (objStart >= 0) spans.push(text.slice(objStart));
+  if (arrStart >= 0 && arrStart !== objStart) spans.push(text.slice(arrStart));
+  if (objStart >= 0 && objEnd > objStart) spans.push(text.slice(objStart, objEnd + 1));
+  if (arrStart >= 0 && arrEnd > arrStart) spans.push(text.slice(arrStart, arrEnd + 1));
+  const lastObj = text.lastIndexOf('{');
+  const lastArr = text.lastIndexOf('[');
+  if (lastObj > objStart) spans.push(text.slice(lastObj));
+  if (lastArr > arrStart) spans.push(text.slice(lastArr));
+  return spans.filter((s, i) => spans.indexOf(s) === i);
+}
+
+/** بستن براکت‌های باز در انتهای متن (با رعایت رشته و escape). */
+function closeOpenBrackets(t: string): string {
+  let s = t;
+  const stack: string[] = [];
+  let inString = false;
+  let escape = false;
+  for (const ch of s) {
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === '\\') escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{' || ch === '[') stack.push(ch);
+    else if (ch === '}' || ch === ']') {
+      const open = stack.pop();
+      if ((ch === '}' && open !== '{') || (ch === ']' && open !== '[')) {
+        if (open) stack.push(open); // براکت بسته‌ی بی‌جفت؛ نادیده بگیر
+      }
+    }
+  }
+  if (inString) s += '"'; // رشته‌ی نیمه‌تمام را ببند
+  const closer: Record<string, string> = { '{': '}', '[': ']' };
+  while (stack.length > 0) {
+    const c = closer[stack.pop() as string];
+    if (c) s += c;
+  }
+  return s;
+}
+
+/**
+ * حذف عضو نیمه‌تمام انتهایی (,"key": مقدارِ ناقص)؛ آکولاد/کروشه‌ی بازِ
+ * والد سر جایش می‌ماند تا بستن براکت‌ها آبجکت معتبر بسازد.
+ */
+function stripPartialTail(t: string): string {
+  return t
+    .replace(/([{,]\s*)"[^"]*"\s*:\s*("[^"]*|[^,{}[\]]*)$/, '$1')
+    .replace(/,\s*$/, '');
+}
+
+/**
+ * ترمیم JSON بریده‌شده: اول بستن ساده‌ی براکت‌ها، اگر نشد حذف عضو
+ * نیمه‌تمام انتهایی و بعد بستن. ترمیم حدسی است؛ نتیجه همیشه با
+ * JSON.parse راستی‌آزمایی می‌شود (این تابع خودش throw نمی‌کند).
+ */
+export function repairTruncatedJson(span: string): string {
+  const t = span.trim();
+  const closed = closeOpenBrackets(t);
+  if (safeJsonParse(closed).ok) return closed;
+  const stripped = closeOpenBrackets(stripPartialTail(t));
+  if (safeJsonParse(stripped).ok) return stripped;
+  return closed; // بهترین حدس؛ فراخواننده راستی‌آزمایی می‌کند
+}
+
+/**
+ * استخراج تحمل‌پذیر JSON از متن: کدفنس، بعد بزرگ‌ترین بازه‌ی { ... } یا
+ * [ ... ]، و در آخر ترمیم براکت‌های ناقصِ خروجیِ بریده‌شده.
+ */
+export function tryParseJson(text: string): { ok: boolean; value?: unknown } {
   let t = text.trim();
   const fenceMatch = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenceMatch) t = fenceMatch[1].trim();
-  try {
-    return { ok: true, value: JSON.parse(t) };
-  } catch {
-    // تلاش آخر: بزرگ‌ترین بازه‌ی { ... }
-    const start = t.indexOf("{");
-    const end = t.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      try {
-        return { ok: true, value: JSON.parse(t.slice(start, end + 1)) };
-      } catch {
-        /* ادامه */
-      }
-    }
-    return { ok: false };
+  const direct = safeJsonParse(t);
+  if (direct.ok) return direct;
+  for (const span of extractJsonSpans(t)) {
+    const p = safeJsonParse(span);
+    if (p.ok) return p;
+    const repaired = safeJsonParse(repairTruncatedJson(span));
+    if (repaired.ok) return repaired;
   }
+  return { ok: false };
 }
