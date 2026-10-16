@@ -19,7 +19,8 @@
 
 import { validatePatch } from './gate';
 import { commitToBridgeBranch, createBridgePR } from './commit';
-import { claimBridgePatch, getBridgePatch, mergeBranchIntoDev, updateBridgePatch, PreMergeGateError } from '../bridge';
+import { claimBridgePatch, getBridgePatch, updateBridgePatch } from '../bridge';
+import { mergeBranchIntoDev, PreMergeGateError } from './merge';
 import type { PatchFile } from '../types';
 
 export interface ProposeResult {
