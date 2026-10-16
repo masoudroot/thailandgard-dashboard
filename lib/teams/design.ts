@@ -4,7 +4,10 @@
  * این تیم دیگر «توضیح دربارهٔ طراحی» نمی‌دهد؛ کامپوننت واقعی React/TSX تولید
  * می‌کند که مستقیم روی ریپوی سایت قابل اعمال است.
  *
- * سه فراخوانی LLM هر چرخه: سرپرست ← مجری (تولید کد) ← منتقد (داوری کد).
+ * حلقه نقد ۳ دوره‌ای (lib/critic-loop.ts):
+ *   دور ۱: سرپرست (انتخاب دقیقاً یک کامپوننت) ← مجری (تولید کد)
+ *   دور ۲: رد ← دستور دقیق منتقد ← مجری کد را اصلاح می‌کند
+ *   دور ۳: فقط نظارت و نظر نهایی (حق رد ندارد)
  * خروجی نهایی: PatchFile[] با مسیر site/components/... که تیم dev یا مرحلهٔ
  * اعمال، آن را با applyPatchViaGithub روی شاخهٔ dev ریپوی سایت کامیت می‌کند.
  *
@@ -18,7 +21,16 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { buildKnowledgePromptSection } from '../rag';
-import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
+import {
+  extractCriticKnowledge,
+  criticKnowledgeLog,
+  type CriticRoundRecord,
+} from '../knowledge/critic-knowledge';
+import {
+  runCriticLoop,
+  type CriticLoopResult,
+  type CriticVerdictV2,
+} from '../critic-loop';
 import type {
   ProgressReporter,
   MemoryEntry,
@@ -95,6 +107,12 @@ interface WorkerOutput {
   files: PatchFile[];
 }
 
+/** خروجی یک دور از مجری حلقه نقد: کامپوننت انتخاب‌شده + فایل‌های تولیدشده */
+interface WorkerRoundOutput {
+  component: SafeComponent;
+  files: PatchFile[];
+}
+
 /** حکم منتقد روی کد واقعی. */
 interface CriticVerdict {
   approved: boolean;
@@ -118,7 +136,7 @@ const CODE_RULES = [
 ].join('\n');
 
 /** سرپرست: از بریف artdir و خروجی branding دقیقاً یک کامپوننت انتخاب می‌کند. */
-async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
+async function makeSupervisorPlan(input: TeamInput): Promise<SupervisorPlan> {
   let knowledgeSection = '';
   try {
     knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
@@ -156,11 +174,27 @@ async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
   });
 }
 
+/** آیا خروجی مجری حداقل یک فایل با محتوای واقعی دارد؟ */
+function hasRealFiles(out: unknown): out is WorkerOutput {
+  if (!out || typeof out !== 'object' || Array.isArray(out)) return false;
+  const files = (out as { files?: unknown }).files;
+  if (!Array.isArray(files) || files.length === 0) return false;
+  return files.some(
+    (f) =>
+      f && typeof f === 'object' &&
+      typeof (f as { content?: unknown }).content === 'string' &&
+      ((f as { content: string }).content.trim().length >= 50),
+  );
+}
+
 /** مجری: کامپوننت واقعی TSX تولید می‌کند. */
-async function runWorker(c: SafeComponent): Promise<WorkerOutput> {
+async function executeWorker(c: SafeComponent, prevInstruction?: string): Promise<WorkerOutput> {
   const system =
     'تو مجری تیم design تایلندگرد هستی؛ یک برنامه‌نویس فرانت‌اند حرفه‌ای فارسی‌زبان. فقط JSON معتبر با کد واقعی می‌دهی؛ هیچ توضیحی دربارهٔ طراحی نمی‌نویسی، فقط کد.';
   const buildPrompt = (compact: boolean) => [
+    ...(prevInstruction
+      ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', prevInstruction, '']
+      : []),
     `کامپوننت «${c.name}» را بساز.`,
     `مسیر فایل: ${c.filePath}`,
     `نام export: ${c.exportName}`,
@@ -191,24 +225,11 @@ async function runWorker(c: SafeComponent): Promise<WorkerOutput> {
   throw new Error('مجری فایل معتبری تولید نکرد (files خالی یا محتوای تهی پس از دو تلاش)');
 }
 
-/** آیا خروجی مجری حداقل یک فایل با محتوای واقعی دارد؟ */
-function hasRealFiles(out: unknown): out is WorkerOutput {
-  if (!out || typeof out !== 'object' || Array.isArray(out)) return false;
-  const files = (out as { files?: unknown }).files;
-  if (!Array.isArray(files) || files.length === 0) return false;
-  return files.some(
-    (f) =>
-      f && typeof f === 'object' &&
-      typeof (f as { content?: unknown }).content === 'string' &&
-      ((f as { content: string }).content.trim().length >= 50),
-  );
-}
-
 /**
  * منتقد: کد واقعی را می‌خواند و داوری می‌کند.
  * رد شدن یعنی کد مشکل دارد و نباید کامیت شود؛ نه اینکه تیم کار نکرده.
  */
-async function runCritic(files: PatchFile[]): Promise<CriticVerdict> {
+async function judgeWorker(files: PatchFile[]): Promise<CriticVerdict> {
   const prompt = [
     'کدهای تولیدشده توسط مجری:',
     ...files.map((f) => `--- ${f.path} ---\n${f.content}`),
@@ -262,13 +283,37 @@ function validatePatches(files: PatchFile[]): string | null {
   return null;
 }
 
+/**
+ * تبدیل دلیل ردِ منتقد قدیمی به دستور اجرایی (CriticVerdictV2.instruction).
+ * امری و بلندتر از ۵۰ نویسه تا از اعتبارسنجی حلقه رد شود.
+ */
+function criticInstructionFromReason(reason: string): string {
+  const r = reason.trim() || 'کد ایراد دارد';
+  return [
+    `کد را بر اساس این نقد اصلاح کن: «${r}»`,
+    'کل فایل TSX را از نو و کامل بنویس؛ قوانین سفت را خط‌به‌خط رعایت کن:',
+    'راست‌چین فقط با خاصیت منطقی (ms/me/ps/pe/text-start)؛ هیچ ml/mr/pl/pr/text-left نیاور؛',
+    'تیتر Pinar FD و بدنه IranSans X؛ ارقام نمایشی فارسی؛ U+2014 ممنوع؛',
+    'فقط توکن‌های تم گرافیت (بدون سایه، بدون hex من‌درآوردی) و آیکون lucide-react.',
+  ].join(' ');
+}
+
+/**
+ * تبدیل دلیل رد به معیار قبولی (CriticVerdictV2.acceptance).
+ */
+function criticAcceptanceFromReason(reason: string): string {
+  const r = reason.trim() || 'کد ایراد دارد';
+  return `وقتی درست است که نقد «${r}» دیگر دربارهٔ کد صدق نکند: TSX معتبر، راست‌چین با خاصیت منطقی، تایپوگرافی فارسی درست، بدون U+2014 و فقط توکن‌های تم وایب‌فارسی/گرافیت.`;
+}
+
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
   const tasks: QueuedTask[] = [];
   const blockers: string[] = [];
 
+  // ۰. سرپرست: انتخاب دقیقاً یک کامپوننت (پیش‌نیاز حلقه؛ منطقش عین قبل)
   await reportLive?.('سرپرست: انتخاب کامپوننت این چرخه', 15);
-  const plan = await runSupervisor(input);
+  const plan = await makeSupervisorPlan(input);
   const component = safeComponent(plan);
   if (!component) {
     const msg = 'سرپرست کامپوننت معتبری انتخاب نکرد (خروجی JSON ناقص)؛ کار به چرخهٔ بعد موکول شد.';
@@ -276,41 +321,146 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     return { team: TEAM, summary: msg, blockers, tasks, approved: false };
   }
 
-  await reportLive?.(`مجری: تولید کد ${component.name}`, 50);
-  let workerOut: WorkerOutput;
+  // ---------- توابع حلقه نقد ----------
+
+  // حکم خام آخرین داوری + فایل‌های نهایی منتقد (برای ساخت پچ بعد از حلقه)
+  let lastRawApproved: boolean = false;
+  let lastRawReason = '';
+  let lastCriticFiles: PatchFile[] = [];
+
+  /**
+   * runWorkers: مجری تولید کد هر دور (در دور ۲/۳ با دستور منتقد).
+   */
+  const runWorkers = async (
+    round: number,
+    prevInstruction?: string,
+  ): Promise<WorkerRoundOutput> => {
+    await reportLive?.(
+      round === 1 ? `مجری: تولید کد ${component.name}` : `دور ${round}: اصلاح با دستور منتقد`,
+      50,
+    );
+    const workerOut = await executeWorker(component, prevInstruction);
+    const localError = validatePatches(workerOut.files);
+    if (localError) {
+      throw new Error(`خروجی مجری نامعتبر است: ${localError}`);
+    }
+    return { component, files: workerOut.files };
+  };
+
+  /**
+   * runCritic: منتقد کد فعلی، با تبدیل خروجی به CriticVerdictV2.
+   * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+   */
+  const runCritic = async (
+    output: WorkerRoundOutput,
+    round: number,
+  ): Promise<CriticVerdictV2> => {
+    await reportLive?.(`منتقد: داوری کد واقعی (دور ${round})`, 80);
+    const rawVerdict = await judgeWorker(output.files);
+    // حکم ناقص LLM نباید «undefined» چاپ کند
+    const verdict: CriticVerdict = {
+      approved: rawVerdict?.approved === true,
+      reason:
+        typeof rawVerdict?.reason === 'string' && rawVerdict.reason.trim()
+          ? rawVerdict.reason
+          : '(دلیل ثبت نشد)',
+      files: Array.isArray(rawVerdict?.files) ? rawVerdict.files : [],
+    };
+    lastRawApproved = verdict.approved;
+    lastRawReason = verdict.reason;
+    lastCriticFiles = verdict.files;
+    const reason = verdict.reason;
+
+    if (round === 3) {
+      return {
+        approved: true,
+        reason: '',
+        instruction: '',
+        acceptance: '',
+        finalOpinion: reason,
+      };
+    }
+    if (verdict.approved) {
+      return {
+        approved: true,
+        reason: '',
+        instruction: '',
+        acceptance: '',
+        finalOpinion: reason || undefined,
+      };
+    }
+    return {
+      approved: false,
+      reason,
+      instruction: criticInstructionFromReason(reason),
+      acceptance: criticAcceptanceFromReason(reason),
+    };
+  };
+
+  // تاریخچه دورها برای ثبت دانش + آخرین لاگ دانش برای خلاصه
+  const roundHistory: CriticRoundRecord[] = [];
+  let lastKnowledgeLog = '';
+
+  /**
+   * onRoundKnowledge: ثبت دانش هر دور با extractCriticKnowledge فعلی.
+   */
+  const onRoundKnowledge = async (
+    round: number,
+    verdict: CriticVerdictV2,
+  ): Promise<void> => {
+    const record: CriticRoundRecord = {
+      round,
+      approved: verdict.approved,
+      reason: verdict.approved
+        ? verdict.finalOpinion || 'تأیید شد.'
+        : verdict.reason,
+      instruction: verdict.instruction?.trim() || undefined,
+    };
+    const knowledgeResult = await extractCriticKnowledge(
+      TEAM,
+      {
+        approved: verdict.approved,
+        reason: record.reason,
+        domain: 'تولید کامپوننت',
+        instruction: record.instruction,
+        round,
+        rounds: roundHistory.slice(),
+        isFinal: round === 3,
+      },
+      input.runId,
+    );
+    roundHistory.push(record);
+    lastKnowledgeLog = criticKnowledgeLog(knowledgeResult);
+  };
+
+  // ---------- اجرای حلقه نقد ۳ دوره‌ای ----------
+  let loopResult: CriticLoopResult<WorkerRoundOutput>;
   try {
-    workerOut = await runWorker(component);
+    loopResult = await runCriticLoop<WorkerRoundOutput>({
+      team: TEAM,
+      runId: input.runId,
+      runWorkers,
+      runCritic,
+      onRoundKnowledge,
+      onProgress: (msg) => reportLive?.(msg, 70),
+    });
   } catch (err) {
     const msg = `مجری خروجی معتبر نداد: ${err instanceof Error ? err.message : String(err)}؛ کار به چرخهٔ بعد موکول شد.`;
     blockers.push(msg);
     return { team: TEAM, summary: msg, blockers, tasks, approved: false };
   }
 
-  await reportLive?.('منتقد: داوری کد واقعی', 80);
-  const localError = validatePatches(workerOut.files);
-  const rawVerdict: CriticVerdict = localError
-    ? { approved: false, reason: localError, files: [] }
-    : await runCritic(workerOut.files);
-  // حکم ناقص LLM نباید «undefined» چاپ کند
-  const verdict: CriticVerdict = {
-    approved: rawVerdict?.approved === true,
-    reason:
-      typeof rawVerdict?.reason === 'string' && rawVerdict.reason.trim()
-        ? rawVerdict.reason
-        : '(دلیل ثبت نشد)',
-    files: Array.isArray(rawVerdict?.files) ? rawVerdict.files : [],
-  };
-  // PatchFileها برای مرحلهٔ اعمال (تیم dev یا job اعمال) روی همین نتیجه سوار می‌شوند.
+  // PatchFileها برای مرحلهٔ اعمال (تیم dev یا job اعمال) روی نتیجهٔ نهایی منتقد سوار می‌شوند.
   let patches: PatchFile[] | undefined;
 
-  if (!verdict.approved) {
-    blockers.push(`منتقد design کد را تأیید نکرد: ${verdict.reason}`);
+  if (!lastRawApproved) {
+    blockers.push(`منتقد design کد را تأیید نکرد: ${lastRawReason}`);
   } else {
-    const patchError = validatePatches(verdict.files);
+    const patchError = validatePatches(lastCriticFiles);
     if (patchError) {
       blockers.push(`خروجی نهایی منتقد نامعتبر است: ${patchError}`);
     } else {
-      patches = verdict.files.map((f) => ({
+      patches = lastCriticFiles.map((f) => ({
         path: f.path.trim().replace(/^\/+/, ''),
         content: f.content,
       }));
@@ -333,21 +483,13 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   const approved = patches !== undefined;
   const lesson = approved
-    ? `کامپوننت موفق: ${component.name} (${component.filePath})`
-    : `رد منتقد: ${verdict.reason}`;
+    ? `کامپوننت موفق: ${component.name} (${component.filePath}) — حلقه در دور ${loopResult.finalRound} تمام شد`
+    : `رد منتقد: ${lastRawReason} — حلقه در دور ${loopResult.finalRound} با نظر نهایی تمام شد`;
   await remember(input.runId, lesson);
 
-  // استخراج دانش حرفه‌ای از حکم منتقد و ایندکس در RAG
-  const knowledgeResult = await extractCriticKnowledge(
-    TEAM,
-    { approved, reason: approved ? `کامپوننت ${component.name} تأیید شد` : verdict.reason, domain: 'تولید کامپوننت' },
-    input.runId,
-  );
-  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
-
   const summary = approved
-    ? `تیم design این چرخه کامپوننت «${component.name}» را به‌صورت کد واقعی TSX تولید کرد (${patches!.map((p) => p.path).join('، ')})؛ منتقد کد را از نظر راست‌چین، تایپوگرافی فارسی و توکن‌های وایب‌فارسی تأیید کرد. ${knowledgeLog}`
-    : `تیم design این چرخه کد تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${verdict.reason} ${knowledgeLog}`;
+    ? `تیم design این چرخه کامپوننت «${component.name}» را به‌صورت کد واقعی TSX تولید کرد (${patches!.map((p) => p.path).join('، ')})؛ منتقد کد را از نظر راست‌چین، تایپوگرافی فارسی و توکن‌های وایب‌فارسی تأیید کرد. ${lastKnowledgeLog}`
+    : `تیم design این چرخه کد تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${lastRawReason} ${lastKnowledgeLog}`;
 
   return {
     team: TEAM,
