@@ -20,6 +20,7 @@
 import { runQualityGate } from '../quality-gate';
 import { commitToBridgeBranch, SITE_REPO } from './commit';
 import { getGithubConfig } from '../github';
+import { preMergeTypeCheck } from './pre-merge-check';
 import type { PatchFile } from '../github';
 
 export type BridgePatchStatus =
@@ -43,6 +44,7 @@ export interface BridgePatch {
   merge_sha?: string;
   revert_sha?: string;
   gate_errors?: string[];
+  rejection_reason?: string;
   decided_by?: string;
   decided_at?: string;
   created_at: string;
@@ -219,6 +221,19 @@ export async function mergePatch(
     throw new Error(`فقط پچ approved مرج می‌شود (وضعیت فعلی: ${patch.status}).`);
   }
   if (!patch.branch) throw new Error('شاخهٔ پل برای این پچ ثبت نشده است.');
+
+  // بررسی تایپ پیش از مرج (گلوگاه ۵): پچ روی کلون تازه اعمال و tsc اجرا می‌شود.
+  // اگر خطا داشت، پچ برمی‌گردد و به وضعیت rejected می‌رود.
+  const siteRepoUrl = `https://github.com/${SITE_REPO}.git`;
+  const preCheck = await preMergeTypeCheck(patch.files, siteRepoUrl, 'dev');
+  if (!preCheck.passed) {
+    patch.status = 'rejected';
+    patch.rejection_reason = `تایپ‌چک پیش‌مرج رد شد: ${preCheck.message} ${preCheck.errors.slice(0, 3).join(' | ')}`;
+    patch.updated_at = nowIso();
+    store.save(patch);
+    throw new Error(patch.rejection_reason);
+  }
+
   const token = await githubTokenOrThrow();
   const body = (await ghApi(`/repos/${SITE_REPO}/merges`, token, {
     method: 'POST',
