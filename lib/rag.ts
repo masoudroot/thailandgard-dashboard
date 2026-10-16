@@ -449,13 +449,27 @@ export async function buildKnowledgePromptSection(
   task: string,
 ): Promise<string> {
   try {
+    // قوانین طلایی اول می‌آیند (مهم‌ترین‌ها)
+    let goldenSection = '';
+    try {
+      const { buildGoldenRulesSection } = await import('./knowledge/golden-rules');
+      goldenSection = await buildGoldenRulesSection(team);
+    } catch {
+      goldenSection = '';
+    }
+
     const context = await getTeamKnowledgeContext(team, task);
     const trimmed = context.trim();
-    if (!trimmed) return '';
-    return [
-      `دانش ثبت‌شدهٔ تیم «${team}» (مرجع: هنگام تصمیم‌گیری و اجرا از آن استفاده کن):`,
-      trimmed,
-    ].join('\n');
+
+    const parts: string[] = [];
+    if (goldenSection) parts.push(goldenSection);
+    if (trimmed) {
+      parts.push(
+        `دانش ثبت‌شدهٔ تیم «${team}» (مرجع: هنگام تصمیم‌گیری و اجرا از آن استفاده کن):`,
+        trimmed,
+      );
+    }
+    return parts.join('\n\n');
   } catch {
     // fail-soft عمدی: نداشتن دانش بهتر از مسدود شدن تیم است.
     return '';
