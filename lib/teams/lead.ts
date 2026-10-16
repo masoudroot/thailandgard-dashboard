@@ -37,6 +37,10 @@ export interface TeamInput {
   ragContext: string;
   memory: MemoryEntry[];
   previousWavesOutput: Record<string, string>;
+  /** دستور صریح منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ اگر بود، بالاترین اولویت را دارد. */
+  reviewDirective?: string;
+  /** شمارهٔ دور حلقهٔ بیرونی (۱ تا ۳). */
+  round?: number;
 }
 
 interface SupervisorPlan {
@@ -269,7 +273,14 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     }
 
     await reportLive?.('مجری‌ها: پایش، SLA و تبدیل', 55);
-    const outputs = await executeWorkers(missions, prevInstruction);
+    // دستور صریح حلقهٔ بیرونی (ارکستراتور) در همین چرخه — اولویت بالا، جدا از ragContext.
+    const outerDirective = input.reviewDirective?.trim()
+      ? `دستور مستقیم منتقد از حلقهٔ بیرونی (همین چرخه — بالاترین اولویت، حتماً اعمال کن):\n${input.reviewDirective.trim()}`
+      : undefined;
+    const combinedInstruction = [outerDirective, prevInstruction]
+      .filter(Boolean)
+      .join('\n\n');
+    const outputs = await executeWorkers(missions, combinedInstruction || undefined);
     return { missions, outputs };
   };
 
@@ -392,7 +403,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   const summary = loopResult.approved
     ? `تیم لید این چرخه لیدهای تازه و وضعیت‌ها را پایش کرد، SLA را کنترل کرد و ${payload.alerts.length} هشدار ثبت شد؛ منتقد تأیید کرد. دلیل: ${safeReason} ${lastKnowledgeLog}`
-    : `تیم لید این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${safeReason} ${lastKnowledgeLog}`;
+    : `تیم لید این چرخه خروجی تولید کرد؛ منتقد در ${loopResult.finalRound} دور همین چرخه تأیید نکرد و نظر نهایی داد. دلیل: ${safeReason} دانش به‌روز شد و بلوکر در گزارش همین چرخه درج شد. ${lastKnowledgeLog}`;
 
   return {
     team: TEAM,

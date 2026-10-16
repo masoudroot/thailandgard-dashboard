@@ -28,6 +28,7 @@ import {
 } from '../knowledge/critic-knowledge';
 import {
   runCriticLoop,
+  retryInCycle,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -53,6 +54,10 @@ export interface TeamInput {
   ragContext: string;
   memory: MemoryEntry[];
   previousWavesOutput: Record<string, TeamResult | null>;
+  /** دستور صریح منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ اگر بود، بالاترین اولویت را دارد. */
+  reviewDirective?: string;
+  /** شمارهٔ دور حلقهٔ بیرونی (۱ تا ۳). */
+  round?: number;
 }
 
 /** تصمیم سرپرست: دقیقاً یک کامپوننت برای این چرخه. */
@@ -312,11 +317,16 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const blockers: string[] = [];
 
   // ۰. سرپرست: انتخاب دقیقاً یک کامپوننت (پیش‌نیاز حلقه؛ منطقش عین قبل)
+  // دستور مسعود: سرپرست باید در همین چرخه کامپوننت معتبر بدهد؛ تا ۳ تلاش، بدون موکول به چرخه بعد.
   await reportLive?.('سرپرست: انتخاب کامپوننت این چرخه', 15);
-  const plan = await makeSupervisorPlan(input);
-  const component = safeComponent(plan);
+  const plan = await retryInCycle(
+    () => makeSupervisorPlan(input),
+    (p) => !!safeComponent(p),
+    { label: 'سرپرست design', onProgress: (msg) => reportLive?.(msg, 15) },
+  );
+  const component = plan ? safeComponent(plan) : undefined;
   if (!component) {
-    const msg = 'سرپرست کامپوننت معتبری انتخاب نکرد (خروجی JSON ناقص)؛ کار به چرخهٔ بعد موکول شد.';
+    const msg = 'سرپرست پس از ۳ تلاش در همین چرخه کامپوننت معتبری انتخاب نکرد (خروجی JSON ناقص)؛ بلوکر در همین چرخه ثبت شد.';
     blockers.push(msg);
     return { team: TEAM, summary: msg, blockers, tasks, approved: false };
   }
@@ -339,7 +349,14 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       round === 1 ? `مجری: تولید کد ${component.name}` : `دور ${round}: اصلاح با دستور منتقد`,
       50,
     );
-    const workerOut = await executeWorker(component, prevInstruction);
+    // دستور صریح حلقهٔ بیرونی (ارکستراتور) در همین چرخه — اولویت بالا، جدا از ragContext.
+    const outerDirective = input.reviewDirective?.trim()
+      ? `دستور مستقیم منتقد از حلقهٔ بیرونی (همین چرخه — بالاترین اولویت، حتماً اعمال کن):\n${input.reviewDirective.trim()}`
+      : undefined;
+    const combinedInstruction = [outerDirective, prevInstruction]
+      .filter(Boolean)
+      .join('\n\n');
+    const workerOut = await executeWorker(component, combinedInstruction || undefined);
     const localError = validatePatches(workerOut.files);
     if (localError) {
       throw new Error(`خروجی مجری نامعتبر است: ${localError}`);
@@ -445,7 +462,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       onProgress: (msg) => reportLive?.(msg, 70),
     });
   } catch (err) {
-    const msg = `مجری خروجی معتبر نداد: ${err instanceof Error ? err.message : String(err)}؛ کار به چرخهٔ بعد موکول شد.`;
+    const msg = `مجری پس از ۳ تلاش در همین چرخه خروجی معتبر نداد: ${err instanceof Error ? err.message : String(err)}؛ بلوکر در همین چرخه ثبت شد.`;
     blockers.push(msg);
     return { team: TEAM, summary: msg, blockers, tasks, approved: false };
   }
@@ -489,7 +506,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   const summary = approved
     ? `تیم design این چرخه کامپوننت «${component.name}» را به‌صورت کد واقعی TSX تولید کرد (${patches!.map((p) => p.path).join('، ')})؛ منتقد کد را از نظر راست‌چین، تایپوگرافی فارسی و توکن‌های وایب‌فارسی تأیید کرد. ${lastKnowledgeLog}`
-    : `تیم design این چرخه کد تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${lastRawReason} ${lastKnowledgeLog}`;
+    : `تیم design این چرخه کد تولید کرد؛ منتقد در ${loopResult.finalRound} دور همین چرخه تأیید نکرد و نظر نهایی داد. دلیل: ${lastRawReason} دانش به‌روز شد و بلوکر در گزارش همین چرخه درج شد. ${lastKnowledgeLog}`;
 
   return {
     team: TEAM,
