@@ -14,6 +14,13 @@
  * - finalOpinion: نظر نهایی (دور ۳)
  *
  * اعتبارسنجی خودکار: حکم رد بدون دستور کافی = نامعتبر، یک بار retry.
+ *
+ * گیت اعتبارسنجی خروجی (دستور مسعود):
+ * خروجی نامعتبر مجری (خالی، ناقص/قطع‌شده، بی‌معنا) «هرگز» تأیید نمی‌شود.
+ * این چک «ساختاری و قطعی» است و «قبل» از داوری کیفی منتقد انجام می‌شود؛
+ * خروجی نامعتبر اصلاً به مرحله امتیازدهی نمی‌رسد. در دورهای ۱ و ۲ حکم رد
+ * خودکار با دستور دقیق صادر می‌شود و در دور ۳ هم خروجی نامعتبر تأیید نمی‌شود
+ * (فقط نظر نهایی ثبت می‌شود).
  */
 
 export interface CriticVerdictV2 {
@@ -35,6 +42,12 @@ export interface CriticLoopOptions<WorkerOutput> {
   runWorkers: (round: number, prevInstruction?: string) => Promise<WorkerOutput>;
   /** اجرای منتقد: (خروجی، دور) => حکم */
   runCritic: (output: WorkerOutput, round: number) => Promise<CriticVerdictV2>;
+  /**
+   * اعتبارسنجی ساختاری خروجی مجری، پیش از داوری کیفی.
+   * اگر تیم ندهد، اعتبارسنج عمومی به کار می‌رود.
+   * برمی‌گرداند: true (معتبر) یا false یا {valid, detail}.
+   */
+  isOutputValid?: (output: WorkerOutput) => boolean | { valid: boolean; detail?: string };
   /** ثبت دانش هر دور */
   onRoundKnowledge?: (round: number, verdict: CriticVerdictV2) => Promise<void>;
   /** گزارش پیشرفت */
@@ -134,12 +147,144 @@ export function validateRejection(v: CriticVerdictV2): { valid: boolean; issues:
 }
 
 /**
+ * اعمال اعتبارسنج تیم (در صورت وجود) وگرنه اعتبارسنج عمومی.
+ */
+function checkWorkerOutputValidity(
+  hook: ((output: unknown) => boolean | { valid: boolean; detail?: string }) | undefined,
+  output: unknown,
+): OutputValidity {
+  if (hook) {
+    const r = hook(output);
+    if (typeof r === 'boolean') {
+      return r
+        ? { valid: true, detail: '' }
+        : { valid: false, detail: 'اعتبارسنج تیم خروجی را نامعتبر دانست.' };
+    }
+    return r.valid
+      ? { valid: true, detail: '' }
+      : { valid: false, detail: r.detail?.trim() || 'اعتبارسنج تیم خروجی را نامعتبر دانست.' };
+  }
+  return validateWorkerOutput(output);
+}
+
+/** نتیجه اعتبارسنجی ساختاری خروجی مجری. */
+export interface OutputValidity {
+  valid: boolean;
+  /** وقتی نامعتبر است: «خروجی نامعتبر است: ...» */
+  detail: string;
+}
+
+/**
+ * کلیدهای «تحویلی» خروجی تیم‌ها (نه زمینه/مأموریت).
+ * اعتبارسنج عمومی محتوای همین زیردرخت‌ها را می‌سنجد؛
+ * کلیدهایی مثل missions و plan زمینه‌اند و نادیده گرفته می‌شوند.
+ */
+const DELIVERABLE_KEYS = new Set([
+  'outputs', 'workeroutputs', 'workersoutput', 'texts',
+  'draft', 'items', 'patches', 'files', 'component',
+]);
+
+/** سقف حداقلی محتوای معنادار (حرف/رقم) برای یک تحویلی معتبر. */
+const MIN_SUBSTANTIVE_CHARS = 40;
+
+/** شمارش حروف و ارقام واقعی متن (بدون نقطه‌گذاری و فاصله)؛ ES5-safe. */
+function substantiveLength(text: string): number {
+  const stripped = text.replace(/[\s\u2000-\u206F!-/:-@\[-`{-~\u060C\u061B\u061F\u00AB\u00BB\u2026\u066B\u066C]/g, '');
+  return stripped.length;
+}
+
+/** همه رشته‌های برگ یک زیردرخت را جمع می‌کند. */
+function collectLeafStrings(value: unknown, acc: string[]): void {
+  if (typeof value === 'string') {
+    acc.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) collectLeafStrings(v, acc);
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const v of Object.values(value as Record<string, unknown>)) collectLeafStrings(v, acc);
+  }
+}
+
+/** آیا رشته نشانه بریدگی/قطع‌شدگی دارد؟ */
+function isTruncatedLeaf(text: string): boolean {
+  const t = text.trimEnd();
+  if (!t) return false;
+  if (t.endsWith('…') || t.endsWith('...')) return true;
+  if (/\[بریده/.test(t) || /\[خروجی بریده/.test(t) || /truncated/i.test(t)) return true;
+  const fences = (t.match(/```/g) || []).length;
+  if (fences % 2 === 1) return true; // بلاک کد باز مانده
+  return false;
+}
+
+/**
+ * اعتبارسنج عمومی ساختاری خروجی مجری — قطعی و بدون LLM.
+ * ترتیب چک: نبود خروجی ← خالی بودن تحویلی‌ها ← بریدگی ← بی‌معنایی.
+ */
+export function validateWorkerOutput(output: unknown): OutputValidity {
+  if (output === null || output === undefined) {
+    return { valid: false, detail: 'خروجی‌ای تولید نشده است.' };
+  }
+
+  // زیردرخت‌های تحویلی را پیدا کن؛ اگر کلیدی نبود، کل خروجی را بسنج.
+  let deliverableSubtrees: unknown[] = [];
+  if (output && typeof output === 'object' && !Array.isArray(output)) {
+    for (const [key, value] of Object.entries(output as Record<string, unknown>)) {
+      if (DELIVERABLE_KEYS.has(key.toLowerCase())) deliverableSubtrees.push(value);
+    }
+  }
+  if (deliverableSubtrees.length === 0) deliverableSubtrees = [output];
+
+  const leaves: string[] = [];
+  for (const subtree of deliverableSubtrees) collectLeafStrings(subtree, leaves);
+
+  const nonEmpty = leaves.filter((s) => s.trim().length > 0);
+  if (nonEmpty.length === 0) {
+    return { valid: false, detail: 'خروجی خالی است؛ هیچ محتوایی از مجری تحویل گرفته نشد.' };
+  }
+
+  for (const leaf of nonEmpty) {
+    if (isTruncatedLeaf(leaf)) {
+      const preview = leaf.trim().slice(-60);
+      return { valid: false, detail: `خروجی ناقص و قطع‌شده است (پایان بریده: «…${preview}»).` };
+    }
+  }
+
+  const total = nonEmpty.reduce((sum, s) => sum + substantiveLength(s), 0);
+  if (total < MIN_SUBSTANTIVE_CHARS) {
+    return { valid: false, detail: 'خروجی بی‌معناست؛ دادهٔ قابل ارزیابی ندارد.' };
+  }
+
+  return { valid: true, detail: '' };
+}
+
+/**
+ * حکم رد خودکار برای خروجی نامعتبر — امتیاز صفر، بدون داوری کیفی.
+ * متن‌ها عمداً شرط‌های validateRejection را می‌گذرانند (دلیل ۳۰+، دستور ۵۰+ امری، معیار قبولی).
+ */
+export function buildAutoRejection(detail: string): CriticVerdictV2 {
+  return {
+    approved: false,
+    reason:
+      `خروجی نامعتبر است: ${detail} ` +
+      'چنین خروجی‌ای هرگز تأیید نمی‌شود؛ مجری موظف است خروجی کامل و قابل ارزیابی تحویل بدهد.',
+    instruction:
+      `خروجی قبلی‌ات نامعتبر بود (${detail}). ` +
+      'دوباره بنویس و این بار خروجی را «کامل» تحویل بده: بدون بریدگی، بدون بخش خالی، با محتوای واقعی و قابل ارزیابی. ' +
+      'خروجی را پیش از تحویل بازبینی و اصلاح کن؛ اگر ناقص است کاملش کن و بعد تحویل بده. کم‌کاری پذیرفته نیست.',
+    acceptance: 'وقتی خروجی کامل، بدون بریدگی و با محتوای واقعی قابل ارزیابی باشد.',
+  };
+}
+
+/**
  * اجرای حلقه نقد ۳ دوره‌ای.
  */
 export async function runCriticLoop<WorkerOutput>(
   opts: CriticLoopOptions<WorkerOutput>,
 ): Promise<CriticLoopResult<WorkerOutput>> {
-  const { team, runId, runWorkers, runCritic, onRoundKnowledge, onProgress } = opts;
+  const { team, runId, runWorkers, runCritic, isOutputValid, onRoundKnowledge, onProgress } = opts;
   const verdicts: CriticVerdictV2[] = [];
   let output: WorkerOutput | undefined;
   let prevInstruction: string | undefined;
@@ -193,6 +338,49 @@ export async function runCriticLoop<WorkerOutput>(
       // دور ۲/۳: با بهترین خروجی موجود (دور قبل) ادامه می‌دهیم؛ چیزی به چرخهٔ بعد موکول نمی‌شود.
       if (round === 1 || !output) throw err;
       await onProgress?.(`دور ${round}: مجری پس از ${MAX_WORKER_ATTEMPTS_PER_ROUND} تلاش خروجی نداد؛ با خروجی دور قبل ادامه می‌دهیم (همین چرخه).`);
+    }
+
+    // گیت اعتبارسنجی ساختاری (دستور مسعود): خروجی نامعتبر هرگز به داوری کیفی نمی‌رسد.
+    // خالی، ناقص/قطع‌شده یا بی‌معنا = رد خودکار با امتیاز صفر، بدون امتیازدهی.
+    const validity = checkWorkerOutputValidity(
+      isOutputValid as ((output: unknown) => boolean | { valid: boolean; detail?: string }) | undefined,
+      output!,
+    );
+    if (!validity.valid) {
+      await onProgress?.(`دور ${round}: خروجی نامعتبر است (${validity.detail})؛ به داوری کیفی نرفت.`);
+      if (round === 3) {
+        // دور ۳: رد کیفی مجاز نیست، ولی خروجی نامعتبر هم هرگز تأیید نمی‌شود؛ فقط نظر نهایی.
+        const invalidVerdict: CriticVerdictV2 = {
+          approved: false,
+          reason: `خروجی نامعتبر است: ${validity.detail}`,
+          instruction: '',
+          acceptance: '',
+          finalOpinion:
+            `خروجی نامعتبر بود (${validity.detail}) و تأیید نشد؛ فقط نظر نهایی ثبت شد. ` +
+            'در چرخهٔ بعد مجری باید خروجی کامل و قابل ارزیابی تحویل بدهد.',
+        };
+        verdicts.push(invalidVerdict);
+        await onRoundKnowledge?.(round, invalidVerdict);
+        return {
+          output: output!,
+          approved: false,
+          finalRound: 3,
+          verdicts,
+          finalOpinion: invalidVerdict.finalOpinion!,
+          workerRetries,
+        };
+      }
+      const autoVerdict = buildAutoRejection(validity.detail);
+      verdicts.push(autoVerdict);
+      await onRoundKnowledge?.(round, autoVerdict);
+      prevInstruction = [
+        `دستور منتقد (دور ${round}):`,
+        autoVerdict.instruction,
+        '',
+        `معیار قبولی: ${autoVerdict.acceptance}`,
+      ].join('\n');
+      await onProgress?.(`دور ${round}: رد خودکار خروجی نامعتبر؛ دستور اصلاح برای دور بعد آماده است.`);
+      continue;
     }
 
     await onProgress?.(`دور ${round}: داوری منتقد`);
