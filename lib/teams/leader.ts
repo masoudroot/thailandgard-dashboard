@@ -15,6 +15,11 @@
  *
  * ضدتکراری: تسکی که برای همان تیم با موضوع مشابه در وضعیت باز (pending /
  * approved / in_progress / deferred) هست، دوباره ساخته نمی‌شود.
+ * ضدتکراری معنایی (دستور مسعود ۱۴۰۵/۰۷/۲۴): رهبر پیش از ساخت تسک content
+ * تازه، راهنماهای موجود روی سایت را می‌خواند؛ اگر موضوع تسک پیشنهادی با
+ * یکی از آن‌ها هم‌پوشانی معنایی داشت (شباهت ژاکار کلیدواژه‌ها)، به‌جای
+ * محتوای تازه، تسک «[آپدیت]» برای همان موجود می‌سازد. زاویهٔ واقعاً متفاوت
+ * مجاز است ولی باید در بریف مشخص شود.
  * سقف هوشمند (دستور مسعود ۱۴۰۵/۰۷/۲۴): سقف عددی ثابت حذف شده؛ رهبر فقط
  * وقتی تسک می‌سازد که دادهٔ تازه و واقعی در فیدرها باشد، تکراری نباشد، و
  * واقعاً ارزش اجرا داشته باشد. سقف اضطراری ۲۰ تسک در روز فقط برای
@@ -26,6 +31,7 @@
  */
 
 import { getSupabase } from '../api';
+import { readSiteFile } from '../bridge/read';
 import { callLLMJson } from '../llm';
 import { enqueueTask } from '../taskqueue';
 import type {
@@ -202,6 +208,147 @@ function isDuplicate(
   });
 }
 
+// === ضدتکراری معنایی محتواهای موجود (دستور مسعود ۱۴۰۵/۰۷/۲۴) ===
+// مشکل: تیم content محتواهایی با «مضمون یکسان» تولید می‌کرد (نه فقط عنوان
+// یکسان). راه‌حل: رهبر پیش از ساخت تسک content تازه، فهرست راهنماهای موجود
+// روی سایت را می‌خواند؛ اگر موضوع تسک پیشنهادی با یکی از آن‌ها هم‌پوشانی
+// معنایی داشت، به‌جای ساخت محتوای تازه، تسک «[آپدیت]» برای همان موجود می‌سازد.
+
+/** راهنمای موجود روی سایت. */
+interface ExistingGuide {
+  slug: string;
+  title: string;
+}
+
+/** مسیر فایل راهنماها در ریپوی سایت. */
+const GUIDES_PATH = 'site/lib/guides.ts';
+
+/**
+ * خواندن راهنماهای موجود از ریپوی سایت (fail-soft؛ اگر گیت‌هاب متصل نبود،
+ * ضدتکراری معنایی بی‌صدا غیرفعال می‌شود).
+ */
+async function loadExistingGuides(): Promise<ExistingGuide[]> {
+  try {
+    const content = await readSiteFile(GUIDES_PATH);
+    if (!content) return [];
+    const out: ExistingGuide[] = [];
+    const re = /slug:\s*"([a-z0-9-]+)"[\s\S]{0,400}?title:\s*"([^"]+)"/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(content)) !== null) {
+      out.push({ slug: m[1], title: m[2] });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * ایست‌واژه‌هایی که در تشخیص «موضوع» قدرت تمایز ندارند؛ از جمله کلماتی که
+ * در همهٔ محتوای تایلندگرد تکرار می‌شوند (تایلند، سفر، راهنما...).
+ */
+const TOPIC_STOPWORDS = new Set([
+  'و', 'به', 'از', 'در', 'با', 'که', 'را', 'یا', 'این', 'آن', 'های', 'ها',
+  'برای', 'تا', 'هم', 'نیز', 'اما', 'ولی', 'اگر', 'چون', 'زیرا', 'پس',
+  'من', 'تو', 'او', 'ما', 'شما', 'آنها', 'خود', 'خودت', 'خودتان',
+  'چه', 'چطور', 'چگونه', 'کجا', 'کی', 'چند', 'کدام',
+  'است', 'هست', 'شد', 'شده', 'میشود', 'می‌شود', 'بشود', 'کنید', 'کن',
+  'بکنید', 'دارد', 'دارند', 'داشته', 'باشد', 'بود', 'کنیم', 'کنم',
+  'تایلند', 'تایلندگرد', 'سفر', 'راهنما', 'راهنمای', 'تور', 'کامل', 'جامع',
+  'بهترین', 'نحوه', 'طریقه', 'همه', 'درباره', 'معرفی',
+]);
+
+/** نرمال‌سازی متن فارسی برای استخراج کلیدواژهٔ موضوعی. */
+function normalizeTopicText(s: string): string {
+  return s
+    .replace(/[‌‍]/g, ' ')
+    .replace(/[«»"'`]/g, ' ')
+    .replace(/[؟?!:؛،.\-–—()[\]{}]/g, ' ')
+    .replace(/\d+/g, ' ')
+    .toLowerCase();
+}
+
+/** استخراج کلیدواژه‌های موضوعی (بدون ایست‌واژه، با ساده‌سازی پسوند). */
+function extractTopicKeywords(s: string): Set<string> {
+  const out = new Set<string>();
+  for (const w of normalizeTopicText(s).split(/\s+/)) {
+    if (w.length < 3 || TOPIC_STOPWORDS.has(w)) continue;
+    const stemmed = w
+      .replace(/(های|هایی|هایم|هایتان|هاشان)$/, '')
+      .replace(/(ترین|تر)$/, '');
+    if (stemmed.length >= 3 && !TOPIC_STOPWORDS.has(stemmed)) out.add(stemmed);
+  }
+  return out;
+}
+
+/** شباهت ژاکار بین دو مجموعهٔ کلیدواژه. */
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  a.forEach((w) => {
+    if (b.has(w)) inter++;
+  });
+  return inter / (a.size + b.size - inter);
+}
+
+/** آستانهٔ هم‌پوشانی معنایی: بالاتر از این یعنی «همان موضوع». */
+const SEMANTIC_OVERLAP_THRESHOLD = 0.35;
+
+/**
+ * پیدا کردن راهنمای موجودی که با موضوع تسک پیشنهادی هم‌پوشانی معنایی دارد.
+ * null یعنی موضوع تازه است و ساخت محتوای جدید اشکالی ندارد.
+ */
+function findOverlappingGuide(
+  taskTitle: string,
+  taskDescription: string,
+  guides: ExistingGuide[],
+): ExistingGuide | null {
+  const taskKeys = extractTopicKeywords(`${taskTitle} ${taskDescription.slice(0, 300)}`);
+  if (taskKeys.size < 2) return null; // کلیدواژهٔ کافی برای قضاوت نیست
+  let best: ExistingGuide | null = null;
+  let bestScore = 0;
+  for (const g of guides) {
+    const score = jaccard(taskKeys, extractTopicKeywords(g.title));
+    if (score > bestScore) {
+      bestScore = score;
+      best = g;
+    }
+  }
+  return bestScore >= SEMANTIC_OVERLAP_THRESHOLD ? best : null;
+}
+
+/** خلاصهٔ راهنماهای موجود برای تزریق به پرامپت رهبر. */
+function summarizeExistingGuides(guides: ExistingGuide[]): string {
+  if (guides.length === 0) return '(فهرست راهنماهای موجود خوانده نشد)';
+  return guides
+    .slice(0, 40)
+    .map((g, i) => `${i + 1}. ${g.title} (اسلاگ: ${g.slug})`)
+    .join('\n');
+}
+
+/** آیا تسک، تسک نگهداشت (آپدیت/بازنویسی) است؟ این‌ها از چک معنایی معاف‌اند. */
+function isMaintenanceTask(title: string): boolean {
+  return /^\[(آپدیت|بازنویسی)\]/.test(title.trim());
+}
+
+/**
+ * تبدیل تسک content تکراری‌معنا به تسک «[آپدیت]» روی راهنمای موجود.
+ * قالب شرح با قرارداد تیم content سازگار است (اسلاگ: / دلیل: / کار:).
+ */
+function convertToUpdateTask(p: PlannedTask, guide: ExistingGuide): PlannedTask {
+  return {
+    ...p,
+    team: 'content',
+    title: `[آپدیت] ${guide.slug}`,
+    description:
+      `اسلاگ: ${guide.slug}\n` +
+      `دلیل: موضوع تسک پیشنهادی («${p.title}») با راهنمای موجود «${guide.title}» هم‌پوشانی معنایی دارد؛ به‌جای ساخت محتوای تازه، همان موجود به‌روز می‌شود.\n` +
+      `کار: اطلاعات تازه و مفید دربارهٔ «${p.title}» اضافه شود؛ اطلاعات غلط/قدیمی حذف؛ حداقل ۲ لینک داخلی تازه؛ تاریخ به‌روزرسانی عوض شود\n` +
+      `زاویهٔ پیشنهادی اولیه: ${p.description.slice(0, 400)}`,
+    files_hint: GUIDES_PATH,
+  };
+}
+
 function summarizeIntel(items: IntelItem[]): string {
   if (items.length === 0) return '(اینتل تازه‌ای ثبت نشده)';
   return items
@@ -312,12 +459,13 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const queued: QueuedTask[] = [];
 
   await reportLive?.('خواندن فیدرهای داده', 10);
-  const [intel, gsc, pages, todayCount, openTasks] = await Promise.all([
+  const [intel, gsc, pages, todayCount, openTasks, existingGuides] = await Promise.all([
     loadIntelFeed(),
     loadGscQueries(),
     loadPageAnalytics(),
     countTodayLeaderTasks(),
     loadOpenTasks(),
+    loadExistingGuides(),
   ]);
 
   // سقف اضطراری: فقط در برابر باگ؛ در حالت عادی هرگز فعال نمی‌شود
@@ -366,6 +514,9 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         '== صفحه‌های راهنمای نیازمند نگهداشت (آپدیت/بازنویسی) ==',
         summarizeStaleGuides(staleGuides),
         '',
+        '== راهنماهای موجود روی سایت (این موضوعات را دوباره نساز) ==',
+        summarizeExistingGuides(existingGuides),
+        '',
         directive ? `دستور اصلاح رهبر (حتماً رعایت کن):\n${directive}\n` : '',
         `فقط برای داده‌ای که واقعاً تازه و ارزش اجرا دارد تسک بساز؛ حداکثر ${budget} تسک. صفر تسک هم اشکالی ندارد — برای پر کردن سهمیه تسک نساز.`,
         'قواعد:',
@@ -385,6 +536,11 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         '- کار آپدیت: اطلاعات تازه و مفید اضافه، اطلاعات غلط/قدیمی حذف، لینک داخلی به محتواهای جدید، تاریخ به‌روزرسانی عوض شود',
         '- کار بازنویسی: ساختار کاملاً جدید ولی اسلاگ حفظ شود (برای سئو)',
         '',
+        'قواعد ضدتکراری معنایی (خیلی مهم):',
+        '- فهرست «راهنماهای موجود» بالا را بخوان؛ موضوعی که آنجا هست را دوباره به‌عنوان محتوای تازه پیشنهاد نده',
+        '- اگر موضوع با یک راهنمای موجود هم‌پوشانی دارد، تسک «[آپدیت] <اسلاگ>» برای همان موجود بساز (نه محتوای تازه)',
+        '- فقط اگر زاویه واقعاً متفاوت است (مثلاً راهنمای کلی موجود است ولی تو «مقایسه» می‌خواهی)، محتوای تازه مجاز است؛ در این صورت در description خط «تفاوت با راهنمای موجود <اسلاگ>: <توضیح یک‌جمله‌ای>» بنویس',
+        '',
         'فقط JSON معتبر بده: {"tasks": [{"team": "content|seo|design|dev", "title": "...", "description": "...", "acceptance": "...", "estimate": 1|2|3, "priority": "low|medium|high|critical", "files_hint": "..."}]}',
         'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
       ].join('\n'),
@@ -401,10 +557,12 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const validTeams = new Set<string>(BUILDER_TEAMS);
   let skippedDup = 0;
   let skippedInvalid = 0;
+  let convertedSemantic = 0;
   for (const p of planned.slice(0, budget)) {
     const team = String(p.team ?? '').trim();
-    const title = String(p.title ?? '').trim();
-    const description = String(p.description ?? '').trim();
+    let title = String(p.title ?? '').trim();
+    let description = String(p.description ?? '').trim();
+    let filesHint = String(p.files_hint ?? '');
     const acceptance = String(p.acceptance ?? '').trim();
     const estimate = [1, 2, 3].includes(Number(p.estimate)) ? (Number(p.estimate) as 1 | 2 | 3) : 2;
     const priority = ['low', 'medium', 'high', 'critical'].includes(p.priority)
@@ -418,12 +576,35 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       skippedDup++;
       continue;
     }
+    // ضدتکراری معنایی: اگر تسک content موضوعش با راهنمای موجود هم‌پوشانی
+    // دارد، به‌جای محتوای تازه، تسک [آپدیت] برای همان موجود ساخته می‌شود.
+    if (team === 'content' && !isMaintenanceTask(title) && existingGuides.length > 0) {
+      const overlap = findOverlappingGuide(title, description, existingGuides);
+      if (overlap) {
+        const converted = convertToUpdateTask(
+          { ...p, team, title, description, files_hint: filesHint },
+          overlap,
+        );
+        title = converted.title;
+        description = converted.description;
+        filesHint = converted.files_hint;
+        convertedSemantic++;
+        console.log(
+          `[leader] تسک «${p.title}» با «${overlap.title}» هم‌پوشانی معنایی داشت؛ به [آپدیت] ${overlap.slug} تبدیل شد.`,
+        );
+        // تسک تبدیلی هم نباید با تسک باز دیگری تکراری باشد
+        if (isDuplicate(team, title, openTasks)) {
+          skippedDup++;
+          continue;
+        }
+      }
+    }
     try {
       const id = await enqueueTask({
         team,
         title,
         description,
-        files_hint: String(p.files_hint ?? ''),
+        files_hint: filesHint,
         priority,
         source: 'leader',
         acceptance,
@@ -431,7 +612,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         cycleId: input.cycleId,
       });
       openTasks.push({ team, title }); // ضدتکراری درون همین اجرا
-      queued.push({ title, description, files_hint: String(p.files_hint ?? ''), priority });
+      queued.push({ title, description, files_hint: filesHint, priority });
       console.log(`[leader] تسک «${title}» برای تیم ${team} ثبت شد (id=${id}).`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -445,6 +626,9 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     `(اینتل: ${intel.length} آیتم، سرچ کنسول: ${gsc.length} کوئری، آنالیتیکس: ${pages.length} صفحه، ` +
     `نگهداشت محتوا: ${staleGuides.length} صفحه نیازمند آپدیت/بازنویسی).` +
     (skippedDup > 0 ? ` ${skippedDup} مورد تکراری رد شد.` : '') +
+    (convertedSemantic > 0
+      ? ` ${convertedSemantic} تسک content با موضوع تکراری به [آپدیت] راهنمای موجود تبدیل شد.`
+      : '') +
     (skippedInvalid > 0 ? ` ${skippedInvalid} مورد نامعتبر رد شد.` : '') +
     (blockers.length > 0 ? ` ${blockers.length} خطای ثبت.` : '');
 
