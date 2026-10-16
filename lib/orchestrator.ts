@@ -721,6 +721,17 @@ export async function runSingleTeam(
     }
     const baseRagContext =
       buildRagContext(ctx.previousWavesOutput) + approvedContext + knowledgeSnippet;
+    // دانش ذخیره‌شده تیم (قانون مسعود): همه تیم‌ها باید از دانششان استفاده کنند.
+    // به‌جای تکیه بر input.memory (که ۱۱ تیم نادیده می‌گرفتند)، مستقیم در ragContext تزریق می‌شود.
+    let teamKnowledgeContext = '';
+    if (memory.length > 0) {
+      const memLines = memory.map((m) => `- [${m.key}] ${String(m.value).slice(0, 500)}`);
+      teamKnowledgeContext = `\n\nدانش ذخیره‌شده تیم ${team} (حتماً در کارت استفاده کن):\n${memLines.join('\n')}`;
+      console.log(`[orchestrator] دانش تیم ${team}: ${memory.length} قلم تزریق شد`);
+    } else {
+      console.log(`[orchestrator] تیم ${team}: دانش ذخیره‌شده‌ای ندارد`);
+    }
+    const fullRagContext = baseRagContext + teamKnowledgeContext;
     // حلقهٔ بازبینی منتقد (دستور مسعود): حداکثر ۳ دور، بدون حلقهٔ بی‌نهایت.
     // دور ۱: اجرای عادی. اگر منتقد رد کرد ← دستور دقیقش (مثل پرامپت) به تیم برمی‌گردد و دور ۲ اجرا می‌شود.
     // دور ۳ پایانی است: منتقد فقط نظر می‌دهد و دیگر رد نمی‌کند؛ اگر باز هم ایراد بود، rejected ثبت و چرخه ادامه می‌یابد.
@@ -741,7 +752,7 @@ export async function runSingleTeam(
       const input: TeamInput = {
         cycleId,
         runId: ctx.runId,
-        ragContext: directivePrefix + baseRagContext,
+        ragContext: directivePrefix + fullRagContext,
         memory,
         previousWavesOutput: { ...ctx.previousWavesOutput },
         reportProgress,
