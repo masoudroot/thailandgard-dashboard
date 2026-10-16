@@ -883,6 +883,16 @@ export async function runSingleTeam(
       message: `گزارش تیم در چرخه ${ctx.runId}\n\n${result.summary ?? '(خلاصه‌ای ثبت نشد)'}`,
       cycleId,
     });
+    // خودترمیمی در لحظه (دستور مسعود): تشخیص الگوی خرابی + ترمیم سیستم/تیم،
+    // بدون اثر روی نتیجهٔ این تیم. fail-soft: هرگز خطا پرتاب نمی‌کند.
+    try {
+      const { checkAndHealTeam } = await import('./self-heal');
+      await checkAndHealTeam(team, teamStatus, {
+        rejectionReasons: roundLog.filter((r) => !r.approved).map((r) => r.reason),
+      });
+    } catch {
+      /* نادیده: خودترمیمی نباید نتیجه تیم را خراب کند */
+    }
     return result;
   } catch (err) {
     if (err instanceof SubagentStoppedError) {
@@ -904,6 +914,14 @@ export async function runSingleTeam(
       message: `تیم در چرخه ${ctx.runId} ناموفق بود:\n\n${message.slice(0, 1500)}`,
       cycleId,
     });
+    // خودترمیمی در لحظه (دستور مسعود): اگر این خطا الگو شد (۲ بار پیاپی همسان)،
+    // مدل تیم خودکار عوض می‌شود. fail-soft.
+    try {
+      const { checkAndHealTeam } = await import('./self-heal');
+      await checkAndHealTeam(team, 'failed', { errorText: message });
+    } catch {
+      /* نادیده */
+    }
     return null;
   } finally {
     clearInterval(heartbeat);
