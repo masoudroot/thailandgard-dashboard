@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npm install --legacy-peer-deps
       - name: review knowledge freshness
         run: npx tsx worker/knowledge-review.ts
         env:

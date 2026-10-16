@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npm install --legacy-peer-deps
       - name: check for stalled cycles
         run: npx tsx worker/cycle-watchdog.ts
         env:
