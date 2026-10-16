@@ -590,6 +590,21 @@ export async function indexKnowledge(
     });
   }
 
+  // اعتبارسنجی بُعد امبدینگ پیش از هر نوشتن در دیتابیس: ستون
+  // knowledge_chunks از نوع vector(1536) است و بردار با بُعد دیگر
+  // (مثلاً ۳۰۷۲ از gemini-embedding-001) باید با خطای واضح فارسی
+  // رد شود، نه با کرش pgvector موقع insert.
+  for (let i = 0; i < rows.length; i++) {
+    const dims = Array.isArray(rows[i].embedding) ? rows[i].embedding.length : 0;
+    if (dims !== EXPECTED_EMBEDDING_DIM) {
+      throw new RAGError(
+        `indexKnowledge: بُعد امبدینگ چانک ${i + 1} نامعتبر است ` +
+          `(${dims} بُعد؛ انتظار ${EXPECTED_EMBEDDING_DIM} بُعد). ` +
+          `ایندکس انجام نشد تا داده‌ی ناسازگار وارد دیتابیس نشود.`,
+      );
+    }
+  }
+
   const supabase = getSupabase();
 
   // مرحله‌ی ۲: حذف چانک‌های قبلی این دانش (برای ری‌ایندکسِ تمیز).
