@@ -5,15 +5,20 @@
  * را مدیریت می‌کند. در هر چرخه:
  *
  *   ورودی: intel_feed (تازه‌ترین‌ها)، gsc_queries، page_analytics
- *   خروجی: تا ۵ تسک در روز برای ۴ تیم سازنده (content، seo، design، dev)
- *           که با source='leader' در build_queue نوشته می‌شوند.
+ *   خروجی: سقف هوشمند — فقط وقتی دادهٔ تازه و واقعی است، تسک تازه برای
+ *           ۴ تیم سازنده (content، seo، design، dev) ساخته می‌شود؛ صفر تسک
+ *           هم اگر دادهٔ تازه‌ای نیست، تصمیم درست است. سقف اضطراری ۲۰ تسک
+ *           در روز فقط برای جلوگیری از انفجار در صورت باگ.
  *
  * هر تسک: عنوان، توضیح مشخص، معیار قبولی (acceptance)، برآورد تلاش
  * (estimate: ۱=کم‌ریسک، ۲=متوسط، ۳=سنگین).
  *
  * ضدتکراری: تسکی که برای همان تیم با موضوع مشابه در وضعیت باز (pending /
  * approved / in_progress / deferred) هست، دوباره ساخته نمی‌شود.
- * سقف روزانه: حداکثر ۵ تسک با منشأ leader در هر روز تقویمی.
+ * سقف هوشمند (دستور مسعود ۱۴۰۵/۰۷/۲۴): سقف عددی ثابت حذف شده؛ رهبر فقط
+ * وقتی تسک می‌سازد که دادهٔ تازه و واقعی در فیدرها باشد، تکراری نباشد، و
+ * واقعاً ارزش اجرا داشته باشد. سقف اضطراری ۲۰ تسک در روز فقط برای
+ * جلوگیری از انفجار در صورت باگ است.
  *
  * قانون همیشگی: هیچ دادهٔ نمایشی؛ اگر فیدر داده‌ای خالی بود، رهبر از
  * همان دادهٔ موجود کار می‌کند و صادقانه گزارش می‌دهد.
@@ -34,13 +39,13 @@ import type {
 export const TEAM: TeamName = 'leader';
 
 export const MISSION =
-  'از داده (اینتل، سرچ کنسول، آنالیتیکس) بک‌لاگ روزانه می‌سازد و تا ۵ تسک مشخص با معیار قبولی به ۴ تیم سازنده تخصیص می‌دهد؛ بدون تکرار، بدون حدس.';
+  'از دادهٔ تازه (اینتل، سرچ کنسول، آنالیتیکس) بک‌لاگ می‌سازد و فقط برای کار واقعی تسک مشخص با معیار قبولی به ۴ تیم سازنده تخصیص می‌دهد؛ بدون تکرار، بدون حدس. اگر دادهٔ تازه‌ای نیست، صفر تسک تصمیم درست است.';
 
 /** تیم‌هایی که رهبر برایشان تسک می‌سازد. */
 const BUILDER_TEAMS: TeamName[] = ['content', 'seo', 'design', 'dev'];
 
-/** سقف تسک‌های روزانهٔ رهبر. */
-const DAILY_TASK_CAP = 5;
+/** سقف اضطراری رهبر: فقط برای جلوگیری از انفجار در صورت باگ. */
+const EMERGENCY_TASK_CEILING = 20;
 
 export interface TeamInput {
   /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
@@ -251,11 +256,20 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     loadOpenTasks(),
   ]);
 
-  const remaining = DAILY_TASK_CAP - todayCount;
-  if (remaining <= 0) {
-    const summary = `سقف روزانهٔ تسک‌های رهبر پر است (${todayCount} تسک امروز با منشأ leader ثبت شده)؛ تسک تازه‌ای ساخته نشد.`;
+  // سقف اضطراری: فقط در برابر باگ؛ در حالت عادی هرگز فعال نمی‌شود
+  if (todayCount >= EMERGENCY_TASK_CEILING) {
+    const summary = `سقف اضطراری رهبر (${EMERGENCY_TASK_CEILING} تسک در روز) فعال شد؛ برای جلوگیری از رفتار غیرعادی، تسک تازه‌ای ساخته نشد.`;
     return { team: TEAM, summary, blockers, tasks: [], approved: true };
   }
+  // سقف هوشمند: اگر هیچ دادهٔ تازه‌ای نیست، تسکی ساخته نمی‌شود؛
+  // این تصمیم درست است، نه خرابی.
+  if (intel.length === 0 && gsc.length === 0 && pages.length === 0) {
+    const summary =
+      'دادهٔ تازه‌ای در فیدرها نیست (اینتل، سرچ کنسول و آنالیتیکس خالی‌اند)؛ ' +
+      'رهبر تسکی نساخت. این تصمیم درست است، نه خرابی.';
+    return { team: TEAM, summary, blockers, tasks: [], approved: true };
+  }
+  const budget = EMERGENCY_TASK_CEILING - todayCount;
 
   const directive = (input.reviewDirective ?? '').trim();
   await reportLive?.('طراحی تسک‌ها از داده', 40);
@@ -283,7 +297,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         summarizePages(pages),
         '',
         directive ? `دستور اصلاح رهبر (حتماً رعایت کن):\n${directive}\n` : '',
-        `حداکثر ${remaining} تسک بساز (کمتر هم اشکالی ندارد؛ فقط کاری که واقعاً از داده بیرون می‌آید).`,
+        `فقط برای داده‌ای که واقعاً تازه و ارزش اجرا دارد تسک بساز؛ حداکثر ${budget} تسک. صفر تسک هم اشکالی ندارد — برای پر کردن سهمیه تسک نساز.`,
         'قواعد:',
         '- هر تسک فقط برای یکی از ۴ تیم سازنده باشد (content/seo/design/dev)',
         '- عنوان کوتاه و مشخص؛ توضیح: دقیقاً چه کاری، چرا (کدام داده)، و خروجی مورد انتظار چیست',
@@ -309,7 +323,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const validTeams = new Set<string>(BUILDER_TEAMS);
   let skippedDup = 0;
   let skippedInvalid = 0;
-  for (const p of planned.slice(0, remaining)) {
+  for (const p of planned.slice(0, budget)) {
     const team = String(p.team ?? '').trim();
     const title = String(p.title ?? '').trim();
     const description = String(p.description ?? '').trim();
@@ -359,7 +373,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     team: TEAM,
     summary,
     blockers,
-    tasks: queued.slice(0, 5),
+    tasks: queued,
     approved: blockers.length === 0,
   };
 }
