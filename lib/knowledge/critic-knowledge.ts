@@ -14,6 +14,7 @@
 
 import type { TeamName } from '../types';
 import { indexKnowledge } from '../rag';
+import { reportIndexOutcome } from '../rag-index-health';
 import { getSupabase } from '../api';
 
 export interface CriticVerdictInput {
@@ -79,13 +80,29 @@ async function saveKnowledge(
     }
     try {
       await indexKnowledge(item.id, team, title, content);
+      // رفع ریشه‌ای مشکل ۳: نتیجه‌ی ایندکس در سلامت مسیر ثبت می‌شود.
+      await reportIndexOutcome({
+        knowledgeId: item.id,
+        team,
+        ok: true,
+        source: 'critic-knowledge',
+      });
     } catch (indexErr) {
+      const message = indexErr instanceof Error ? indexErr.message : String(indexErr);
+      // خطا دیگر فقط در گزارش تیم دفن نمی‌شود؛ در شمارنده‌ی سلامت هم ثبت می‌شود.
+      await reportIndexOutcome({
+        knowledgeId: item.id,
+        team,
+        ok: false,
+        error: message,
+        source: 'critic-knowledge',
+      });
       // ایندکس شکست خورد ولی رکورد ثبت شده؛ دانش قابل بازیابی است
       return {
         ok: false,
         knowledgeId: item.id,
         title,
-        error: `ایندکس RAG ناموفق: ${indexErr instanceof Error ? indexErr.message : String(indexErr)}`,
+        error: `ایندکس RAG ناموفق: ${message}`,
       };
     }
     return { ok: true, knowledgeId: item.id, title };

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { ok, fail, getSupabase } from '@/lib/api';
 import { indexKnowledge, RAGError } from '@/lib/rag';
+import { reportIndexOutcome } from '@/lib/rag-index-health';
 import { TEAM_META } from '@/lib/team-meta';
 
 /**
@@ -180,15 +181,29 @@ export async function POST(request: NextRequest): Promise<Response> {
       return fail(`ثبت دانش در دیتابیس ناموفق بود: ${error?.message ?? 'خطای ناشناخته'}`, 500);
     }
 
-    // ایندکس RAG؛ شکستش نباید رکورد ساخته‌شده را از بین ببرد.
+    // ایندکس RAG؛ شکستش نباید رکورد ساخته‌شده را از بین ببرد، ولی دیگر
+    // بی‌صدا هم نیست: در سلامت مسیر ثبت می‌شود (رفع ریشه‌ای مشکل ۳).
     let indexed = false;
     let indexWarning: string | undefined;
     try {
       await indexKnowledge(item.id, team, resolvedTitle, content);
       indexed = true;
+      await reportIndexOutcome({
+        knowledgeId: item.id,
+        team,
+        ok: true,
+        source: 'api/knowledge/ingest',
+      });
     } catch (err) {
       indexWarning =
         err instanceof RAGError ? err.message : 'ایندکس معنایی انجام نشد.';
+      await reportIndexOutcome({
+        knowledgeId: item.id,
+        team,
+        ok: false,
+        error: indexWarning,
+        source: 'api/knowledge/ingest',
+      });
     }
 
     return ok(

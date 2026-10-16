@@ -23,6 +23,7 @@ import type { ProgressReporter, TeamName } from './types';
 import { getSupabase } from './api';
 import { TEAM_META } from './team-meta';
 import { indexKnowledge, retrieveKnowledgeChunks } from './rag';
+import { reportIndexOutcome } from './rag-index-health';
 import { extractKnowledgePoints } from './knowledge-pipeline';
 import {
   recordCriticFinalVerdict,
@@ -288,10 +289,24 @@ export function createDefaultDeps(): KnowledgeSubagentDeps {
         .select('id')
         .single();
       if (error || !data) throw new Error(`ذخیره دانش ناموفق بود: ${error?.message ?? 'بدون شناسه'}`);
-      // ایندکس RAG؛ fail-soft: ردیف والد می‌ماند
+      // ایندکس RAG؛ fail-soft: ردیف والد می‌ماند، ولی خطا دیگر بی‌صدا نیست —
+      // در لاگ ساخت‌یافته و شمارنده‌ی سلامت ثبت می‌شود (رفع ریشه‌ای مشکل ۳).
       try {
         await indexKnowledge(data.id, team, item.title, item.content);
-      } catch {
+        await reportIndexOutcome({
+          knowledgeId: data.id as string,
+          team,
+          ok: true,
+          source: 'knowledge-subagent',
+        });
+      } catch (err) {
+        await reportIndexOutcome({
+          knowledgeId: data.id as string,
+          team,
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          source: 'knowledge-subagent',
+        });
         // ایندکس مجدد در نوبت بعدی
       }
       return data.id as string;

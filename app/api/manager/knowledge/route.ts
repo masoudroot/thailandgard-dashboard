@@ -5,6 +5,7 @@
 import { fail, getSupabase, ok } from '../../../../lib/api';
 import { requireManagerAuth } from '../../../../lib/manager-auth';
 import { indexKnowledge, RAGError } from '../../../../lib/rag';
+import { reportIndexOutcome } from '../../../../lib/rag-index-health';
 
 export async function POST(request: Request): Promise<Response> {
   const auth = await requireManagerAuth(request);
@@ -33,8 +34,22 @@ export async function POST(request: Request): Promise<Response> {
     }
     try {
       await indexKnowledge(item.id, team, title, content);
+      await reportIndexOutcome({
+        knowledgeId: item.id,
+        team,
+        ok: true,
+        source: 'api/manager/knowledge',
+      });
     } catch (err) {
       const msg = err instanceof RAGError ? err.message : 'ایندکس معنایی انجام نشد.';
+      // رفع ریشه‌ای مشکل ۳: warning فقط در پاسخ نمی‌ماند؛ در سلامت مسیر ثبت می‌شود.
+      await reportIndexOutcome({
+        knowledgeId: item.id,
+        team,
+        ok: false,
+        error: msg,
+        source: 'api/manager/knowledge',
+      });
       return ok({ knowledge_id: item.id, warning: msg });
     }
     return ok({ knowledge_id: item.id });

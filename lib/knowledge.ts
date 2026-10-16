@@ -10,6 +10,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { TEAM_META } from './team-meta';
 import type { TeamName } from './types';
 import * as rag from './rag';
+import { reportIndexOutcome } from './rag-index-health';
 
 export const TEAM_SLUGS = Object.keys(TEAM_META) as TeamName[];
 
@@ -68,6 +69,10 @@ const ragFns = rag as unknown as {
 /**
  * ایندکس کردن دانش در RAG. اگر indexKnowledge هنوز وجود نداشت یا خطا داد،
  * false برمی‌گرداند تا درخواست اصلی (ساخت/ویرایش) موفق بماند.
+ *
+ * رفع ریشه‌ای مشکل ۳: خطا دیگر بی‌صدا نیست؛ هر نتیجه (موفق/ناموفق) در
+ * لاگ ساخت‌یافته و شمارنده‌ی سلامت دیتابیس ثبت می‌شود
+ * (lib/rag-index-health.ts) و خطاهای پیاپی هشدار می‌گیرند.
  */
 export async function tryIndexKnowledge(
   knowledgeId: string,
@@ -79,8 +84,22 @@ export async function tryIndexKnowledge(
   if (typeof fn !== 'function') return false;
   try {
     await fn(knowledgeId, team, title, content);
+    await reportIndexOutcome({
+      knowledgeId,
+      team,
+      ok: true,
+      source: 'tryIndexKnowledge',
+    });
     return true;
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await reportIndexOutcome({
+      knowledgeId,
+      team,
+      ok: false,
+      error: message,
+      source: 'tryIndexKnowledge',
+    });
     return false;
   }
 }
