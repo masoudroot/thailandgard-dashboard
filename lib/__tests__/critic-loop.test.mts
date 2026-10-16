@@ -11,6 +11,8 @@ import {
   buildAutoRejection,
   validateRejection,
   runCriticLoop,
+  applyScoreGate,
+  parseCriticScore,
   type CriticVerdictV2,
 } from '../critic-loop.js';
 
@@ -148,5 +150,89 @@ describe('runCriticLoop — گیت خروجی نامعتبر', () => {
     });
     assert.equal(result.approved, true);
     assert.match(result.verdicts[0].reason, /قانون تیم: بد/);
+  });
+});
+
+describe('دروازه امتیاز منتقد (آستانه ۸۰)', () => {
+  it('امتیاز ۸۵ با approved=false تأیید می‌شود', () => {
+    const v = applyScoreGate({ approved: false, score: 85 });
+    assert.equal(v.approved, true);
+    assert.equal(v.score, 85);
+  });
+
+  it('امتیاز ۷۹ با approved=true رد می‌شود', () => {
+    const v = applyScoreGate({ approved: true, score: 79 });
+    assert.equal(v.approved, false);
+  });
+
+  it('مرز ۸۰ تأیید است', () => {
+    assert.equal(applyScoreGate({ approved: false, score: 80 }).approved, true);
+  });
+
+  it('بدون امتیاز، بولین حفظ می‌شود', () => {
+    assert.equal(applyScoreGate({ approved: true }).approved, true);
+    assert.equal(applyScoreGate({ approved: false }).approved, false);
+  });
+
+  it('امتیاز نامعتبر نادیده گرفته می‌شود', () => {
+    assert.equal(applyScoreGate({ approved: true, score: 'نامشخص' }).approved, true);
+  });
+
+  it('parseCriticScore ارقام فارسی و کلمپ را می‌فهمد', () => {
+    assert.equal(parseCriticScore('۸۵'), 85);
+    assert.equal(parseCriticScore(150), 100);
+    assert.equal(parseCriticScore('abc'), null);
+  });
+
+  it('runCriticLoop: امتیاز زیر ۸۰ در دور ۱، حلقه را به دور ۲ می‌برد', async () => {
+    const seenInstructions: Array<string | undefined> = [];
+    const result = await runCriticLoop<{ outputs: string[] }>({
+      team: 'x',
+      runId: 'test-score-gate',
+      runWorkers: async (round, prevInstruction) => {
+        seenInstructions.push(prevInstruction);
+        return { outputs: ['خروجی کامل و معتبر با محتوای واقعی و جزئیات کافی برای ارزیابی.'] };
+      },
+      runCritic: async (output, round): Promise<CriticVerdictV2> => {
+        if (round === 1) {
+          return {
+            approved: true, // منتقد اشتباهی تأیید کرده ولی امتیاز ۷۵ داده
+            score: 75,
+            reason: 'خوب است',
+            instruction: '',
+            acceptance: '',
+          };
+        }
+        return { approved: true, score: 85, reason: '', instruction: '', acceptance: '' };
+      },
+    });
+    // دور ۱ نباید تأیید شده باشد؛ حلقه باید به دور ۲ رفته باشد
+    assert.equal(result.finalRound, 2);
+    assert.equal(result.approved, true);
+    assert.equal(result.verdicts[0].approved, false);
+    assert.equal(result.verdicts[0].score, 75);
+    // دلیل سنتزشده باید امتیاز ۷۵ را ذکر کند
+    assert.match(result.verdicts[0].reason, /۷۵/);
+    // دستور دور ۲ باید آستانه ۸۰ را داشته باشد
+    assert.match(seenInstructions[1] ?? '', /۸۰/);
+  });
+
+  it('runCriticLoop: امتیاز ۹۰ با approved=false تأیید می‌شود', async () => {
+    const result = await runCriticLoop<{ outputs: string[] }>({
+      team: 'x',
+      runId: 'test-score-override',
+      runWorkers: async () => ({
+        outputs: ['خروجی کامل و معتبر با محتوای واقعی و جزئیات کافی برای ارزیابی.'],
+      }),
+      runCritic: async (): Promise<CriticVerdictV2> => ({
+        approved: false,
+        score: 90,
+        reason: 'دلیل رد منتقد که با امتیازش نمی‌خواند ولی امتیاز تعیین‌کننده است.',
+        instruction: 'دستوری که لازم نیست چون امتیاز کافی است و تأیید می‌شود.',
+        acceptance: 'وقتی امتیاز ۸۰ یا بالاتر باشد.',
+      }),
+    });
+    assert.equal(result.approved, true);
+    assert.equal(result.finalRound, 1);
   });
 });

@@ -23,8 +23,15 @@
  * (فقط نظر نهایی ثبت می‌شود).
  */
 
+import { faDigits } from './format';
+
 export interface CriticVerdictV2 {
   approved: boolean;
+  /**
+   * امتیاز کیفی منتقد از ۰ تا ۱۰۰. وقتی منتقد امتیاز بدهد، همین عدد
+   * (نه بولین approved) تعیین‌کننده است: تأیید فقط با امتیاز ≥ ۸۰.
+   */
+  score?: number;
   /** شرح کامل با جزئیات دلیل رد؛ وقتی approved=true خالی. */
   reason: string;
   /** دستور دقیق قدم‌به‌قدم برای مجری؛ وقتی approved=true خالی. */
@@ -71,6 +78,91 @@ export interface CriticLoopResult<WorkerOutput> {
 
 /** سقف تلاش مجری در هر دور — همه در همین چرخه، بدون موکول به چرخه بعد. */
 const MAX_WORKER_ATTEMPTS_PER_ROUND = 3;
+
+/* ==========================================================================
+ * دروازه امتیاز منتقد (یافته تلخ «امتیاز ۸۰»)
+ *
+ * قرارداد: منتقد به خروجی امتیاز ۰ تا ۱۰۰ می‌دهد و «تأیید» فقط وقتی است
+ * که امتیاز ۸۰ یا بالاتر باشد. وقتی امتیاز معتبر داده شده، همین عدد
+ * تعیین‌کننده است و بولین approved نادیده گرفته می‌شود؛ وقتی امتیازی
+ * نیست، رفتار قبلی (بولین) حفظ می‌شود.
+ * ========================================================================== */
+
+/** آستانه قبولی منتقد: تأیید فقط با امتیاز ۸۰ یا بالاتر. */
+export const CRITIC_PASS_SCORE = 80;
+
+/**
+ * خط راهنمای امتیازدهی که به پرامپت همه منتقدها اضافه می‌شود تا
+ * کلید score را در JSON حکم بدهند.
+ */
+export const CRITIC_SCORE_PROMPT_LINE =
+  'به کیفیت کلی خروجی هم امتیاز ۰ تا ۱۰۰ بده (کلید score، عدد صحیح): ' +
+  '۸۰ یعنی «قابل قبول و آماده تحویل»؛ زیر ۸۰ یعنی «نیاز به اصلاح جدی».';
+
+/** استخراج امتیاز عددی از حکم خام؛ نامعتبر/ناموجود => null. */
+export function parseCriticScore(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return Math.max(0, Math.min(100, Math.round(raw)));
+  }
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    const n = Number(raw.trim().replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))));
+    if (Number.isFinite(n)) return Math.max(0, Math.min(100, Math.round(n)));
+  }
+  return null;
+}
+
+/**
+ * اعمال دروازه امتیاز روی حکم منتقد. وقتی score معتبر هست:
+ * approved = (score >= CRITIC_PASS_SCORE).
+ */
+export function applyScoreGate<V extends { approved?: boolean; score?: unknown }>(
+  verdict: V,
+): V {
+  const score = parseCriticScore((verdict as { score?: unknown }).score);
+  if (score === null) return verdict;
+  return { ...verdict, score, approved: score >= CRITIC_PASS_SCORE };
+}
+
+/**
+ * حکم ردِ سنتزشده وقتی دروازه امتیاز، تأییدِ منتقد را برمی‌گرداند
+ * (امتیاز زیر ۸۰ ولی approved=true). دلیل و دستورش شرط‌های
+ * validateRejection را می‌گذرانند تا حلقه بی‌نقص ادامه یابد.
+ */
+export function buildScoreGateRejection(score: number, criticReason?: string): {
+  reason: string;
+  instruction: string;
+  acceptance: string;
+} {
+  const reason =
+    `امتیاز منتقد ${faDigits(score)} از ۱۰۰ است؛ آستانه قبولی ${faDigits(CRITIC_PASS_SCORE)} است و این خروجی به آن نرسید.` +
+    (criticReason?.trim() ? ` نظر منتقد: ${criticReason.trim()}` : '');
+  return {
+    reason,
+    instruction:
+      `خروجی را بازبینی و تقویت کن تا امتیاز ${faDigits(CRITIC_PASS_SCORE)} یا بالاتر بگیرد: نقاط ضعف را یک‌به‌یک برطرف کن، ` +
+      'بخش‌های ناقص یا سطحی را کامل و مستدل بنویس، ادعاها را با شاهد و مثال تقویت کن، ' +
+      'و خروجی نهایی را تمیز و آماده تحویل بده. کم‌کاری پذیرفته نیست.',
+    acceptance:
+      `وقتی درست است که خروجی در داوری دوباره امتیاز ${faDigits(CRITIC_PASS_SCORE)} یا بالاتر بگیرد.`,
+  };
+}
+
+/**
+ * ترکیب دستور مستقیم منتقد از حلقه بیرونی ارکستراتور (همین چرخه) با
+ * دستور دور داخلی حلقه نقد. دستور بیرونی بالاترین اولویت را دارد و
+ * همیشه اول می‌آید. خروجی undefined یعنی دستوری نیست.
+ */
+export function combineReviewDirectives(
+  outerDirective?: string | null,
+  innerInstruction?: string | null,
+): string | undefined {
+  const outer = (outerDirective ?? '').trim()
+    ? `دستور مستقیم منتقد از حلقهٔ بیرونی (همین چرخه — بالاترین اولویت، حتماً اعمال کن):\n${(outerDirective ?? '').trim()}`
+    : undefined;
+  const inner = (innerInstruction ?? '').trim() || undefined;
+  const parts = [outer, inner].filter((p): p is string => !!p);
+  return parts.length > 0 ? parts.join('\n\n') : undefined;
+}
 
 /**
  * تلاش مجدد یک کار ناپایدار (مثل ساخت پلن سرپرست) در همین چرخه.
@@ -267,6 +359,7 @@ export function validateWorkerOutput(output: unknown): OutputValidity {
 export function buildAutoRejection(detail: string): CriticVerdictV2 {
   return {
     approved: false,
+    score: 0,
     reason:
       `خروجی نامعتبر است: ${detail} ` +
       'چنین خروجی‌ای هرگز تأیید نمی‌شود؛ مجری موظف است خروجی کامل و قابل ارزیابی تحویل بدهد.',
@@ -352,6 +445,7 @@ export async function runCriticLoop<WorkerOutput>(
         // دور ۳: رد کیفی مجاز نیست، ولی خروجی نامعتبر هم هرگز تأیید نمی‌شود؛ فقط نظر نهایی.
         const invalidVerdict: CriticVerdictV2 = {
           approved: false,
+          score: 0,
           reason: `خروجی نامعتبر است: ${validity.detail}`,
           instruction: '',
           acceptance: '',
@@ -385,6 +479,26 @@ export async function runCriticLoop<WorkerOutput>(
 
     await onProgress?.(`دور ${round}: داوری منتقد`);
     let verdict = await runCritic(output!, round > 3 ? 3 : round as 1 | 2 | 3);
+
+    // دروازه امتیاز منتقد (یافته تلخ «امتیاز ۸۰»): در دورهای ۱ و ۲، وقتی
+    // منتقد امتیاز داده، تأیید فقط با امتیاز ۸۰ یا بالاتر است. اگر دروازه
+    // تأییدِ منتقد را برگرداند (امتیاز زیر ۸۰)، دلیل و دستور رد سنتز می‌شود
+    // تا حلقه با حکم معتبر ادامه یابد.
+    if (round < 3) {
+      const wasApproved = verdict.approved !== false;
+      const gated = applyScoreGate(verdict);
+      if (gated.score !== undefined && !gated.approved && wasApproved) {
+        const synth = buildScoreGateRejection(gated.score, verdict.reason);
+        verdict = {
+          ...gated,
+          reason: synth.reason,
+          instruction: synth.instruction,
+          acceptance: synth.acceptance,
+        };
+      } else {
+        verdict = gated;
+      }
+    }
 
     // دور ۳: رد مجاز نیست؛ به‌عنوان نظر نهایی تفسیر می‌شود
     if (round === 3) {

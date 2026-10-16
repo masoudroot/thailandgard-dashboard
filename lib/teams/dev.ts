@@ -23,6 +23,9 @@ import {
 import { readRepoFile } from '../github';
 import {
   runCriticLoop,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -46,6 +49,11 @@ export interface DevTeamInput {
   reportProgress?: ProgressReporter;
   runId: string;
   previousWavesOutput: Partial<Record<TeamName, TeamResult>>;
+  /**
+   * دستور مستقیم منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ بالاترین
+   * اولویت را دارد و در ابتدای دستور مجری‌ها تزریق می‌شود.
+   */
+  reviewDirective?: string;
 }
 
 const SUPERVISOR_SYSTEM = 'تو سرپرست فنی تیم توسعهٔ تایلندگرد هستی. دقیق و عمل‌گرا.';
@@ -96,6 +104,8 @@ interface FileVerdict {
 
 interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
   files: FileVerdict[];
 }
@@ -346,7 +356,10 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
 
     // ۳) مجری‌ها: تولید محتوای کامل هر فایل
     await reportLive?.('مجری‌ها: نوشتن کد واقعی', 55);
-    const validPatches = await generatePatches(plan, prevInstruction);
+    const validPatches = await generatePatches(
+      plan,
+      combineReviewDirectives(input.reviewDirective, prevInstruction),
+    );
     if (validPatches.length === 0) {
       throw new Error('هیچ مجری‌ای کد معتبر تولید نکرد؛ این چرخه پچی تولید نشد.');
     }
@@ -369,7 +382,8 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
         )
         .join('\n\n') +
       '\n\nهر فایل را داوری کن و فقط JSON معتبر بده:\n' +
-      '{"approved": بولین (کل پچ), "reason": "یک جمله", "files": [{"path": "مسیر", "approved": بولین, "reason": "دلیل"}]}\n' +
+      '{"approved": بولین (کل پچ), "score": عدد ۰ تا ۱۰۰, "reason": "یک جمله", "files": [{"path": "مسیر", "approved": بولین, "reason": "دلیل"}]}\n' +
+      CRITIC_SCORE_PROMPT_LINE + '\n' +
       'معیارها: سینتکس معتبر؛ ایمپورت‌های درست؛ راست‌چین با logical CSS؛ بدون secret و .env؛ ' +
       'کد ناقص یا placeholder = رد. فقط ایراد واقعی؛ سلیقه‌ای نه.';
     await reportLive?.('منتقد: بازبینی خط‌به‌خط کد', 85);
@@ -389,11 +403,13 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
       : [];
     lastRawApproved = verdict.approved === true;
     lastRawReason = String(verdict.reason ?? '').trim() || 'منتقد دلیلی ثبت نکرد.';
+    const score = parseCriticScore(verdict.score) ?? undefined;
     const reason = lastRawReason;
 
     if (round === 3) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -403,6 +419,7 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
     if (verdict.approved) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -411,6 +428,7 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
     }
     return {
       approved: false,
+      score,
       reason,
       instruction: criticInstructionFromReason(reason, lastFileVerdicts),
       acceptance: criticAcceptanceFromReason(reason, lastFileVerdicts),

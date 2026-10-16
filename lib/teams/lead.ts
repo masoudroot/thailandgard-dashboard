@@ -19,6 +19,9 @@ import {
 } from '../knowledge/critic-knowledge';
 import {
   runCriticLoop,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -55,6 +58,8 @@ interface CriticPayload {
 
 interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
   payload: CriticPayload;
 }
@@ -175,13 +180,15 @@ async function judgeWorkers(outputs: [string, string, string]): Promise<CriticVe
     'خروجی مجری ۳:',
     outputs[2],
     '',
-    'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جمله)، payload (شیئی با کلیدهای summary رشته‌ای، alerts آرایه‌ای از هشدارهای SLA، tasks آرایه‌ای از پیشنهادهای بهبود تبدیل).',
+    'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، score (عدد ۰ تا ۱۰۰)، reason (یک جمله)، payload (شیئی با کلیدهای summary رشته‌ای، alerts آرایه‌ای از هشدارهای SLA، tasks آرایه‌ای از پیشنهادهای بهبود تبدیل).',
+    CRITIC_SCORE_PROMPT_LINE,
     'تمرکز داوری: آیا هیچ لیدی گم نشده، هشدار SLA به‌موقع صادر شده و اطلاعات شخصی در گزارش نیامده؟',
   ].join('\n');
-  return callLLMJson<CriticVerdict>(prompt, {
+  const verdict = await callLLMJson<CriticVerdict>(prompt, {
     system: 'تو منتقد سخت‌گیر تیم lead هستی. فقط JSON معتبر می‌دهی.',
     temperature: 0.2,
   });
+  return { ...verdict, score: parseCriticScore(verdict.score) ?? undefined };
 }
 
 /** نرمال‌سازی حکم منتقد: خروجی ناقص/نامعتبر LLM هرگز نباید تیم را بیندازد. */
@@ -194,6 +201,7 @@ function normalizeVerdict(v: unknown): CriticVerdict {
       : {};
   return {
     approved: o.approved === true,
+    score: parseCriticScore(o.score) ?? undefined,
     reason: typeof o.reason === 'string' ? o.reason : '',
     payload: {
       summary: typeof payload.summary === 'string' ? payload.summary : '',
@@ -274,13 +282,9 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
     await reportLive?.('مجری‌ها: پایش، SLA و تبدیل', 55);
     // دستور صریح حلقهٔ بیرونی (ارکستراتور) در همین چرخه — اولویت بالا، جدا از ragContext.
-    const outerDirective = input.reviewDirective?.trim()
-      ? `دستور مستقیم منتقد از حلقهٔ بیرونی (همین چرخه — بالاترین اولویت، حتماً اعمال کن):\n${input.reviewDirective.trim()}`
-      : undefined;
-    const combinedInstruction = [outerDirective, prevInstruction]
-      .filter(Boolean)
-      .join('\n\n');
-    const outputs = await executeWorkers(missions, combinedInstruction || undefined);
+    // با همان قرارداد مشترک همه تیم‌ها (combineReviewDirectives).
+    const combinedInstruction = combineReviewDirectives(input.reviewDirective, prevInstruction);
+    const outputs = await executeWorkers(missions, combinedInstruction);
     return { missions, outputs };
   };
 
@@ -296,10 +300,12 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     const verdict = normalizeVerdict(await judgeWorkers(output.outputs));
     lastVerdict = verdict;
     const reason = verdict.reason || 'منتقد دلیلی ثبت نکرد.';
+    const score = verdict.score;
 
     if (round === 3) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -309,6 +315,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     if (verdict.approved) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -317,6 +324,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     }
     return {
       approved: false,
+      score,
       reason,
       instruction: criticInstructionFromReason(reason),
       acceptance: criticAcceptanceFromReason(reason),

@@ -19,6 +19,9 @@ import {
 import {
   runCriticLoop,
   retryInCycle,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -49,6 +52,8 @@ interface SupervisorPlan {
 
 interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
   payload: string;
 }
@@ -147,13 +152,15 @@ async function judgeWorkers(workersOutput: string): Promise<CriticVerdict> {
     'خروجی مجری‌ها:',
     workersOutput,
     '',
-    'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جمله)، payload (متن نهایی تأییدشده یا اصلاح‌شده).',
+    'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، score (عدد ۰ تا ۱۰۰)، reason (یک جمله)، payload (متن نهایی تأییدشده یا اصلاح‌شده).',
+    CRITIC_SCORE_PROMPT_LINE,
     'تمرکز داوری: آیا متن با لحن برند می‌خواند و شعار از کلیشه، موعظه و ادعای بی‌پشتوانه پاک است؟',
   ].join('\n');
-  return callLLMJson<CriticVerdict>(prompt, {
+  const verdict = await callLLMJson<CriticVerdict>(prompt, {
     system: 'تو منتقد سخت‌گیر تیم branding هستی. فقط JSON معتبر می‌دهی.',
     temperature: 0.2,
   });
+  return { ...verdict, score: parseCriticScore(verdict.score) ?? undefined };
 }
 
 /** یادگیری چرخه در حافظه با کلید learned:<runId>. */
@@ -217,16 +224,11 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       50,
     );
     // دستور صریح حلقهٔ بیرونی (ارکستراتور) در همین چرخه — اولویت بالا، جدا از ragContext.
-    // دستور مسعود: دستور منتقد باید صریح به تیم برسد و در همان چرخه اجرا شود.
-    const outerDirective = input.reviewDirective?.trim()
-      ? `دستور مستقیم منتقد از حلقهٔ بیرونی (همین چرخه — بالاترین اولویت، حتماً اعمال کن):\n${input.reviewDirective.trim()}`
-      : undefined;
-    const combinedInstruction = [outerDirective, prevInstruction]
-      .filter(Boolean)
-      .join('\n\n');
+    // با همان قرارداد مشترک همه تیم‌ها (combineReviewDirectives).
+    const combinedInstruction = combineReviewDirectives(input.reviewDirective, prevInstruction);
     const workersOutput = await executeWorkers(
       missions,
-      combinedInstruction || undefined,
+      combinedInstruction,
     );
     return { missions, workersOutput };
   };
@@ -244,6 +246,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     // حکم ناقص LLM نباید «undefined» چاپ کند یا مسیر اشتباه برود
     const verdict = {
       approved: rawVerdict?.approved === true,
+      score: rawVerdict?.score,
       reason:
         typeof rawVerdict?.reason === 'string' && rawVerdict.reason.trim()
           ? rawVerdict.reason
@@ -251,10 +254,12 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       payload: typeof rawVerdict?.payload === 'string' ? rawVerdict.payload : '',
     };
     const reason = verdict.reason;
+    const score = verdict.score;
 
     if (round === 3) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -264,6 +269,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     if (verdict.approved) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -272,6 +278,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     }
     return {
       approved: false,
+      score,
       reason,
       instruction: criticInstructionFromReason(reason),
       acceptance: criticAcceptanceFromReason(reason),

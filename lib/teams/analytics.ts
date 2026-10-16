@@ -23,6 +23,9 @@ import {
 } from '../knowledge/critic-knowledge';
 import {
   runCriticLoop,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -70,6 +73,8 @@ interface SupervisorPlan {
 
 interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
   payload: unknown;
 }
@@ -95,6 +100,11 @@ export interface AnalyticsTeamInput extends TeamProgressInput {
   context?: string;
   memory?: MemoryEntry[];
   previousWavesOutput?: Record<string, TeamResult | null>;
+  /**
+   * دستور مستقیم منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ بالاترین
+   * اولویت را دارد و در ابتدای دستور مجری‌ها تزریق می‌شود.
+   */
+  reviewDirective?: string;
 }
 
 /** خط تیرهٔ بلند (U+2014) در هیچ خروجی نباید باشد. */
@@ -168,7 +178,8 @@ async function judge(outputs: [string, string, string]): Promise<CriticVerdict> 
       'خروجی مجری ۳:',
       outputs[2],
       '',
-      'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جمله)، payload.',
+      'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، score (عدد ۰ تا ۱۰۰)، reason (یک جمله)، payload.',
+      CRITIC_SCORE_PROMPT_LINE,
       'تمرکز داوری: آیا هر یافتهٔ رفتاری مخرج و بُعد دارد، حدس‌ها شرط ابطال دارند و عدد بی‌معنا گزارش نشده؟',
     ].join('\n'),
     { system: CRITIC_SYSTEM },
@@ -176,6 +187,7 @@ async function judge(outputs: [string, string, string]): Promise<CriticVerdict> 
 
   return {
     approved: raw?.approved === true,
+    score: parseCriticScore(raw?.score) ?? undefined,
     reason:
       typeof raw?.reason === 'string' && raw.reason.trim()
         ? sanitize(raw.reason.trim())
@@ -266,7 +278,9 @@ export async function runTeam(input: AnalyticsTeamInput): Promise<TeamResult> {
       }
       await reportLive?.('مجری‌ها: تحلیل رفتار و متریک‌ها', 55);
       const outputs = (await Promise.all(
-        missions.map((mission, i) => runWorker(mission, i as 0 | 1 | 2, prevInstruction)),
+        missions.map((mission, i) =>
+          runWorker(mission, i as 0 | 1 | 2, combineReviewDirectives(input.reviewDirective, prevInstruction)),
+        ),
       )) as [string, string, string];
       return { missions, outputs };
     };
@@ -287,6 +301,7 @@ export async function runTeam(input: AnalyticsTeamInput): Promise<TeamResult> {
       if (round === 3) {
         return {
           approved: true,
+          score: verdict.score,
           reason: '',
           instruction: '',
           acceptance: '',
@@ -296,6 +311,7 @@ export async function runTeam(input: AnalyticsTeamInput): Promise<TeamResult> {
       if (verdict.approved) {
         return {
           approved: true,
+          score: verdict.score,
           reason: '',
           instruction: '',
           acceptance: '',
@@ -304,6 +320,7 @@ export async function runTeam(input: AnalyticsTeamInput): Promise<TeamResult> {
       }
       return {
         approved: false,
+        score: verdict.score,
         reason,
         instruction: criticInstructionFromReason(reason),
         acceptance: criticAcceptanceFromReason(reason),

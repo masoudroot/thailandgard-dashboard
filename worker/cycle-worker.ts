@@ -13,6 +13,7 @@ import { findActiveCycle, finishCycle, runSingleTeam, beginCycle } from '../lib/
 import { claimTeam, type LockOwner } from '../lib/lock';
 import { getSetting } from '../lib/settings';
 import { sweepHungTeams } from '../lib/team-health';
+import { recoverDeadCycles, isAutoRestartableAfterKill } from '../lib/cycle-recovery';
 
 /** سقف پردازش پچ‌های یتیم در هر تیک، تا بودجه‌ی زمانی جاب خورده نشود. */
 const ORPHAN_SWEEP_LIMIT = 3;
@@ -61,7 +62,9 @@ async function sweepOrphanedBridgePatches(): Promise<void> {
  * اگر آخرین چرخه با success بسته شده و تنظیم auto_start_next_cycle مخالف
  * صریح (false) نیست، خودکار beginCycle می‌زند تا سیستم تا دخالت دستی نخوابد.
  * (دستور مسعود: سایت کاملاً خودکار باشد.)
- * اگر آخرین چرخه failed بود، چرخه‌ی تازه نمی‌سازد — نیاز به توجه دارد.
+ * اگر آخرین چرخه failed بود، چرخه‌ی تازه نمی‌سازد — نیاز به توجه دارد؛
+ * استثنا: چرخه‌ای که با kill مرده و بازیابی شده (KILLED) — آن خودکار
+ * با چرخه‌ای تمیز ادامه می‌یابد، چون kill رویداد زیرساختی است نه سیگنال کیفی.
  * اگر اصلاً چرخه‌ای نبود هم هیچ‌چیز نمی‌سازد؛ شروع اول دستی است.
  */
 async function autoStartNextCycleIfNeeded(): Promise<{ cycleId: string; runId: string } | null> {
@@ -73,7 +76,7 @@ async function autoStartNextCycleIfNeeded(): Promise<{ cycleId: string; runId: s
   const sb = getSupabase();
   const { data, error } = await sb
     .from('cycles')
-    .select('id, status')
+    .select('id, status, error')
     .order('started_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -81,10 +84,13 @@ async function autoStartNextCycleIfNeeded(): Promise<{ cycleId: string; runId: s
     console.log('no previous cycle; waiting for manual start');
     return null;
   }
-  const last = data as { id: string; status: string };
-  if (last.status !== 'success') {
+  const last = data as { id: string; status: string; error?: string | null };
+  if (last.status !== 'success' && !isAutoRestartableAfterKill(last)) {
     console.log(`last cycle ${last.id} ended with '${last.status}'; not auto-starting (needs attention)`);
     return null;
+  }
+  if (isAutoRestartableAfterKill(last)) {
+    console.log(`last cycle ${last.id} was killed and recovered; auto-starting a clean cycle`);
   }
   const { cycleId, runId } = await beginCycle();
   console.log(`auto-started next cycle: ${runId} (${cycleId})`);
@@ -94,6 +100,15 @@ async function autoStartNextCycleIfNeeded(): Promise<{ cycleId: string; runId: s
 async function main(): Promise<void> {
   const sb = getSupabase();
   const action = process.argv[2];
+
+  // رفع ریشه‌ای مشکل kill (مشکل ۶): در شروع هر تیک، اول بقایای چرخه مرده
+  // (قفل stale، تسک‌های claimشده رها، وضعیت‌های ناتمام، پچ‌های gated یتیم)
+  // بازیابی می‌شود؛ بعد تصمیم‌گیری عادی. fail-soft است.
+  try {
+    await recoverDeadCycles();
+  } catch (err) {
+    console.error('[worker] cycle recovery at tick start failed (continuing):', err instanceof Error ? err.message : err);
+  }
 
   // ساخت چرخه جدید
   if (action === 'start-cycle') {

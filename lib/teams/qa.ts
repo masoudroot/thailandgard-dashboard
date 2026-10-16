@@ -21,6 +21,9 @@ import {
 } from '../knowledge/critic-knowledge';
 import {
   runCriticLoop,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -53,10 +56,17 @@ export interface RunTeamInput {
   reportProgress?: ProgressReporter;
   runId: string;
   previousWavesOutput: Partial<Record<TeamName, TeamResult | null>>;
+  /**
+   * دستور مستقیم منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ بالاترین
+   * اولویت را دارد و در ابتدای دستور مجری‌ها تزریق می‌شود.
+   */
+  reviewDirective?: string;
 }
 
 interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
   payload?: unknown;
 }
@@ -74,6 +84,7 @@ function parseCriticVerdict(text: string): CriticVerdict {
     const parsed = JSON.parse(match ? match[0] : text) as Partial<CriticVerdict>;
     return {
       approved: parsed.approved === true,
+      score: parseCriticScore(parsed.score) ?? undefined,
       reason: typeof parsed.reason === 'string' ? parsed.reason : '',
       payload: parsed.payload,
     };
@@ -249,12 +260,14 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     }
 
     // ۲. سه مجری، موازی، هر کدام با مأموریت خودش.
+    // دستور مستقیم حلقهٔ بیرونی (reviewDirective) بالاترین اولویت را دارد.
+    const instruction = combineReviewDirectives(input.reviewDirective, prevInstruction);
     const outputs = (await Promise.all(
       missions.map((mission, i) =>
         callLLM(
           [
-            ...(prevInstruction
-              ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', prevInstruction, '']
+            ...(instruction
+              ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', instruction, '']
               : []),
             'مأموریت سرپرست:',
             mission,
@@ -286,7 +299,8 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
       'خروجی مجری ۳:',
       output.outputs[2],
       '',
-      'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جمله)، payload.',
+      'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، score (عدد ۰ تا ۱۰۰)، reason (یک جمله)، payload.',
+      CRITIC_SCORE_PROMPT_LINE,
       'در payload بیاور: release (تیک انتشار: «آماده است» یا «نیست»)، bugs (آرایه‌ای از {title, severity, steps}) و tasks.',
       'تمرکز داوری: آیا باگ بحرانی انتشار را متوقف کرده، گزارش قدم‌به‌قدم قابل تکرار است و تست روی دادهٔ واقعی کاربر انجام نشده؟',
     ].join('\n');
@@ -300,10 +314,12 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     lastVerdict = verdict;
     lastCriticText = criticText;
     const reason = verdict.reason || 'منتقد دلیلی ثبت نکرد.';
+    const score = verdict.score;
 
     if (round === 3) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -313,6 +329,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     if (verdict.approved) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -321,6 +338,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     }
     return {
       approved: false,
+      score,
       reason,
       instruction: criticInstructionFromReason(reason),
       acceptance: criticAcceptanceFromReason(reason),

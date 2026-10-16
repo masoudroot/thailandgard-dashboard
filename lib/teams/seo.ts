@@ -35,6 +35,9 @@ import { readSiteFile } from '../bridge/read';
 import { sanitizePersian, hasForbiddenDash, escapeTsString } from '../persian-text';
 import {
   runCriticLoop,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -55,6 +58,11 @@ export interface SeoTeamInput {
   previousWavesOutput?: Record<string, TeamResult | string>;
   /** دانش بازیابی‌شده از RAG (اختیاری) */
   knowledge?: string;
+  /**
+   * دستور مستقیم منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ بالاترین
+   * اولویت را دارد و در ابتدای دستور مجری‌ها تزریق می‌شود.
+   */
+  reviewDirective?: string;
 }
 
 const GUIDES_PATH = 'site/lib/guides.ts';
@@ -76,6 +84,8 @@ interface SeoItem {
 
 interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
 }
 
@@ -440,7 +450,10 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     }
 
     await reportLive?.('مجری: تولید h1 و متا تگ', 60);
-    const items = await generateSeoItems(slugs, prevInstruction);
+    const items = await generateSeoItems(
+      slugs,
+      combineReviewDirectives(input.reviewDirective, prevInstruction),
+    );
     if (items.length === 0) {
       throw new Error('هیچ قلم سئوی معتبری در این دور تولید نشد.');
     }
@@ -468,16 +481,19 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
           '',
         ]),
         'داوری کن. معیارها: h1 واقعاً از تایتل جداست؟ طول‌ها در بازه‌اند؟ فارسی طبیعی است؟ خط تیرهٔ بلند ندارد؟ کلیک‌بیت گمراه‌کننده نیست؟',
-        'فقط JSON معتبر بده: {"approved": true/false, "reason": "یک جمله"}',
+        'فقط JSON معتبر بده: {"approved": true/false, "score": ۰ تا ۱۰۰, "reason": "یک جمله"}',
+        CRITIC_SCORE_PROMPT_LINE,
         'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
       ].join('\n'),
       { system: SYSTEM_CRITIC, temperature: 0.2 },
     );
     const reason = String(verdict.reason || '').trim();
+    const score = parseCriticScore(verdict.score) ?? undefined;
 
     if (round === 3) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -487,6 +503,7 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     if (verdict.approved) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -495,6 +512,7 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     }
     return {
       approved: false,
+      score,
       reason,
       instruction: criticInstructionFromReason(reason),
       acceptance: criticAcceptanceFromReason(reason),

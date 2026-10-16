@@ -21,6 +21,9 @@ import {
 } from '../knowledge/critic-knowledge';
 import {
   runCriticLoop,
+  combineReviewDirectives,
+  parseCriticScore,
+  CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
 } from '../critic-loop';
@@ -51,6 +54,8 @@ interface SupervisorPlan {
 
 interface CriticVerdict {
   approved: boolean;
+  /** امتیاز کیفی منتقد (۰ تا ۱۰۰)؛ تعیین‌کننده نهایی: تأیید فقط با ≥ ۸۰. */
+  score?: number;
   reason: string;
   payload: string;
 }
@@ -125,13 +130,15 @@ async function judgeWorkers(workersOutput: string): Promise<CriticVerdict> {
     'خروجی مجری‌ها:',
     workersOutput,
     '',
-    'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جمله)، payload (متن نهایی تأییدشده یا اصلاح‌شده).',
+    'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، score (عدد ۰ تا ۱۰۰)، reason (یک جمله)، payload (متن نهایی تأییدشده یا اصلاح‌شده).',
+    CRITIC_SCORE_PROMPT_LINE,
     'تمرکز داوری: آیا هر تصمیم بزرگ «چرا»ی مستند دارد (چه حسی، برای چه مخاطبی، با چه ارجاعی) و طرح بدون بریف به اجرا نرفته؟',
   ].join('\n');
-  return callLLMJson<CriticVerdict>(prompt, {
+  const verdict = await callLLMJson<CriticVerdict>(prompt, {
     system: 'تو منتقد سخت‌گیر تیم artdir هستی. فقط JSON معتبر می‌دهی.',
     temperature: 0.2,
   });
+  return { ...verdict, score: parseCriticScore(verdict.score) ?? undefined };
 }
 
 /**
@@ -187,13 +194,9 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     }
     await reportLive?.('مجری‌ها: اجرای مأموریت‌ها', 55);
     // دستور صریح حلقهٔ بیرونی (ارکستراتور) در همین چرخه — اولویت بالا، جدا از ragContext.
-    const outerDirective = input.reviewDirective?.trim()
-      ? `دستور مستقیم منتقد از حلقهٔ بیرونی (همین چرخه — بالاترین اولویت، حتماً اعمال کن):\n${input.reviewDirective.trim()}`
-      : undefined;
-    const combinedInstruction = [outerDirective, prevInstruction]
-      .filter(Boolean)
-      .join('\n\n');
-    const workersOutput = await executeWorkers(plan, combinedInstruction || undefined);
+    // با همان قرارداد مشترک همه تیم‌ها (combineReviewDirectives).
+    const combinedInstruction = combineReviewDirectives(input.reviewDirective, prevInstruction);
+    const workersOutput = await executeWorkers(plan, combinedInstruction);
     return { plan, workersOutput };
   };
 
@@ -213,10 +216,12 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         ? verdict.reason
         : 'منتقد دلیلی ثبت نکرد.';
     const reason = lastRawReason;
+    const score = verdict.score;
 
     if (round === 3) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -226,6 +231,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     if (verdict.approved) {
       return {
         approved: true,
+        score,
         reason: '',
         instruction: '',
         acceptance: '',
@@ -234,6 +240,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     }
     return {
       approved: false,
+      score,
       reason,
       instruction: criticInstructionFromReason(reason),
       acceptance: criticAcceptanceFromReason(reason),
