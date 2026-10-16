@@ -5,14 +5,26 @@
  * به خروجی تیم content وابسته است و آن را از previousWavesOutput می‌خواند.
  *
  * خط لوله (اقتباس تمیز از ورک‌فلو n8n ‏thailandgard-all-teams):
- *   سرپرست (analyze) ← سه مجری موازی (analyze / code / write) ← منتقد (analyze)
- * تایید ← writeMemory با کلید learned:<runId> / رد ← بسته‌بندی بلوکر
+ *   حلقه نقد ۳ دوره‌ای (lib/critic-loop.ts):
+ *     دور ۱: سرپرست (analyze) ← سه مجری موازی (analyze / code / write)
+ *     دور ۲: رد ← دستور دقیق منتقد (analyze) ← سه مجری اصلاح می‌کنند
+ *     دور ۳: فقط نظارت و نظر نهایی (حق رد ندارد)
+ *   تایید ← writeMemory با کلید learned:<runId> / رد ← بسته‌بندی بلوکر
  */
 
 import { callLLM, callLLMJson } from '../llm';
 import { writeMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
-import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
+import {
+  extractCriticKnowledge,
+  criticKnowledgeLog,
+  type CriticRoundRecord,
+} from '../knowledge/critic-knowledge';
+import {
+  runCriticLoop,
+  type CriticLoopResult,
+  type CriticVerdictV2,
+} from '../critic-loop';
 import type { ProgressReporter, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'seocontent';
@@ -44,6 +56,12 @@ interface CriticVerdict {
   approved: boolean;
   reason: string;
   payload?: unknown;
+}
+
+/** خروجی یک دور از مجری‌های حلقه نقد: مأموریت‌ها + خروجی هر سه مجری */
+interface WorkerRoundOutput {
+  missions: string[];
+  outputs: [string, string, string];
 }
 
 const WORKER_ROLES = [
@@ -84,7 +102,7 @@ function summarizeContentOutput(result: TeamResult | undefined): string {
   return parts.join('\n');
 }
 
-async function runSupervisor(contentSummary: string): Promise<string[]> {
+async function makeSupervisorMissions(contentSummary: string): Promise<string[]> {
   // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
   // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
   let knowledgeSection = '';
@@ -121,9 +139,12 @@ async function runSupervisor(contentSummary: string): Promise<string[]> {
   return missions.slice(0, 3);
 }
 
-async function runWorker(index: number, mission: string, contentSummary: string): Promise<string> {
+async function executeWorker(index: number, mission: string, contentSummary: string, prevInstruction?: string): Promise<string> {
   const role = WORKER_ROLES[index];
   const prompt = [
+    ...(prevInstruction
+      ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', prevInstruction, '']
+      : []),
     `مأموریت سرپرست:\n${mission}`,
     '',
     `زمینه (خروجی تیم content):\n${contentSummary}`,
@@ -138,7 +159,7 @@ async function runWorker(index: number, mission: string, contentSummary: string)
   });
 }
 
-async function runCritic(outputs: [string, string, string]): Promise<CriticVerdict> {
+async function judgeWorkers(outputs: [string, string, string]): Promise<CriticVerdict> {
   const prompt = [
     `خروجی مجری ۱:\n${outputs[0]}`,
     '',
@@ -187,36 +208,171 @@ function coercePayload(raw: unknown): Record<string, unknown> {
 }
 
 /**
+ * تبدیل دلیل ردِ منتقد قدیمی به دستور اجرایی (CriticVerdictV2.instruction).
+ * امری و بلندتر از ۵۰ نویسه تا از اعتبارسنجی حلقه رد شود.
+ */
+function criticInstructionFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return [
+    `خروجی را بر اساس این نقد اصلاح کن: «${r}»`,
+    'هر سه خروجی را بازنویسی کن: بهینه‌سازی را برای انسان هم بهتر کن، نه فقط موتور؛',
+    'صفحه را از کلمهٔ کلیدی پر نکن؛ فقط واقعیت بنویس، بدون حدس.',
+  ].join(' ');
+}
+
+/**
+ * تبدیل دلیل رد به معیار قبولی (CriticVerdictV2.acceptance).
+ */
+function criticAcceptanceFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return `وقتی درست است که نقد «${r}» دیگر دربارهٔ خروجی صدق نکند: بهینه‌سازی برای انسان هم بهتر شده و صفحه از کلمهٔ کلیدی پر نشده است.`;
+}
+
+/**
  * اجرای کامل تیم seocontent در یک چرخه:
- * سرپرست ← سه مجری موازی ← منتقد ← (تایید: حافظه + خروجی استاندارد) / (رد: بستهٔ بلوکر)
+ * حلقه نقد ← (تایید: حافظه + خروجی استاندارد) / (رد: بستهٔ بلوکر)
+ * (مهاجرت به حلقه نقد ۳ دوره‌ای lib/critic-loop.ts)
  */
 export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
   const contentSummary = summarizeContentOutput(input.previousWavesOutput['content']);
 
   try {
-    await reportLive?.('سرپرست: طراحی مأموریت‌ها', 20);
-    const missions = await runSupervisor(contentSummary);
+    // ---------- توابع حلقه نقد ----------
 
-    await reportLive?.('مجری‌ها: سه خروجی موازی', 55);
-    const [out1, out2, out3] = await Promise.all(
-      missions.map((mission, i) => runWorker(i, mission, contentSummary)),
-    );
+    // کش دور ۱: مأموریت‌های سرپرست در هر چرخه یک بار ساخته می‌شوند؛
+    // دورهای ۲ و ۳ همان مأموریت‌ها را با دستور منتقد اصلاح می‌کنند.
+    let cachedMissions: string[] | null = null;
+    // داوری خام آخرین دور (برای خلاصه، تسک‌ها و حافظه)
+    let lastVerdict: CriticVerdict | null = null;
 
-    await reportLive?.('منتقد: داوری خروجی', 80);
-    const verdict = await runCritic([out1, out2, out3]);
+    /**
+     * runWorkers: سرپرست (دور ۱) + سه مجری موازی هر دور.
+     */
+    const runWorkers = async (
+      round: number,
+      prevInstruction?: string,
+    ): Promise<WorkerRoundOutput> => {
+      if (round === 1) {
+        await reportLive?.('سرپرست: طراحی مأموریت‌ها', 20);
+        cachedMissions = await makeSupervisorMissions(contentSummary);
+      } else {
+        await reportLive?.(`دور ${round}: اصلاح با دستور منتقد`, 55);
+      }
+      const missions = cachedMissions;
+      if (!missions) {
+        throw new Error('مأموریت‌های سرپرست در کش پیدا نشد.');
+      }
+
+      await reportLive?.('مجری‌ها: سه خروجی موازی', 60);
+      const outputs = (await Promise.all(
+        missions.map((mission, i) => executeWorker(i, mission, contentSummary, prevInstruction)),
+      )) as [string, string, string];
+      return { missions, outputs };
+    };
+
+    /**
+     * runCritic: منتقد فعلی، با تبدیل خروجی به CriticVerdictV2.
+     * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+     */
+    const runCritic = async (
+      output: WorkerRoundOutput,
+      round: number,
+    ): Promise<CriticVerdictV2> => {
+      await reportLive?.(`منتقد: داوری خروجی (دور ${round})`, 80);
+      const verdict = await judgeWorkers(output.outputs);
+      lastVerdict = verdict;
+      const reason = verdict.reason;
+
+      if (round === 3) {
+        return {
+          approved: true,
+          reason: '',
+          instruction: '',
+          acceptance: '',
+          finalOpinion: reason,
+        };
+      }
+      if (verdict.approved) {
+        return {
+          approved: true,
+          reason: '',
+          instruction: '',
+          acceptance: '',
+          finalOpinion: reason || undefined,
+        };
+      }
+      return {
+        approved: false,
+        reason,
+        instruction: criticInstructionFromReason(reason),
+        acceptance: criticAcceptanceFromReason(reason),
+      };
+    };
+
+    // تاریخچه دورها برای ثبت دانش + آخرین لاگ دانش برای خلاصه
+    const roundHistory: CriticRoundRecord[] = [];
+    let lastKnowledgeLog = '';
+
+    /**
+     * onRoundKnowledge: ثبت دانش هر دور با extractCriticKnowledge فعلی.
+     */
+    const onRoundKnowledge = async (
+      round: number,
+      verdict: CriticVerdictV2,
+    ): Promise<void> => {
+      const record: CriticRoundRecord = {
+        round,
+        approved: verdict.approved,
+        reason: verdict.approved
+          ? verdict.finalOpinion || 'تأیید شد.'
+          : verdict.reason,
+        instruction: verdict.instruction?.trim() || undefined,
+      };
+      const knowledgeResult = await extractCriticKnowledge(
+        TEAM,
+        {
+          approved: verdict.approved,
+          reason: record.reason,
+          domain: 'محتوای سئو',
+          instruction: record.instruction,
+          round,
+          rounds: roundHistory.slice(),
+          isFinal: round === 3,
+        },
+        input.runId,
+      );
+      roundHistory.push(record);
+      lastKnowledgeLog = criticKnowledgeLog(knowledgeResult);
+    };
+
+    // ---------- اجرای حلقه نقد ۳ دوره‌ای ----------
+    const loopResult: CriticLoopResult<WorkerRoundOutput> = await runCriticLoop<WorkerRoundOutput>({
+      team: TEAM,
+      runId: input.runId,
+      runWorkers,
+      runCritic,
+      onRoundKnowledge,
+      onProgress: (msg) => reportLive?.(msg, 70),
+    });
+
+    const verdict: CriticVerdict = lastVerdict ?? {
+      approved: false,
+      reason: 'داوری ثبت نشد.',
+      payload: null,
+    };
     const payload = coercePayload(verdict.payload);
 
-    // استخراج دانش حرفه‌ای از حکم منتقد و ایندکس در RAG
-    const knowledgeResult = await extractCriticKnowledge(
-      TEAM,
-      { approved: verdict.approved, reason: verdict.reason, domain: 'محتوای سئو' },
-      input.runId,
-    );
-    const knowledgeLog = criticKnowledgeLog(knowledgeResult);
-
-    if (verdict.approved) {
-      await writeMemory(TEAM, `learned:${input.runId}`, payload);
+    if (loopResult.approved) {
+      await writeMemory(TEAM, `learned:${input.runId}`, {
+        ...payload,
+        finalRound: loopResult.finalRound,
+        rounds: loopResult.verdicts.map((v, i) => ({
+          round: i + 1,
+          approved: v.approved,
+          reason: v.reason || v.finalOpinion || '',
+        })),
+      });
 
       const summary =
         typeof payload.summary === 'string' && payload.summary.trim().length > 0
@@ -225,7 +381,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
 
       return {
         team: TEAM,
-        summary: `${summary} ${knowledgeLog}`,
+        summary: `${summary} (حلقه در دور ${loopResult.finalRound} تمام شد) ${lastKnowledgeLog}`,
         blockers: [],
         tasks: coerceTasks(payload.tasks),
         approved: true,
@@ -235,7 +391,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     // بسته‌بندی بلوکر: دلیل منتقد + یک کار رفع برای چرخهٔ بعد
     return {
       team: TEAM,
-      summary: `منتقد خروجی تیم seocontent را رد کرد: ${verdict.reason} ${knowledgeLog}`,
+      summary: `منتقد خروجی تیم seocontent را رد کرد: ${verdict.reason} ${lastKnowledgeLog}`,
       blockers: [verdict.reason],
       tasks: [
         {

@@ -1,14 +1,27 @@
 /**
  * lib/teams/lead.ts: تیم «عملیات لید و SLA» تایلندگرد
  *
- * اقتباس از ورک‌فلو n8n: سرپرست ← ۳ مجری موازی ← منتقد سخت‌گیر.
+ * اقتباس از ورک‌فلو n8n:
+ * حلقه نقد ۳ دوره‌ای (lib/critic-loop.ts):
+ *   دور ۱: سرپرست ← ۳ مجری موازی (پایش، SLA، تبدیل)
+ *   دور ۲: رد ← دستور دقیق منتقد ← ۳ مجری اصلاح می‌کنند
+ *   دور ۳: فقط نظارت و نظر نهایی (حق رد ندارد)
  * قانون حریم خصوصی: در هیچ خروجی (خلاصه، هشدار، تسک، حافظه) شماره تماس یا
  * اطلاعات شخصی نمی‌آید؛ فقط شناسهٔ لید. تابع sanitizePII این را در کد تضمین می‌کند.
  */
 
 import { callLLM, callLLMJson } from '../llm';
 import { buildKnowledgePromptSection } from '../rag';
-import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
+import {
+  extractCriticKnowledge,
+  criticKnowledgeLog,
+  type CriticRoundRecord,
+} from '../knowledge/critic-knowledge';
+import {
+  runCriticLoop,
+  type CriticLoopResult,
+  type CriticVerdictV2,
+} from '../critic-loop';
 import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 export const TEAM: TeamName = 'lead';
@@ -42,6 +55,12 @@ interface CriticVerdict {
   payload: CriticPayload;
 }
 
+/** خروجی یک دور از مجری‌های حلقه نقد: مأموریت‌ها + خروجی هر سه مجری */
+interface WorkerRoundOutput {
+  missions: [string, string, string];
+  outputs: [string, string, string];
+}
+
 /**
  * حذف شماره تماس (لاتین و فارسی) از هر متنی که به گزارش یا حافظه می‌رود.
  * قانون تیم: در گزارش فقط شناسهٔ لید می‌آید، نه شماره تماس.
@@ -62,7 +81,7 @@ function safeStringArray(value: unknown): string[] {
 }
 
 /** سرپرست: از زمینه، سه مأموریت مجزا برای سه مجری می‌سازد. */
-async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
+async function makeSupervisorPlan(input: TeamInput): Promise<SupervisorPlan> {
   // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
   // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
   let knowledgeSection = '';
@@ -96,50 +115,52 @@ async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
   });
 }
 
-/** مجری ۱: پایش لیدهای تازه و وضعیت‌ها. فقط واقعیت؛ بدون حدس. */
-async function runWorkerMonitor(mission: string): Promise<string> {
-  const prompt = [
-    'مأموریت سرپرست:',
-    mission || '(مأموریتی تعیین نشده؛ جدول leads را پایش کن)',
-    '',
-    'نقش تو: جدول leads را در این چرخه پایش می‌کنی؛ لیدهای تازه و وضعیت‌ها را فهرست می‌کنی. فقط واقعیت؛ بدون حدس.',
-  ].join('\n');
-  return callLLM(prompt, {
-    system: 'تو مجری تیم lead تایلندگرد هستی. فارسی تمیز، بدون ادعای بی‌پشتوانه.',
-    temperature: 0.5,
-  });
-}
+const WORKER_SYSTEM = 'تو مجری تیم lead تایلندگرد هستی. فارسی تمیز، بدون ادعای بی‌پشتوانه.';
 
-/** مجری ۲: کنترل SLA و هشدار فوری برای لیدهای «تازه»ی بالای ۶ ساعت. */
-async function runWorkerSla(mission: string): Promise<string> {
-  const prompt = [
-    'مأموریت سرپرست:',
-    mission || '(مأموریتی تعیین نشده؛ SLA لیدها را کنترل کن)',
-    '',
-    'نقش تو: SLA را کنترل می‌کنی؛ اگر لیدی بیش از ۶ ساعت در وضعیت «تازه» بماند، هشدار فوری می‌دهی و وضعیت‌ها را به‌روز می‌کنی. فقط واقعیت؛ بدون حدس.',
-  ].join('\n');
-  return callLLM(prompt, {
-    system: 'تو مجری تیم lead تایلندگرد هستی. فارسی تمیز، بدون ادعای بی‌پشتوانه.',
-    temperature: 0.2,
-  });
-}
-
-/** مجری ۳: بازخورد بهبود تبدیل. هرگز شماره تماس در گزارش نمی‌آید. */
-async function runWorkerConversion(mission: string): Promise<string> {
-  const prompt = [
-    'مأموریت سرپرست:',
-    mission || '(مأموریتی تعیین نشده؛ بازخورد بهبود تبدیل بنویس)',
-    '',
-    'نقش تو: بازخورد بهبود تبدیل می‌نویسی (فرم، دکمه، مسیر تماس). قانون حریم خصوصی: در گزارش فقط شناسهٔ لید می‌آید، هرگز شماره تماس یا اطلاعات شخصی. فقط واقعیت؛ بدون حدس.',
-  ].join('\n');
-  return callLLM(prompt, {
-    system: 'تو مجری تیم lead تایلندگرد هستی. فارسی تمیز، بدون ادعای بی‌پشتوانه.',
-    temperature: 0.7,
-  });
+/** سه مجری موازی (منطق فعلی، بدون تغییر). */
+async function executeWorkers(
+  missions: [string, string, string],
+  prevInstruction?: string,
+): Promise<[string, string, string]> {
+  const instructionBlock = prevInstruction
+    ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', prevInstruction, '']
+    : [];
+  return (await Promise.all([
+    callLLM(
+      [
+        ...instructionBlock,
+        'مأموریت سرپرست:',
+        missions[0] || '(مأموریتی تعیین نشده؛ جدول leads را پایش کن)',
+        '',
+        'نقش تو: جدول leads را در این چرخه پایش می‌کنی؛ لیدهای تازه و وضعیت‌ها را فهرست می‌کنی. فقط واقعیت؛ بدون حدس.',
+      ].join('\n'),
+      { system: WORKER_SYSTEM, temperature: 0.5 },
+    ),
+    callLLM(
+      [
+        ...instructionBlock,
+        'مأموریت سرپرست:',
+        missions[1] || '(مأموریتی تعیین نشده؛ SLA لیدها را کنترل کن)',
+        '',
+        'نقش تو: SLA را کنترل می‌کنی؛ اگر لیدی بیش از ۶ ساعت در وضعیت «تازه» بماند، هشدار فوری می‌دهی و وضعیت‌ها را به‌روز می‌کنی. فقط واقعیت؛ بدون حدس.',
+      ].join('\n'),
+      { system: WORKER_SYSTEM, temperature: 0.2 },
+    ),
+    callLLM(
+      [
+        ...instructionBlock,
+        'مأموریت سرپرست:',
+        missions[2] || '(مأموریتی تعیین نشده؛ بازخورد بهبود تبدیل بنویس)',
+        '',
+        'نقش تو: بازخورد بهبود تبدیل می‌نویسی (فرم، دکمه، مسیر تماس). قانون حریم خصوصی: در گزارش فقط شناسهٔ لید می‌آید، هرگز شماره تماس یا اطلاعات شخصی. فقط واقعیت؛ بدون حدس.',
+      ].join('\n'),
+      { system: WORKER_SYSTEM, temperature: 0.7 },
+    ),
+  ])) as [string, string, string];
 }
 
 /** منتقد سخت‌گیر: هیچ لیدی گم نشده؟ هشدار SLA به‌موقع بود؟ اطلاعات شخصی نیامده؟ */
-async function runCritic(outputs: [string, string, string]): Promise<CriticVerdict> {
+async function judgeWorkers(outputs: [string, string, string]): Promise<CriticVerdict> {
   const prompt = [
     'خروجی مجری ۱:',
     outputs[0],
@@ -190,24 +211,154 @@ async function remember(runId: string, lesson: string): Promise<void> {
   }
 }
 
+/**
+ * تبدیل دلیل ردِ منتقد قدیمی به دستور اجرایی (CriticVerdictV2.instruction).
+ * امری و بلندتر از ۵۰ نویسه تا از اعتبارسنجی حلقه رد شود.
+ */
+function criticInstructionFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return [
+    `خروجی را بر اساس این نقد اصلاح کن: «${r}»`,
+    'هر سه خروجی را بازنویسی کن: هیچ لیدی را گم نکن؛',
+    'هشدار SLA را برای هر لید بالای ۶ ساعت «تازه» به‌موقع صادر کن؛',
+    'در گزارش فقط شناسهٔ لید بنویس و هرگز شماره تماس یا اطلاعات شخصی نیاور؛ فقط واقعیت بنویس.',
+  ].join(' ');
+}
+
+/**
+ * تبدیل دلیل رد به معیار قبولی (CriticVerdictV2.acceptance).
+ */
+function criticAcceptanceFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return `وقتی درست است که نقد «${r}» دیگر دربارهٔ خروجی صدق نکند: هیچ لیدی گم نشده، هشدار SLA به‌موقع صادر شده و اطلاعات شخصی در گزارش نیامده است.`;
+}
+
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
-  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
-  const plan = await runSupervisor(input);
-  const rawWorkers =
-    plan && typeof plan === 'object' && Array.isArray(plan.workers) ? plan.workers : [];
-  const [mission1 = '', mission2 = '', mission3 = ''] = rawWorkers.map((w) =>
-    typeof w === 'string' ? w : String(w ?? ''),
-  );
 
-  await reportLive?.('مجری‌ها: پایش، SLA و تبدیل', 50);
-  const outputs = await Promise.all([
-    runWorkerMonitor(mission1),
-    runWorkerSla(mission2),
-    runWorkerConversion(mission3),
-  ]);
-  await reportLive?.('منتقد: داوری خروجی', 80);
-  const verdict = normalizeVerdict(await runCritic(outputs as [string, string, string]));
+  // ---------- توابع حلقه نقد ----------
+
+  // کش دور ۱: مأموریت‌های سرپرست در هر چرخه یک بار ساخته می‌شوند؛
+  // دورهای ۲ و ۳ همان مأموریت‌ها را با دستور منتقد اصلاح می‌کنند.
+  let cachedMissions: [string, string, string] | null = null;
+  // داوری خام آخرین دور (برای تسک‌ها، بلوکرها و خلاصه)
+  let lastVerdict: CriticVerdict | null = null;
+
+  /**
+   * runWorkers: سرپرست (دور ۱) + سه مجری موازی هر دور.
+   */
+  const runWorkers = async (
+    round: number,
+    prevInstruction?: string,
+  ): Promise<WorkerRoundOutput> => {
+    if (round === 1) {
+      await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
+      const plan = await makeSupervisorPlan(input);
+      const rawWorkers =
+        plan && typeof plan === 'object' && Array.isArray(plan.workers) ? plan.workers : [];
+      const [mission1 = '', mission2 = '', mission3 = ''] = rawWorkers.map((w) =>
+        typeof w === 'string' ? w : String(w ?? ''),
+      );
+      cachedMissions = [mission1, mission2, mission3];
+    } else {
+      await reportLive?.(`دور ${round}: اصلاح با دستور منتقد`, 50);
+    }
+    const missions = cachedMissions;
+    if (!missions) {
+      throw new Error('مأموریت‌های سرپرست در کش پیدا نشد.');
+    }
+
+    await reportLive?.('مجری‌ها: پایش، SLA و تبدیل', 55);
+    const outputs = await executeWorkers(missions, prevInstruction);
+    return { missions, outputs };
+  };
+
+  /**
+   * runCritic: منتقد فعلی، با تبدیل خروجی به CriticVerdictV2.
+   * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+   */
+  const runCritic = async (
+    output: WorkerRoundOutput,
+    round: number,
+  ): Promise<CriticVerdictV2> => {
+    await reportLive?.(`منتقد: داوری خروجی (دور ${round})`, 80);
+    const verdict = normalizeVerdict(await judgeWorkers(output.outputs));
+    lastVerdict = verdict;
+    const reason = verdict.reason || 'منتقد دلیلی ثبت نکرد.';
+
+    if (round === 3) {
+      return {
+        approved: true,
+        reason: '',
+        instruction: '',
+        acceptance: '',
+        finalOpinion: reason,
+      };
+    }
+    if (verdict.approved) {
+      return {
+        approved: true,
+        reason: '',
+        instruction: '',
+        acceptance: '',
+        finalOpinion: reason || undefined,
+      };
+    }
+    return {
+      approved: false,
+      reason,
+      instruction: criticInstructionFromReason(reason),
+      acceptance: criticAcceptanceFromReason(reason),
+    };
+  };
+
+  // تاریخچه دورها برای ثبت دانش + آخرین لاگ دانش برای خلاصه
+  const roundHistory: CriticRoundRecord[] = [];
+  let lastKnowledgeLog = '';
+
+  /**
+   * onRoundKnowledge: ثبت دانش هر دور با extractCriticKnowledge فعلی.
+   */
+  const onRoundKnowledge = async (
+    round: number,
+    verdict: CriticVerdictV2,
+  ): Promise<void> => {
+    const record: CriticRoundRecord = {
+      round,
+      approved: verdict.approved,
+      reason: verdict.approved
+        ? verdict.finalOpinion || 'تأیید شد.'
+        : verdict.reason,
+      instruction: verdict.instruction?.trim() || undefined,
+    };
+    const knowledgeResult = await extractCriticKnowledge(
+      TEAM,
+      {
+        approved: verdict.approved,
+        reason: record.reason,
+        domain: 'جذب لید',
+        instruction: record.instruction,
+        round,
+        rounds: roundHistory.slice(),
+        isFinal: round === 3,
+      },
+      input.runId,
+    );
+    roundHistory.push(record);
+    lastKnowledgeLog = criticKnowledgeLog(knowledgeResult);
+  };
+
+  // ---------- اجرای حلقه نقد ۳ دوره‌ای ----------
+  const loopResult: CriticLoopResult<WorkerRoundOutput> = await runCriticLoop<WorkerRoundOutput>({
+    team: TEAM,
+    runId: input.runId,
+    runWorkers,
+    runCritic,
+    onRoundKnowledge,
+    onProgress: (msg) => reportLive?.(msg, 70),
+  });
+
+  const verdict = lastVerdict ?? normalizeVerdict(null);
 
   const safeReason = sanitizePII(verdict.reason ?? '');
   const payload: CriticPayload = {
@@ -219,7 +370,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const blockers: string[] = [];
   const tasks: QueuedTask[] = [];
 
-  if (!verdict.approved) {
+  if (!loopResult.approved) {
     blockers.push(`منتقد lead تأیید نکرد: ${safeReason}`);
     blockers.push(...payload.alerts);
   } else {
@@ -234,28 +385,20 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     }
   }
 
-  const lesson = verdict.approved
-    ? `چرخهٔ موفق: ${safeReason} | هشدار SLA: ${payload.alerts.length} مورد`
-    : `رد منتقد: ${safeReason} | هشدار SLA: ${payload.alerts.length} مورد`;
+  const lesson = loopResult.approved
+    ? `چرخهٔ موفق: ${safeReason} | هشدار SLA: ${payload.alerts.length} مورد (حلقه در دور ${loopResult.finalRound} تمام شد)`
+    : `رد منتقد: ${safeReason} | هشدار SLA: ${payload.alerts.length} مورد (حلقه در دور ${loopResult.finalRound} با نظر نهایی تمام شد)`;
   await remember(input.runId, sanitizePII(lesson));
 
-  // استخراج دانش حرفه‌ای از حکم منتقد و ایندکس در RAG
-  const knowledgeResult = await extractCriticKnowledge(
-    TEAM,
-    { approved: verdict.approved, reason: verdict.reason, domain: 'جذب لید' },
-    input.runId,
-  );
-  const knowledgeLog = criticKnowledgeLog(knowledgeResult);
-
-  const summary = verdict.approved
-    ? `تیم لید این چرخه لیدهای تازه و وضعیت‌ها را پایش کرد، SLA را کنترل کرد و ${payload.alerts.length} هشدار ثبت شد؛ منتقد تأیید کرد. دلیل: ${safeReason} ${knowledgeLog}`
-    : `تیم لید این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${safeReason} ${knowledgeLog}`;
+  const summary = loopResult.approved
+    ? `تیم لید این چرخه لیدهای تازه و وضعیت‌ها را پایش کرد، SLA را کنترل کرد و ${payload.alerts.length} هشدار ثبت شد؛ منتقد تأیید کرد. دلیل: ${safeReason} ${lastKnowledgeLog}`
+    : `تیم لید این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${safeReason} ${lastKnowledgeLog}`;
 
   return {
     team: TEAM,
     summary: sanitizePII(summary),
     blockers,
     tasks,
-    approved: verdict.approved,
+    approved: loopResult.approved,
   };
 }

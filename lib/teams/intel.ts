@@ -2,8 +2,11 @@
  * lib/teams/intel.ts | تیم intel: اخبار تایلند؛ جمع‌آوری
  *
  * اقتباس TypeScript از بخش intel ورک‌فلو n8n «thailandgard-all-teams»:
- * سرپرست ← سه مجری موازی (منابع خبری، ثبت ضدتکراری، دایجست و کاندیدای بلاگ)
- * ← منتقد ← در صورت تأیید: ثبت حافظه و تحویل خروجی، وگرنه بسته‌بندی بلوکر.
+ * حلقه نقد ۳ دوره‌ای (lib/critic-loop.ts):
+ *   دور ۱: سرپرست ← سه مجری موازی (منابع خبری، ثبت ضدتکراری، دایجست و کاندیدای بلاگ)
+ *   دور ۲: رد ← دستور دقیق منتقد ← سه مجری اصلاح می‌کنند
+ *   دور ۳: فقط نظارت و نظر نهایی (حق رد ندارد)
+ * در صورت تأیید: ثبت حافظه و تحویل خروجی، وگرنه بسته‌بندی بلوکر.
  *
  * قرارداد خروجی: TeamResult استاندارد از lib/types.ts.
  * کلید حافظه: `learned:<runId>` در جدول team_memory (از راه lib/memory).
@@ -13,7 +16,16 @@ import { callLLM } from '../llm';
 import { writeMemory } from '../memory';
 import { fetchMarketData } from '../market';
 import { buildKnowledgePromptSection } from '../rag';
-import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
+import {
+  extractCriticKnowledge,
+  criticKnowledgeLog,
+  type CriticRoundRecord,
+} from '../knowledge/critic-knowledge';
+import {
+  runCriticLoop,
+  type CriticLoopResult,
+  type CriticVerdictV2,
+} from '../critic-loop';
 import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
 
 /** نام تیم در رجیستری تیم‌ها. */
@@ -85,6 +97,12 @@ const DEFAULT_MISSIONS: [string, string, string] = [
   'آیتم‌های تازه را با کنترل ضدتکراری (source_url یکتا) آمادهٔ درج در جدول intel_feed کن.',
   'دایجست روزانه بساز و ۳ کاندیدای برتر بلاگ را با زاویهٔ مشخص (blog_angle) تحویل تیم محتوا بده.',
 ];
+
+/** خروجی یک دور از مجری‌های حلقه نقد: مأموریت‌ها + خروجی هر سه مجری */
+interface WorkerRoundOutput {
+  missions: [string, string, string];
+  workerOutputs: [string, string, string];
+}
 
 /** استخراج اولین آبجکت JSON از متن (معادل نود «پارس منتقد» در n8n). */
 function extractJsonObject(text: string): Record<string, unknown> | null {
@@ -205,8 +223,31 @@ function countFeedItems(worker2Text: string): number | null {
 }
 
 /**
+ * تبدیل دلیل ردِ منتقد قدیمی به دستور اجرایی (CriticVerdictV2.instruction).
+ * امری و بلندتر از ۵۰ نویسه تا از اعتبارسنجی حلقه رد شود.
+ */
+function criticInstructionFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return [
+    `خروجی را بر اساس این نقد اصلاح کن: «${r}»`,
+    'هر سه خروجی را بازنویسی کن: به هر آیتم خبری لینک منبع معتبر اضافه کن؛',
+    'خلاصه‌ها را به فارسی و غیرکپی بنویس و فقط آیتم‌های مرتبط با تور تایلند را نگه دار؛',
+    'فقط واقعیت بنویس، بدون حدس.',
+  ].join(' ');
+}
+
+/**
+ * تبدیل دلیل رد به معیار قبولی (CriticVerdictV2.acceptance).
+ */
+function criticAcceptanceFromReason(reason: string): string {
+  const r = reason.trim() || 'خروجی ایراد دارد';
+  return `وقتی درست است که نقد «${r}» دیگر دربارهٔ خروجی صدق نکند: هر آیتم منبع معتبر دارد، خلاصه کپی متن خبر نیست و به تور تایلند ربط دارد.`;
+}
+
+/**
  * اجرای کامل تیم intel برای یک چرخه.
  * کلید حافظه به شکل `learned:<runId>` ساخته می‌شود.
+ * (مهاجرت به حلقه نقد ۳ دوره‌ای lib/critic-loop.ts)
  */
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
@@ -235,75 +276,194 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       knowledgeSection = '';
     }
 
-    // ۱. سرپرست: شکستن کار چرخه به سه مأموریت (با زمینه‌ی RAG + داده‌ی بازار)
-    await reportLive?.('سرپرست: طراحی مأموریت‌ها', 30);
-    const supervisorText = await callLLM(SUPERVISOR_PROMPT(knowledgeSection, input.ragContext ?? '') + marketContext, {
-      system: SUPERVISOR_SYSTEM,
-      temperature: 0.2,
-      maxTokens: 1200,
-    });
-    const missions = parseMissions(supervisorText);
+    // ---------- توابع حلقه نقد ----------
 
-    // ۲. سه مجری به‌صورت موازی (معادل انشعاب n8n از نود سرپرست)
-    await reportLive?.('مجری‌ها: خبر، ثبت و دایجست', 60);
-    const workerOutputs = await Promise.all(
-      WORKER_ROLES.map((worker, i) =>
-        callLLM(`مأموریت سرپرست:\n${missions[i]}\n\nنقش تو (${worker.label}): ${worker.body}`, {
-          system: WORKER_SYSTEM,
-          temperature: 0.4,
-          maxTokens: 2500,
-        }),
-      ),
-    );
-    const [sourcesText, ingestText, digestText] = workerOutputs;
+    // کش دور ۱: مأموریت‌های سرپرست در هر چرخه یک بار ساخته می‌شوند؛
+    // دورهای ۲ و ۳ همان مأموریت‌ها را با دستور منتقد اصلاح می‌کنند.
+    let cachedMissions: [string, string, string] | null = null;
+    // داوری خام آخرین دور (برای تسک‌ها و خلاصه)
+    let lastVerdict: Verdict | null = null;
+    let lastCriticText = '';
 
-    // ۳. منتقد
-    await reportLive?.('منتقد: داوری خروجی', 85);
-    const criticText = await callLLM(
-      [
-        'خروجی مجری ۱ (منابع خبری):',
-        sourcesText,
-        '',
-        'خروجی مجری ۲ (ثبت ضدتکراری):',
-        ingestText,
-        '',
-        'خروجی مجری ۳ (دایجست و کاندیداهای بلاگ):',
-        digestText,
-        '',
-        'داوری کن و فقط یک JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جمله)، payload.',
-        'تمرکز داوری: آیا هر آیتم منبع معتبر دارد، خلاصه کپی متن خبر نیست و به تور تایلند ربط دارد؟',
-      ].join('\n'),
-      { system: CRITIC_SYSTEM, temperature: 0.2, maxTokens: 1500 },
-    );
-    const verdict = parseVerdict(criticText);
+    /**
+     * runWorkers: سرپرست (دور ۱) + سه مجری موازی هر دور.
+     */
+    const runWorkers = async (
+      round: number,
+      prevInstruction?: string,
+    ): Promise<WorkerRoundOutput> => {
+      if (round === 1) {
+        // ۱. سرپرست: شکستن کار چرخه به سه مأموریت (با زمینه‌ی RAG + داده‌ی بازار)
+        await reportLive?.('سرپرست: طراحی مأموریت‌ها', 30);
+        const supervisorText = await callLLM(SUPERVISOR_PROMPT(knowledgeSection, input.ragContext ?? '') + marketContext, {
+          system: SUPERVISOR_SYSTEM,
+          temperature: 0.2,
+          maxTokens: 1200,
+        });
+        cachedMissions = parseMissions(supervisorText);
+      } else {
+        await reportLive?.(`دور ${round}: اصلاح با دستور منتقد`, 60);
+      }
+      const missions = cachedMissions;
+      if (!missions) {
+        throw new Error('مأموریت‌های سرپرست در کش پیدا نشد.');
+      }
 
-    // ۴. رد منتقد ← بلوکر (معادل شاخهٔ دوم «تأیید شد؟» در n8n)
-    if (!verdict.approved) {
-      const reason = verdict.reason || 'منتقد خروجی را تأیید نکرد.';
-      // استخراج دانش از حکم منتقد (چرخه نقد←دانش)
+      // ۲. سه مجری به‌صورت موازی (معادل انشعاب n8n از نود سرپرست)
+      await reportLive?.('مجری‌ها: خبر، ثبت و دایجست', 65);
+      const workerOutputs = (await Promise.all(
+        WORKER_ROLES.map((worker, i) =>
+          callLLM(
+            [
+              ...(prevInstruction
+                ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', prevInstruction, '']
+                : []),
+              `مأموریت سرپرست:\n${missions[i]}\n\nنقش تو (${worker.label}): ${worker.body}`,
+            ].join('\n'),
+            {
+              system: WORKER_SYSTEM,
+              temperature: 0.4,
+              maxTokens: 2500,
+            },
+          ),
+        ),
+      )) as [string, string, string];
+      return { missions, workerOutputs };
+    };
+
+    /**
+     * runCritic: منتقد فعلی، با تبدیل خروجی به CriticVerdictV2.
+     * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+     */
+    const runCritic = async (
+      output: WorkerRoundOutput,
+      round: number,
+    ): Promise<CriticVerdictV2> => {
+      await reportLive?.(`منتقد: داوری خروجی (دور ${round})`, 85);
+      const [sourcesText, ingestText, digestText] = output.workerOutputs;
+      const criticText = await callLLM(
+        [
+          'خروجی مجری ۱ (منابع خبری):',
+          sourcesText,
+          '',
+          'خروجی مجری ۲ (ثبت ضدتکراری):',
+          ingestText,
+          '',
+          'خروجی مجری ۳ (دایجست و کاندیداهای بلاگ):',
+          digestText,
+          '',
+          'داوری کن و فقط یک JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جمله)، payload.',
+          'تمرکز داوری: آیا هر آیتم منبع معتبر دارد، خلاصه کپی متن خبر نیست و به تور تایلند ربط دارد؟',
+        ].join('\n'),
+        { system: CRITIC_SYSTEM, temperature: 0.2, maxTokens: 1500 },
+      );
+      const verdict = parseVerdict(criticText);
+      lastVerdict = verdict;
+      lastCriticText = criticText;
+      const reason = verdict.reason;
+
+      if (round === 3) {
+        return {
+          approved: true,
+          reason: '',
+          instruction: '',
+          acceptance: '',
+          finalOpinion: reason,
+        };
+      }
+      if (verdict.approved) {
+        return {
+          approved: true,
+          reason: '',
+          instruction: '',
+          acceptance: '',
+          finalOpinion: reason || undefined,
+        };
+      }
+      return {
+        approved: false,
+        reason,
+        instruction: criticInstructionFromReason(reason),
+        acceptance: criticAcceptanceFromReason(reason),
+      };
+    };
+
+    // تاریخچه دورها برای ثبت دانش + آخرین لاگ دانش برای خلاصه
+    const roundHistory: CriticRoundRecord[] = [];
+    let lastKnowledgeLog = '';
+
+    /**
+     * onRoundKnowledge: ثبت دانش هر دور با extractCriticKnowledge فعلی.
+     */
+    const onRoundKnowledge = async (
+      round: number,
+      verdict: CriticVerdictV2,
+    ): Promise<void> => {
+      const record: CriticRoundRecord = {
+        round,
+        approved: verdict.approved,
+        reason: verdict.approved
+          ? verdict.finalOpinion || 'تأیید شد.'
+          : verdict.reason,
+        instruction: verdict.instruction?.trim() || undefined,
+      };
       const knowledgeResult = await extractCriticKnowledge(
         TEAM,
-        { approved: false, reason, domain: 'اطلاعات بازار و رقیب' },
+        {
+          approved: verdict.approved,
+          reason: record.reason,
+          domain: 'اطلاعات بازار و رقیب',
+          instruction: record.instruction,
+          round,
+          rounds: roundHistory.slice(),
+          isFinal: round === 3,
+        },
         runId,
       );
-      const knowledgeLog = criticKnowledgeLog(knowledgeResult);
+      roundHistory.push(record);
+      lastKnowledgeLog = criticKnowledgeLog(knowledgeResult);
+    };
+
+    // ---------- اجرای حلقه نقد ۳ دوره‌ای ----------
+    const loopResult: CriticLoopResult<WorkerRoundOutput> = await runCriticLoop<WorkerRoundOutput>({
+      team: TEAM,
+      runId,
+      runWorkers,
+      runCritic,
+      onRoundKnowledge,
+      onProgress: (msg) => reportLive?.(msg, 70),
+    });
+
+    const verdict = lastVerdict ?? { approved: false, reason: 'داوری ثبت نشد.', payload: null };
+    const digestText = loopResult.output.workerOutputs[2];
+    const ingestText = loopResult.output.workerOutputs[1];
+
+    // رد منتقد ← بلوکر (معادل شاخهٔ دوم «تأیید شد؟» در n8n)
+    if (!loopResult.approved) {
+      const reason = verdict.reason || 'منتقد خروجی را تأیید نکرد.';
       return {
         team: TEAM,
-        summary: `تیم intel در چرخهٔ ${runId} متوقف شد: ${reason} ${marketNote} ${knowledgeLog}`,
+        summary: `تیم intel در چرخهٔ ${runId} متوقف شد: ${reason} ${marketNote} ${lastKnowledgeLog}`,
         blockers: [`بلوکر تیم intel: ${reason}`],
         tasks: [],
         approved: false,
       };
     }
 
-    // ۵. ثبت حافظه؛ فقط در مسیر تأیید (مثل n8n)
+    // ثبت حافظه؛ فقط در مسیر تأیید (مثل n8n)
     await writeMemory(TEAM, `learned:${runId}`, {
-      content: criticText.slice(0, 2000),
+      content: lastCriticText.slice(0, 2000),
       approved: true,
       run_id: runId,
+      finalRound: loopResult.finalRound,
+      rounds: loopResult.verdicts.map((v, i) => ({
+        round: i + 1,
+        approved: v.approved,
+        reason: v.reason || v.finalOpinion || '',
+      })),
     });
 
-    // ۶. صف کار: کاندیداهای بلاگ برای تیم محتوا (معادل «صف ساخت» در n8n)
+    // صف کار: کاندیداهای بلاگ برای تیم محتوا (معادل «صف ساخت» در n8n)
     const tasks = buildTasks(digestText, verdict.payload);
 
     const itemCount = countFeedItems(ingestText);
@@ -316,17 +476,9 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         ? 'کاندیدای بلاگی استخراج نشد.'
         : `${tasks.length} کاندیدای بلاگ با زاویهٔ مشخص تحویل تیم محتوا شد.`;
 
-    // استخراج دانش از حکم منتقد (چرخه نقد←دانش)
-    const knowledgeResult = await extractCriticKnowledge(
-      TEAM,
-      { approved: true, reason: verdict.reason, domain: 'اطلاعات بازار و رقیب' },
-      runId,
-    );
-    const knowledgeLog = criticKnowledgeLog(knowledgeResult);
-
     return {
       team: TEAM,
-      summary: `تیم intel چرخهٔ ${runId} را با تأیید منتقد بست (${verdict.reason}). ${itemsClause} ${tasksClause} ${marketNote} ${knowledgeLog}`,
+      summary: `تیم intel چرخهٔ ${runId} را با تأیید منتقد بست (${verdict.reason}). ${itemsClause} ${tasksClause} ${marketNote} (حلقه در دور ${loopResult.finalRound} تمام شد) ${lastKnowledgeLog}`,
       blockers: [],
       tasks,
       approved: true,
