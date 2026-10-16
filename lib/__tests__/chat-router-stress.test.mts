@@ -160,10 +160,10 @@ after(async () => {
 /** مدل‌های تأییدشده‌ی reformboss (باید با QUALITY_CHAT_MODELS در llm.ts هم‌خوان باشند) */
 const QUALITY_REFORMBOSS = [
   'glm-5.3-flash',
-  'qwen3.8-flash',
-  'qwen3.5-omni-flash',
   'deepseek-v4-flash',
+  'qwen3.5-omni-flash',
   'kimi-k3',
+  'qwen3.8-flash',
 ];
 
 describe('تست فشار روتر هوشمند', () => {

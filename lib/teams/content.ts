@@ -244,6 +244,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       'یک موضوع تازه و پرتقاضا برای راهنمای سفر به تایلند انتخاب کن (ویزا، هزینه، شهرها، فصل سفر، پرواز، هتل، تجربه‌ها).',
       'اسلاگ انگلیسی کوتاه با خط‌تیره بده (مثل thailand-visa-guide) که در فهرست بالا نباشد.',
       'فقط JSON معتبر بده: {"slug": "...", "title": "تیتر فارسی", "keyword": "کلمهٔ کلیدی اصلی", "angle": "زاویهٔ یک‌خطی", "category": "دسته‌بندی"}',
+      'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
     ].join('\n'),
     { system: SYSTEM_SUPERVISOR },
   );
@@ -268,6 +269,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       '',
       'واقعیت‌های قابل اتکا دربارهٔ این موضوع را فهرست کن؛ هر عدد باید منبعش را هم بگوید. حدس نزن؛ اگر از چیزی مطمئن نیستی بنویس «نامشخص».',
       'فقط JSON معتبر بده: {"facts": "متن واقعیت‌ها"}',
+      'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
     ].join('\n'),
     { system: SYSTEM_WORKER },
   );
@@ -296,6 +298,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       '',
       'فقط JSON معتبر بده با کلیدهای: title, h1, excerpt, category, readingMinutes (عدد),',
       'sections (آرایه‌ای از {heading, paragraphs}), faqs (آرایه‌ای از {question, answer}).',
+      'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
     ].join('\n'),
     { system: SYSTEM_WORKER, maxTokens: 4000 },
   );
@@ -326,6 +329,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       '۳. هر عدد سند دارد یا حدسی است؟',
       '۴. برای مسافر واقعی کاربردی است یا حرف کلی می‌زند؟',
       'فقط JSON معتبر بده: {"approved": true/false, "reason": "یک جمله"}',
+      'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
     ].join('\n'),
     { system: SYSTEM_CRITIC },
   );
