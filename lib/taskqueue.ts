@@ -11,6 +11,7 @@ export type TaskQueueStatus =
   | 'pending'
   | 'approved'
   | 'in_progress'
+  | 'deferred'
   | 'rejected'
   | 'failed'
   | 'done';
@@ -34,6 +35,18 @@ export interface QueueRow {
   llm_endpoint_id: string | null;
   /** نام مدل انتخاب‌شده برای این کار؛ خالی = پیش‌فرض تیم */
   llm_model: string | null;
+  /** منشأ تسک: planner-weekly | critic | manual */
+  source: string | null;
+  /** کلید هفتهٔ planner، مثل 2026-W42؛ تسک‌های غیرهفته‌ای نال می‌مانند */
+  week_key: string | null;
+  /** معیار قبولی تسک؛ متن آزاد */
+  acceptance: string | null;
+  /** برآورد تلاش: ۱=کم‌ریسک، ۲=متوسط، ۳=سنگین */
+  estimate: number | null;
+  /** وابستگی به تسک دیگر (build_queue.id)؛ نال یعنی بدون وابستگی */
+  depends_on: string | null;
+  /** کلید یکتاسازی؛ همراه week_key یکتا می‌شود */
+  dedupe_key: string | null;
 }
 
 export interface QueuedTaskOutput extends Omit<QueuedTask, 'files_hint'> {
