@@ -170,6 +170,15 @@ async function acquireLock(runId: string): Promise<void> {
 
 /** فقط قفل گرفتن + ساخت ردیف cycles (بدون اجرای موج‌ها). */
 export async function beginCycle(): Promise<{ cycleId: string; runId: string }> {
+  // رفع ریشه‌ای مشکل kill (مشکل ۶): پیش از گرفتن قفل، بقایای چرخه مرده
+  // (قفل stale، تسک‌های claimشده رها، وضعیت‌های ناتمام، پچ‌های gated یتیم)
+  // بازیابی می‌شوند تا چرخه جدید تمیز شروع شود. fail-soft است.
+  try {
+    const { recoverDeadCycles } = await import('./cycle-recovery');
+    await recoverDeadCycles();
+  } catch (err) {
+    console.error('[orchestrator] cycle recovery before beginCycle failed (continuing):', err instanceof Error ? err.message : err);
+  }
   const runId = makeRunId();
   await acquireLock(runId);
   const sb = getSupabase();
@@ -538,7 +547,14 @@ export async function runSingleTeam(
   } else {
     const { data: runRow, error: insertErr } = await sb
       .from('team_runs')
-      .insert({ cycle_id: cycleId, team, wave, status: 'running' })
+      .insert({
+        cycle_id: cycleId,
+        team,
+        wave,
+        status: 'running',
+        started_at: new Date().toISOString(),
+        heartbeat_at: new Date().toISOString(),
+      })
       .select('id')
       .single();
     if (insertErr || !runRow) {
@@ -667,12 +683,14 @@ export async function runSingleTeam(
       .eq('id', subagentId);
   };
 
-  // ضربان: اگر تیم مدتی مرحله‌ای گزارش نکرد، ردیف لمس می‌شود تا معلوم باشد
-  // فرایند هنوز زنده است (updated_at تازه می‌ماند).
+  // ضربانِ زنده‌بودن: هر ۶۰ ثانیه فقط heartbeat_at نوشته می‌شود.
+  // عمداً updated_at لمس نمی‌شود تا «زنده‌بودن فرایند» از «پیشرفت واقعی»
+  // جدا بماند؛ وگرنه نگهبان (واچ‌داگ/ورکر) تیمِ هنگ‌کرده‌ی ضربان‌زن را
+  // «سالم» می‌بیند. تریگر دیتابیس هم همین جدایی را تضمین می‌کند.
   const heartbeat = setInterval(() => {
     void sb
       .from('team_runs')
-      .update({ current_task: lastTask || 'در حال اجرا', progress: Math.max(0, lastPct) })
+      .update({ heartbeat_at: new Date().toISOString() })
       .eq('id', runRowId)
       .then(({ error }) => {
         if (error) console.error(`[orchestrator] heartbeat failed for ${team}:`, error.message);
@@ -686,6 +704,8 @@ export async function runSingleTeam(
   // (موفق/ردشده/ناموفق/متوقف/ناتمام) حتماً done شود. شناسه بیرون از بلوک
   // claim نگه داشته می‌شود؛ settleClaimedTaskOnce با گارد once از مسیرهای
   // صریح صدا زده می‌شود و finally هم تور آخر است — هیچ مسیری جا نمی‌ماند.
+  // گارد محلی فقط پس از موفقیت واقعی ست می‌شود تا خطای گذرای دیتابیس،
+  // تلاش مجدد در finally را از بین نبرد.
   let claimedTask: { id: string; title: string } | null = null;
   let claimedTaskSettled = false;
   const settleClaimedTaskOnce = async (
@@ -693,13 +713,13 @@ export async function runSingleTeam(
     summary: string,
   ): Promise<void> => {
     if (!claimedTask || claimedTaskSettled) return;
-    claimedTaskSettled = true;
     try {
       await settleClaimedTask(claimedTask.id, outcome, {
         team,
         title: claimedTask.title,
         summary,
       });
+      claimedTaskSettled = true;
       console.log(
         `[orchestrator] تسک claimشدهٔ تیم ${team} با سرنوشت «${outcome}» بسته شد (id=${claimedTask.id})`,
       );

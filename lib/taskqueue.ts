@@ -558,3 +558,68 @@ export async function applyTaskCriticVerdict(
   }
   return 'pending';
 }
+
+/* ==========================================================================
+ * بستن قطعی تسک تحویل‌شده (رفع ریشه‌ای زامبی‌شدن صف — مشکل ۲)
+ *
+ * باگ: ارکستراتور تسک را claim می‌کرد (in_progress) ولی شناسه‌اش را فقط برای
+ * تزریق متن نگه می‌داشت؛ هیچ مسیری (موفق/ردشده/ناموفق/خطا) آن را به وضعیت
+ * نهایی نمی‌رساند و تسک برای همیشه in_progress می‌ماند. چون claimNextTaskForTeam
+ * idempotent است، همان تسک زامبی در چرخه‌های بعد دوباره تحویل داده می‌شد و
+ * صف عملاً مسموم می‌ماند.
+ *
+ * قرارداد جدید: هر جا تسکی claim شد، فراخواننده موظف است در پایان اجرا
+ * (در finally یا هوک ارکستراتور) settleClaimedTask را صدا بزند. این تابع
+ * تسک را با completeTask به done می‌برد و سرنوشت واقعی اجرا را صادقانه در
+ * ستون result ثبت می‌کند. دوباره‌فراخوانی برای همان id در یک فرایند بی‌اثر
+ * است (گارد once)، پس فراخوانی هم‌زمان از مسیر صریح و finally امن است.
+ * ========================================================================== */
+
+/** سرنوشت‌های ممکن یک تسک claimشده در پایان اجرای تیم. */
+export type ClaimedTaskOutcome = 'success' | 'rejected' | 'failed' | 'stopped' | 'interrupted';
+
+/**
+ * متن فارسی صادقانهٔ نتیجه، بر اساس سرنوشت اجرای تیم.
+ * تابع خالص است (بدون IO) تا مستقیم قابل‌تست باشد.
+ */
+export function buildClaimedTaskResult(
+  outcome: ClaimedTaskOutcome,
+  detail: { team: string; title: string; summary: string },
+): string {
+  const head = `تسک «${detail.title}» توسط تیم ${detail.team}`;
+  const body = detail.summary.trim() || 'جزئیاتی ثبت نشد.';
+  switch (outcome) {
+    case 'success':
+      return `${head} انجام و تحویل شد.\n${body}`;
+    case 'rejected':
+      return `${head} اجرا شد ولی منتقد خروجی را نپذیرفت (پس از دورهای بازبینی).\nدلیل: ${body}`;
+    case 'failed':
+      return `${head} با خطا تمام شد و خروجی نداشت.\nخطا: ${body}`;
+    case 'stopped':
+      return `${head} توسط کاربر متوقف شد.\n${body}`;
+    case 'interrupted':
+      return `${head} بدون رسیدن به نقطهٔ پایانی شناخته‌شده تمام شد.\n${body}`;
+  }
+}
+
+/**
+ * گارد once در سطح فرایند: یک id فقط یک‌بار settle می‌شود. شناسه فقط پس از
+ * موفقیت واقعی completeTask ثبت می‌شود؛ اگر نوشتن دیتابیس خطا داد، گارد ست
+ * نمی‌شود تا تلاش مجدد (مثلاً در finally ارکستراتور) ممکن بماند.
+ */
+const settledClaimIds = new Set<string>();
+
+/**
+ * بستن قطعی تسک claimشده: همیشه completeTask (done)، با ثبت صادقانهٔ
+ * سرنوشت در result. خطای دیتابیس throw می‌شود تا فراخواننده ببیند و لاگ کند؛
+ * خود تابع هرگز بی‌صدا رد نمی‌شود.
+ */
+export async function settleClaimedTask(
+  id: string,
+  outcome: ClaimedTaskOutcome,
+  detail: { team: string; title: string; summary: string },
+): Promise<void> {
+  if (settledClaimIds.has(id)) return;
+  await completeTask(id, buildClaimedTaskResult(outcome, detail));
+  settledClaimIds.add(id);
+}
