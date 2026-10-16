@@ -37,6 +37,16 @@ export async function POST(request: NextRequest): Promise<Response> {
     const executionMode = body.execution_mode === 'now' ? 'now' : 'cycle';
     const parallel = body.parallel !== false;
 
+    // فیلدهای بک‌لاگ planner (مایگریشن 20261016133600)؛ همه اختیاری‌اند
+    const estimate = body.estimate;
+    if (estimate != null && ![1, 2, 3].includes(estimate)) {
+      return fail('Field "estimate" must be 1, 2 or 3.', 400);
+    }
+    const source = body.source;
+    if (source != null && !['planner-weekly', 'critic', 'manual'].includes(source)) {
+      return fail('Field "source" must be planner-weekly, critic or manual.', 400);
+    }
+
     const id = await enqueueTask({
       title: body.title.trim(),
       description: typeof body.description === 'string' ? body.description.trim() : '',
@@ -51,6 +61,18 @@ export async function POST(request: NextRequest): Promise<Response> {
               model: typeof body.llmModel === 'string' ? body.llmModel : '',
             }
           : undefined,
+      ...(source ? { source } : {}),
+      ...(typeof body.week_key === 'string' && body.week_key.trim() ? { week_key: body.week_key.trim() } : {}),
+      ...(typeof body.acceptance === 'string' && body.acceptance.trim()
+        ? { acceptance: body.acceptance.trim() }
+        : {}),
+      ...(estimate != null ? { estimate } : {}),
+      ...(typeof body.depends_on === 'string' && body.depends_on.trim()
+        ? { depends_on: body.depends_on.trim() }
+        : {}),
+      ...(typeof body.dedupe_key === 'string' && body.dedupe_key.trim()
+        ? { dedupe_key: body.dedupe_key.trim() }
+        : {}),
     });
 
     // تنظیمات واقعی اجرا: حالت اجرا + سوییچ موازی (به مجری واقعی وصل است)

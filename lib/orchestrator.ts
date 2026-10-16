@@ -20,7 +20,7 @@ import { faDigits } from './format';
 import { runKnowledgeSubagent } from './knowledge-subagent';
 import { runWithTeamContext } from './llm';
 import { notifyTeamReport } from './notify';
-import { listApprovedTasksForTeam } from './taskqueue';
+import { claimNextTaskForTeam, listApprovedTasksForTeam } from './taskqueue';
 import {
   ACTIVE_CYCLE_STATUSES,
   normalizeCycleStatus,
@@ -706,6 +706,30 @@ export async function runSingleTeam(
     resetLLMStats();
     const runTeam = await loadRunTeam(team);
     const memory = await loadTeamMemory(team);
+    // قدم ۳: تحویل اتمیک تسک از صف ساخت. اگر تسک بود، بریف آن (عنوان/شرح/معیار
+    // قبولی) به ورودی تیم تزریق می‌شود؛ اگر نبود، رفتار فعلی (حدسی) حفظ می‌شود.
+    let claimedTaskContext = '';
+    try {
+      const claimed = await claimNextTaskForTeam(team);
+      if (claimed) {
+        claimedTaskContext =
+          `\n\nکار تحویل‌شده از صف ساخت (در اولویت اجرا):\n` +
+          `عنوان: ${claimed.title}\n` +
+          `شرح: ${(claimed.description ?? '').trim() || 'ثبت نشده'}\n` +
+          `معیار قبولی: ${(claimed.acceptance ?? '').trim() || 'ثبت نشده'}\n`;
+        console.log(`[orchestrator] تیم ${team}: کار «${claimed.title}» از صف claim شد (id=${claimed.id})`);
+        const { error: curErr } = await sb
+          .from('team_runs')
+          .update({ current_task: `کار صف: ${claimed.title}`.slice(0, 500) })
+          .eq('id', runRowId);
+        if (curErr) console.error(`[orchestrator] failed to set current_task for ${team}:`, curErr.message);
+      }
+    } catch (err) {
+      console.error(
+        `[orchestrator] claim تسک برای تیم ${team} خطا داد (رفتار فعلی حفظ شد):`,
+        err instanceof Error ? err.message : err,
+      );
+    }
     // کارهای تأییدشدهٔ این تیم («برود در چرخه») در اولویت زمینهٔ اجرا قرار می‌گیرند.
     let approvedContext = '';
     try {
@@ -720,7 +744,7 @@ export async function runSingleTeam(
       console.error(`[orchestrator] failed to load approved tasks for ${team}:`, err instanceof Error ? err.message : err);
     }
     const baseRagContext =
-      buildRagContext(ctx.previousWavesOutput) + approvedContext + knowledgeSnippet;
+      buildRagContext(ctx.previousWavesOutput) + claimedTaskContext + approvedContext + knowledgeSnippet;
     // دانش ذخیره‌شده تیم (قانون مسعود): همه تیم‌ها باید از دانششان استفاده کنند.
     // به‌جای تکیه بر input.memory (که ۱۱ تیم نادیده می‌گرفتند)، مستقیم در ragContext تزریق می‌شود.
     let teamKnowledgeContext = '';

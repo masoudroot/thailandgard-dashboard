@@ -61,6 +61,10 @@ export interface QueuedTaskOutput extends Omit<QueuedTask, 'files_hint'> {
   completed_at: string | null;
   llmEndpointId: string | null;
   llmModel: string | null;
+  /** معیار قبولی تسک (متن آزاد) */
+  acceptance: string | null;
+  /** برآورد تلاش: ۱=کم‌ریسک، ۲=متوسط، ۳=سنگین */
+  estimate: number | null;
 }
 
 /** Normalize a DB row into the domain-friendly shape (files_hint array -> string). */
@@ -80,6 +84,8 @@ function toOutput(row: QueueRow): QueuedTaskOutput {
     completed_at: row.completed_at,
     llmEndpointId: row.llm_endpoint_id ?? null,
     llmModel: row.llm_model ?? null,
+    acceptance: row.acceptance ?? null,
+    estimate: row.estimate ?? null,
   };
 }
 
@@ -97,12 +103,38 @@ async function validateTaskLLM(llm: TaskLLMSelection): Promise<void> {
   if (!ep.apiKey) throw new InputError('این endpoint کلید API ندارد.');
 }
 
+/** فیلدهای بک‌لاگ planner (مایگریشن 20261016133600)؛ همه اختیاری‌اند. */
+export interface TaskBacklogFields {
+  /** منشأ تسک: planner-weekly | critic | manual */
+  source?: 'planner-weekly' | 'critic' | 'manual';
+  /** کلید هفتهٔ planner، مثل 2026-W42 */
+  week_key?: string;
+  /** معیار قبولی تسک؛ متن آزاد */
+  acceptance?: string;
+  /** برآورد تلاش: ۱=کم‌ریسک، ۲=متوسط، ۳=سنگین */
+  estimate?: 1 | 2 | 3;
+  /** وابستگی به تسک دیگر (build_queue.id) */
+  depends_on?: string;
+  /** کلید یکتاسازی؛ همراه week_key یکتا می‌شود */
+  dedupe_key?: string;
+}
+
 /** Registers a task in `build_queue` with status=pending. Returns the new row id. */
 export async function enqueueTask(
-  task: QueuedTask & { team: string; cycleId?: string; llm?: TaskLLMSelection },
+  task: QueuedTask & {
+    team: string;
+    cycleId?: string;
+    llm?: TaskLLMSelection;
+  } & Partial<TaskBacklogFields>,
 ): Promise<string> {
   if (task.llm) await validateTaskLLM(task.llm);
-  const row = {
+  if (task.estimate != null && ![1, 2, 3].includes(task.estimate)) {
+    throw new InputError('برآورد تلاش (estimate) باید ۱، ۲ یا ۳ باشد.');
+  }
+  if (task.source != null && !['planner-weekly', 'critic', 'manual'].includes(task.source)) {
+    throw new InputError('منشأ تسک (source) نامعتبر است.');
+  }
+  const row: Record<string, unknown> = {
     team: task.team,
     run_id: task.cycleId ?? null,
     title: task.title,
@@ -112,11 +144,17 @@ export async function enqueueTask(
     status: 'pending',
     llm_endpoint_id: task.llm?.endpointId ?? null,
     llm_model: task.llm?.model.trim() ?? null,
+    source: task.source ?? null,
+    week_key: task.week_key ?? null,
+    acceptance: task.acceptance ?? null,
+    estimate: task.estimate ?? null,
+    depends_on: task.depends_on ?? null,
+    dedupe_key: task.dedupe_key ?? null,
   };
-  const insertRow = async (withLLM: boolean): Promise<string> => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { llm_endpoint_id, llm_model, ...rest } = row;
-    const payload = withLLM ? row : rest;
+  const insertRow = async (omit: string[]): Promise<string> => {
+    const payload = Object.fromEntries(
+      Object.entries(row).filter(([k, v]) => !omit.includes(k) && v !== undefined),
+    );
     const { data, error } = await getSupabase()
       .from('build_queue')
       .insert(payload)
@@ -125,26 +163,31 @@ export async function enqueueTask(
     if (error) throw error;
     return data.id as string;
   };
-  try {
-    return await insertRow(true);
-  } catch (err) {
-    // ستون‌های llm هنوز migrate نشده‌اند (کد 42703): بدون آن‌ها ثبت کن تا
-    // جریان فعلی ثبت کار نشکند؛ انتخاب مدل آن کار نادیده گرفته می‌شود.
-    const msg = err instanceof Error ? err.message : String(err);
-    const code = (err as { code?: string })?.code;
-    if (code === '42703' || /llm_endpoint_id|llm_model/.test(msg)) {
-      console.warn(
-        '[taskqueue] build_queue misses llm columns; enqueueing without per-task model. Apply migration 20261015080000_build_queue_llm.sql.',
-      );
-      try {
-        return await insertRow(false);
-      } catch (retryErr) {
-        throw new Error(
-          `enqueueTask failed: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
+  const attempts: string[][] = [
+    [],
+    ['llm_endpoint_id', 'llm_model'],
+    ['llm_endpoint_id', 'llm_model', 'source', 'week_key', 'acceptance', 'estimate', 'depends_on', 'dedupe_key'],
+  ];
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await insertRow(attempts[attempt]);
+    } catch (err) {
+      // ستون‌های llm یا بک‌لاگ هنوز migrate نشده‌اند (کد 42703): بدون آن‌ها
+      // ثبت کن تا جریان فعلی ثبت کار نشکند؛ فیلدهای حذف‌شده نادیده گرفته می‌شوند.
+      const msg = err instanceof Error ? err.message : String(err);
+      const code = (err as { code?: string })?.code;
+      const isMissingColumn =
+        code === '42703' || /llm_endpoint_id|llm_model|source|week_key|acceptance|estimate|depends_on|dedupe_key/.test(msg);
+      if (isMissingColumn && attempt + 1 < attempts.length) {
+        console.warn(
+          `[taskqueue] build_queue misses some columns; enqueueing with fewer fields (attempt ${attempt + 2}).`,
         );
+        attempt += 1;
+        continue;
       }
+      throw new Error(`enqueueTask failed: ${msg}`);
     }
-    throw new Error(`enqueueTask failed: ${msg}`);
   }
 }
 
@@ -389,4 +432,129 @@ export async function markTaskFailed(id: string, errorMessage: string): Promise<
       .eq('id', id);
     if (fallbackError) console.error(`[taskqueue] markTaskFailed fallback failed: ${fallbackError.message}`);
   }
+}
+
+/* ==========================================================================
+ * تحویل اتمیک تسک به تیم (قدم ۳)
+ *
+ * claimNextTaskForTeam(team): قدیمی‌ترین تسک pending تیم را اتمیک به
+ * in_progress می‌برد و برمی‌گرداند.
+ *   - idempotent: اگر تیم همین حالا تسک in_progress داشته باشد، همان را
+ *     برمی‌گرداند و تسک جدیدی نمی‌دهد.
+ *   - ترتیب: priority بالا اول (critical < high < medium < low)، بعد قدیمی‌ترین.
+ *   - اتمیک‌بودن با تابع دیتابیس claim_next_build_task تضمین می‌شود
+ *     (قفل مشورتی روی نام تیم + FOR UPDATE SKIP LOCKED؛ مایگریشن
+ *     20261016134000_build_queue_claim_and_approved.sql).
+ * ========================================================================== */
+
+/** رتبه‌بندی اولویت برای مسیر best-effort (وقتی تابع دیتابیس هنوز اعمال نشده). */
+const PRIORITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+/**
+ * مسیر پشتیبان وقتی تابع claim_next_build_task روی دیتابیس نیست (مایگریشن
+ * فقط فایل است و هنوز اجرا نشده). غیراتمیک است ولی همان قراردادها را دارد:
+ * in_progress فعلی تیم اول، بعد قدیمی‌ترین pending با بالاترین اولویت.
+ * فقط وقتی صدا زده می‌شود که خطا «تابع وجود ندارد» باشد؛ بقیه‌ی خطاها throw می‌شوند.
+ */
+async function claimNextTaskBestEffort(team: string): Promise<QueuedTaskOutput | null> {
+  const sb = getSupabase();
+  const { data: running, error: runningErr } = await sb
+    .from('build_queue')
+    .select('*')
+    .eq('team', team)
+    .eq('status', 'in_progress')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (runningErr) throw new Error(`claimNextTaskBestEffort failed: ${runningErr.message}`);
+  if (running) return toOutput(running as QueueRow);
+
+  const { data: candidates, error: candErr } = await sb
+    .from('build_queue')
+    .select('*')
+    .eq('team', team)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true })
+    .limit(100);
+  if (candErr) throw new Error(`claimNextTaskBestEffort failed: ${candErr.message}`);
+  const rows = ((candidates ?? []) as QueueRow[]).sort((a, b) => {
+    const rank = (p: string) => PRIORITY_RANK[p] ?? 4;
+    const d = rank(a.priority) - rank(b.priority);
+    return d !== 0 ? d : a.created_at.localeCompare(b.created_at);
+  });
+  const first = rows[0];
+  if (!first) return null;
+
+  // گارد روی status=pending تا مسابقه‌ی دو ورکر فقط به یکی تسک بدهد؛
+  // اگر ردیفی به‌روز نشد یعنی ورکر دیگری زودتر claim کرده → null.
+  const { data: claimed, error: claimErr } = await sb
+    .from('build_queue')
+    .update({ status: 'in_progress' })
+    .eq('id', first.id)
+    .eq('status', 'pending')
+    .select('*')
+    .maybeSingle();
+  if (claimErr) throw new Error(`claimNextTaskBestEffort failed: ${claimErr.message}`);
+  return claimed ? toOutput(claimed as QueueRow) : null;
+}
+
+/**
+ * تحویل اتمیک تسک به تیم. null یعنی صف این تیم تسک آماده ندارد.
+ * خطای واقعی دیتابیس throw می‌شود؛ نبودن تسک خطا نیست.
+ */
+export async function claimNextTaskForTeam(team: string): Promise<QueuedTaskOutput | null> {
+  const sb = getSupabase();
+  try {
+    const { data, error } = await sb
+      .rpc('claim_next_build_task', { p_team: team })
+      .maybeSingle();
+    if (error) throw error;
+    return data ? toOutput(data as QueueRow) : null;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const code = (err as { code?: string })?.code;
+    if (code === 'PGRST202' || code === '42883' || /claim_next_build_task/i.test(msg)) {
+      console.warn(
+        '[taskqueue] claim_next_build_task is not applied on the DB yet; using best-effort claim. Apply migration 20261016134000_build_queue_claim_and_approved.sql.',
+      );
+      return claimNextTaskBestEffort(team);
+    }
+    throw new Error(`claimNextTaskForTeam failed: ${msg}`);
+  }
+}
+
+/* ==========================================================================
+ * تأیید خودکار کم‌ریسک (قدم ۳)
+ *
+ * applyTaskCriticVerdict(id, verdict): حکم منتقد را روی یک کار pending اعمال می‌کند.
+ *   - رد => rejected با دلیل (منتظر کسی نمی‌ماند).
+ *   - تأیید + estimate=1 (کم‌ریسک) => خودکار approved، بدون انتظار تأیید دستی.
+ *   - تأیید + estimate=۲/۳/نال => pending می‌ماند (تأیید دستی لازم است).
+ *   - اگر کار دیگر pending نباشد، بی‌اثر است (idempotent).
+ * ========================================================================== */
+
+export interface TaskCriticVerdict {
+  approved: boolean;
+  reason?: string;
+}
+
+export async function applyTaskCriticVerdict(
+  id: string,
+  verdict: TaskCriticVerdict,
+): Promise<TaskQueueStatus> {
+  const task = await getTask(id);
+  if (!task) throw new Error(`کار پیدا نشد: ${id}`);
+  const status = task.status as TaskQueueStatus;
+  if (status !== 'pending') return status;
+
+  if (!verdict.approved) {
+    await rejectTask(id, verdict.reason?.trim() || 'رد شده توسط منتقد');
+    return 'rejected';
+  }
+  if (task.estimate === 1) {
+    await approveTask(id);
+    console.log(`[taskqueue] task ${id} auto-approved (estimate=1, critic-verified).`);
+    return 'approved';
+  }
+  return 'pending';
 }
