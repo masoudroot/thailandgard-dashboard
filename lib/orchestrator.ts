@@ -16,6 +16,7 @@
  * خطای واضح fail می‌شود ولی بقیه‌ی تیم‌ها ادامه می‌دهند.
  */
 import { getSupabase } from './api';
+import { recordEvent } from './operation-events';
 import { faDigits } from './format';
 import { runKnowledgeSubagent } from './knowledge-subagent';
 import {
@@ -237,6 +238,8 @@ export async function beginCycle(): Promise<{ cycleId: string; runId: string }> 
     await releaseLockNew(owner).catch(() => {});
     throw new Error(`failed to create cycle row: ${error.message}`);
   }
+  // لایه ۱ دیده‌بان زنده: شروع چرخه (fail-soft)
+  await recordEvent(runId, 'orchestrator', 'cycle_started', { run_id: runId });
   return { cycleId, runId };
 }
 
@@ -609,6 +612,13 @@ export async function runSingleTeam(
     }
     runRowId = claimed;
   }
+
+  // لایه ۱ دیده‌بان زنده: شروع تیم + کرونومتر مدت اجرا (همه fail-soft)
+  const teamStartMs = Date.now();
+  await recordEvent(ctx.runId, team, 'team_started', {
+    wave,
+    team_run_id: runRowId,
+  });
 
   const finish = async (patch: Record<string, unknown>) => {
     const { error } = await sb
@@ -1027,6 +1037,12 @@ export async function runSingleTeam(
       message: `گزارش تیم در چرخه ${ctx.runId}\n\n${result.summary ?? '(خلاصه‌ای ثبت نشد)'}`,
       cycleId,
     });
+    // لایه ۱ دیده‌بان زنده: پایان موفق/ردشده تیم (fail-soft)
+    await recordEvent(ctx.runId, team, 'team_finished', {
+      wave,
+      status: teamStatus,
+      duration_ms: Date.now() - teamStartMs,
+    });
     // خودترمیمی در لحظه (دستور مسعود): تشخیص الگوی خرابی + ترمیم سیستم/تیم،
     // بدون اثر روی نتیجهٔ این تیم. fail-soft: هرگز خطا پرتاب نمی‌کند.
     try {
@@ -1051,10 +1067,20 @@ export async function runSingleTeam(
         'stopped',
         `تیم در چرخه ${ctx.runId} توسط کاربر متوقف شد (مرحله: ${err.stage}).`,
       );
+      // لایه ۱ دیده‌بان زنده: پایان با توقف کاربر (fail-soft)
+      await recordEvent(ctx.runId, team, 'team_finished', {
+        wave,
+        status: 'stopped',
+        duration_ms: Date.now() - teamStartMs,
+      });
       return null;
     }
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[orchestrator] team "${team}" failed:`, message);
+    // لایه ۱ دیده‌بان زنده: خطای اصلی تیم — فقط پیام، نه استک کامل (fail-soft)
+    await recordEvent(ctx.runId, team, 'error', {
+      message: message.slice(0, 2000),
+    });
     await closeSubagents('failed');
     await finish({ status: 'failed', current_task: 'خطا در اجرا', error: message.slice(0, 4000) });
     await notifyTeamReport({
@@ -1063,6 +1089,12 @@ export async function runSingleTeam(
       cycleId,
     });
     await settleClaimedTaskOnce('failed', message.slice(0, 4000));
+    // لایه ۱ دیده‌بان زنده: پایان ناموفق تیم (fail-soft)
+    await recordEvent(ctx.runId, team, 'team_finished', {
+      wave,
+      status: 'failed',
+      duration_ms: Date.now() - teamStartMs,
+    });
     // خودترمیمی در لحظه (دستور مسعود): اگر این خطا الگو شد (۲ بار پیاپی همسان)،
     // مدل تیم خودکار عوض می‌شود. fail-soft.
     try {
@@ -1127,6 +1159,13 @@ export async function finishCycle(
       })
       .eq('id', cycleId);
     if (error) console.error('[orchestrator] failed to update cycles row:', error.message);
+    // لایه ۱ دیده‌بان زنده: پایان چرخه (fail-soft)
+    await recordEvent(
+      (cycle as { run_id?: string } | null)?.run_id ?? cycleId,
+      'orchestrator',
+      'cycle_finished',
+      { status },
+    );
     // آزاد کردن قفل: وضعیت دیگر running نیست، ولی ردیف برای حسابرسی می‌ماند.
     // فقط اگر قفل مال همین چرخه باشد (تا قفل چرخه‌ی تازه‌ای را آزاد نکنیم).
     await forceReleaseLock(cycleId, 'finishCycle');
