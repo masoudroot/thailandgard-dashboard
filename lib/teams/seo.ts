@@ -354,7 +354,12 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     for (const slug of slugs) {
       const guide = guides.find((g) => g.slug === slug);
       if (!guide) continue;
-      const rawItem = await callLLMJson<SeoItem>(
+      // ریشه‌ی باگ: خطای یک اسلاگ (مثلاً JSON نامعتبر پس از ۳ تلاش روی همه‌ی
+      // مدل‌ها) کل تیم را می‌کشت. حالا هر اسلاگ جداگانه تاب می‌آورد؛ اگر همه
+      // مردند، runWorkers پایین‌تر با پیام واضح خطا می‌دهد.
+      let rawItem: SeoItem | null;
+      try {
+        rawItem = await callLLMJson<SeoItem>(
         [
           ...(prevInstruction
             ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', prevInstruction, '']
@@ -369,11 +374,21 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
           '۴. keyword: کلمهٔ کلیدی اصلی صفحه',
           '',
           'قوانین: کاراکتر U+2014 مطلقاً ممنوع. هیچ تکنیک خاکستری. فقط واقعیت.',
+          // ریشه‌ی باگ JSON: مدل گاهی داخل مقادیر از " انگلیسی استفاده می‌کند و
+          // JSON می‌شکند. قانون صریح: داخل مقادیر هرگز " نیاور؛ اگر نقل‌قول لازم
+          // شد از «» فارسی استفاده کن.
+          'مهم: داخل هیچ‌یک از مقادیر، نویسهٔ " (دابل‌کوتیشن انگلیسی) به کار نبر؛ به‌جای آن از «» استفاده کن.',
           'فقط JSON معتبر بده: {"slug": "...", "title": "...", "h1": "...", "metaTitle": "...", "metaDescription": "...", "keyword": "..."}',
           'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
         ].join('\n'),
-        { system: SYSTEM_WORKER, temperature: 0.5, maxTokens: 800 },
+        // فارسی توکن‌بر است؛ ۸۰۰ توکن خروجی را وسط JSON می‌برید (ریشه‌ی بریدگی).
+        { system: SYSTEM_WORKER, temperature: 0.5, maxTokens: 1500 },
       );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[seo] تولید سئو برای اسلاگ ${slug} پس از همه‌ی تلاش‌ها ناموفق بود: ${msg.slice(0, 150)}`);
+        continue;
+      }
       // خروجی LLM ممکن است آبجکت نباشد (مثلاً عدد)؛ قبل از مقداردهی اعتبارسنجی می‌کنیم
       if (!rawItem || typeof rawItem !== 'object' || Array.isArray(rawItem)) {
         console.warn(`[seo] خروجی نامعتبر LLM برای اسلاگ ${slug}:`, String(rawItem).slice(0, 100));
