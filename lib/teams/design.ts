@@ -1,21 +1,37 @@
 /**
  * lib/teams/design.ts : تیم طراحی (design) تایلندگرد
  *
- * اقتباس از ورک‌فلو n8n: مجری بریف آرت‌دایرکشن با نزدیک‌ترین آیتم‌های
- * رجیستری وایب‌فارسی؛ سه مجری (نقد سه‌چشمی، دیف اجرایی برای dev، بازبینی
- * نهایی) و منتقدی که روی slug رجیستری، توکن‌محوری و ممنوعیت استایل
- * من‌درآوردی تمرکز دارد. سه فراخوانی LLM هر چرخه: سرپرست ← مجری‌ها (یکجا) ← منتقد.
+ * این تیم دیگر «توضیح دربارهٔ طراحی» نمی‌دهد؛ کامپوننت واقعی React/TSX تولید
+ * می‌کند که مستقیم روی ریپوی سایت قابل اعمال است.
+ *
+ * سه فراخوانی LLM هر چرخه: سرپرست ← مجری (تولید کد) ← منتقد (داوری کد).
+ * خروجی نهایی: PatchFile[] با مسیر site/components/... که تیم dev یا مرحلهٔ
+ * اعمال، آن را با applyPatchViaGithub روی شاخهٔ dev ریپوی سایت کامیت می‌کند.
+ *
+ * قوانین سفت (دستور مسعود):
+ * - فقط آیتم‌های رجیستری وایب‌فارسی؛ استایل من‌درآوردی ممنوع.
+ * - راست‌چین با خاصیت‌های منطقی (ms/me/ps/pe/text-start/...)؛ هرگز ml/mr/pl/pr/text-left.
+ * - تیتر با Pinar FD، بدنه با IranSans X، ارقام فارسی در متن نمایشی.
+ * - U+2014 مطلقاً ممنوع.
+ * - تم Graphite: خط مویی ۱px، بدون سایه، گوشهٔ ۸/۲۲، حرکت ۲۰۰ms.
  */
 
 import { callLLM, callLLMJson } from '../llm';
 import { buildKnowledgePromptSection } from '../rag';
 import { extractCriticKnowledge, criticKnowledgeLog } from '../knowledge/critic-knowledge';
-import type { ProgressReporter, MemoryEntry, QueuedTask, TeamName, TeamResult } from '../types';
+import type {
+  ProgressReporter,
+  MemoryEntry,
+  QueuedTask,
+  TeamName,
+  TeamResult,
+  PatchFile,
+} from '../types';
 
 export const TEAM: TeamName = 'design';
 
 export const MISSION =
-  'مجری بریف آرت‌دایرکشن با نزدیک‌ترین آیتم‌های رجیستری وایب‌فارسی؛ هر روز حداقل یک تغییر بصری قابل‌مشاهده روی سایت منتشر می‌کند و دیزاین سیستم تایلندگرد را می‌سازد.';
+  'از بریف artdir کامپوننت واقعی React/TSX می‌سازد؛ هر چرخه دقیقاً یک کامپوننت قابل‌مشاهده با الگوهای رجیستری وایب‌فارسی، راست‌چین درست و تایپوگرافی فارسی، آمادهٔ کامیت روی شاخهٔ dev.';
 
 export interface TeamInput {
   /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
@@ -24,23 +40,85 @@ export interface TeamInput {
   runId: string;
   ragContext: string;
   memory: MemoryEntry[];
-  previousWavesOutput: Record<string, string>;
+  previousWavesOutput: Record<string, TeamResult | null>;
 }
 
+/** تصمیم سرپرست: دقیقاً یک کامپوننت برای این چرخه. */
 interface SupervisorPlan {
-  workers: [string, string, string];
+  component: {
+    /** نام فارسی کامپوننت، مثل «کارت تور». */
+    name: string;
+    /** مسیر فایل در ریپوی سایت، مثل site/components/tours/tour-card.tsx */
+    filePath: string;
+    /** نام تابع exportشده، مثل TourCard */
+    exportName: string;
+    /** یک جمله: این کامپوننت کجای سایت می‌نشیند و چه کاری می‌کند. */
+    purpose: string;
+    /** slug آیتم‌های رجیستری وایب‌فارسی که الگو هستند، مثل ["card", "badge"]. */
+    registryRefs: string[];
+    /** پراپ‌های ورودی کامپوننت به زبان ساده. */
+    props: string;
+  };
 }
 
+/** کامپوننت نرمال‌شده؛ اگر خروجی سرپرست ناقص بود null. */
+type SafeComponent = SupervisorPlan['component'];
+
+/** اعتبارسنجی خروجی سرپرست: فیلد ناقص یعنی پرامپت مجری خراب و خروجی خالی. */
+function safeComponent(plan: unknown): SafeComponent | null {
+  const c =
+    plan && typeof plan === 'object'
+      ? (plan as { component?: unknown }).component
+      : undefined;
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
+  const o = c as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  const name = str(o.name);
+  const filePath = str(o.filePath);
+  const exportName = str(o.exportName);
+  if (!name || !filePath || !exportName) return null;
+  const registryRefs = Array.isArray(o.registryRefs)
+    ? o.registryRefs.map((r) => (typeof r === 'string' ? r.trim() : '')).filter(Boolean)
+    : [];
+  return {
+    name,
+    filePath,
+    exportName,
+    purpose: str(o.purpose),
+    registryRefs,
+    props: str(o.props),
+  };
+}
+
+/** خروجی مجری: فایل‌های واقعی. */
+interface WorkerOutput {
+  files: PatchFile[];
+}
+
+/** حکم منتقد روی کد واقعی. */
 interface CriticVerdict {
   approved: boolean;
   reason: string;
-  payload: string;
+  /** کد نهایی تأییدشده یا اصلاح‌شده؛ در صورت رد می‌تواند تهی باشد. */
+  files: PatchFile[];
 }
 
-/** سرپرست: بریف artdir و خروجی branding را می‌خواند و سه مأموریت برای مجری‌ها می‌سازد. */
+/** قوانین سفت تولید کد که به مجری و منتقد داده می‌شود. */
+const CODE_RULES = [
+  '۱. راست‌چین فقط با خاصیت‌های منطقی: ms-، me-، ps-، pe-، text-start، text-end، start-0، end-0، rounded-s-، rounded-e-، border-s، border-e.',
+  '۲. ممنوع مطلق: ml-، mr-، pl-، pr-، text-left، text-right، left-0، right-0، rounded-l-، rounded-r-، space-x- (به‌جایش gap).',
+  '۳. تیتر با فونت Pinar FD و بدنه با IranSans X (کلاس‌های font-pinar و font-iransans اگر در تم تعریف شده‌اند؛ وگرنه font-bold برای تیتر).',
+  '۴. هر عددی که کاربر می‌بیند باید فارسی باشد (۱۲٬۵۰۰٬۰۰۰ تومان، نه 12500000).',
+  '۵. کاراکتر U+2014 (خط تیرهٔ بلند) مطلقاً ممنوع؛ به‌جایش «:» یا «،» یا «ـ».',
+  '۶. تم Graphite: حاشیهٔ مویی ۱px با border، بدون سایه (shadow-* ممنوع)، گوشه‌های rounded-lg یا rounded-[22px]، حرکت transition با duration-200.',
+  '۷. فقط توکن‌های تم: bg-background، text-foreground، text-muted-foreground، border، bg-muted و لهجهٔ کهربایی برای تأکید کوچک. رنگ hex من‌درآوردی (text-[#...] و bg-[#...]) ممنوع.',
+  '۸. آیکون فقط از lucide-react؛ در راست‌چین، آیکون «بعدی/جلو» ArrowLeft است نه ArrowRight.',
+  '۹. کامپوننت باید export تابع نام‌دار با interface پراپ‌ها باشد؛ بدون ' + "'use client'" + ' مگر تعامل واقعی (useState/useEffect) لازم باشد.',
+  '۱۰. TSX معتبر: تگ‌های متوازن، ایمپورت‌های استفاده‌شده، تایپ TypeScript درست. بدون کد نمایشی یا TODO.',
+].join('\n');
+
+/** سرپرست: از بریف artdir و خروجی branding دقیقاً یک کامپوننت انتخاب می‌کند. */
 async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
-  // تزریق best-effort دانش تیم در ابتدای بخش زمینه (تیم ۱۳)؛
-  // بدون دانش، پرامپت دقیقاً مثل قبل می‌ماند.
   let knowledgeSection = '';
   try {
     knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
@@ -48,8 +126,10 @@ async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
     knowledgeSection = '';
   }
   const memoryLines = input.memory.map((m) => `- ${m.key}: ${m.value}`).join('\n');
-  const artdirBrief = input.previousWavesOutput['artdir'] || '(بریف artdir نیست)';
-  const brandingOutput = input.previousWavesOutput['branding'] || '(خروجی branding نیست)';
+  const artdirResult = input.previousWavesOutput['artdir'];
+  const brandingResult = input.previousWavesOutput['branding'];
+  const artdirBrief = artdirResult?.summary ?? '(بریف artdir نیست)';
+  const brandingOutput = brandingResult?.summary ?? '(خروجی branding نیست)';
   const prompt = [
     'زمینه:',
     ...(knowledgeSection ? [knowledgeSection, ''] : []),
@@ -65,8 +145,8 @@ async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
     '',
     `مأموریت تیم design: ${MISSION}`,
     '',
-    'بر اساس زمینه، بریف artdir و خروجی branding، تصمیم بگیر این چرخه چه کاری باید انجام شود و آن را به سه مأموریت مجزا برای سه مجری بشکن: مجری ۱ (بریف artdir و آیتم‌های رجیستری وایب‌فارسی را می‌خواند و نقد سه‌چشمی انجام می‌دهد: فارسی‌نویسی و تایپوگرافی فارسی، بصری راست‌چین، حرکت و دیتاویز؛ برای هر نقد سه قلم مشخص: کدام المان، چه ایرادی، چه راه‌حلی)، مجری ۲ (دیف یا دستور اجرایی دقیق برای dev می‌سازد با ذکر slug هر آیتم رجیستری؛ انحراف از رجیستری فقط با دلیل مکتوب؛ استایل من‌درآوردی مطلقاً ممنوع و همه چیز توکن‌محور)، مجری ۳ (خروجی نهایی را با نقد سه‌چشمی بازبینی می‌کند و برای ممیزی vibefarsi و farsiui آماده می‌کند).',
-    'فقط JSON معتبر بده با کلید workers شامل سه رشتهٔ مأموریت.',
+    'دقیقاً یک کامپوننت انتخاب کن که این چرخه ساخته شود: کوچک، مشخص و قابل‌مشاهده روی سایت (مثل کارت تور، بنر، بخش نظرات، دکمهٔ تماس). از تکرار کامپوننت‌های یادگیری‌های قبلی پرهیز کن.',
+    'فقط JSON معتبر بده با کلید component شامل: name (فارسی)، filePath (با الگوی site/components/<area>/<kebab-name>.tsx)، exportName (PascalCase)، purpose (یک جمله)، registryRefs (آرایهٔ slug آیتم‌های رجیستری وایب‌فارسی)، props (توصیف پراپ‌ها).',
   ]
     .filter((l) => l !== null)
     .join('\n');
@@ -76,49 +156,80 @@ async function runSupervisor(input: TeamInput): Promise<SupervisorPlan> {
   });
 }
 
-/**
- * هر سه مجری در یک فراخوانی: نقد سه‌چشمی + دیف اجرایی + بازبینی نهایی.
- * (فشرده‌سازی آگاهانه برای سقف ۳ فراخوانی هر چرخه)
- */
-async function runWorkers(
-  input: TeamInput,
-  plan: SupervisorPlan,
-): Promise<string> {
-  const artdirBrief = input.previousWavesOutput['artdir'] || '(بریف artdir نیست)';
-  const brandingOutput = input.previousWavesOutput['branding'] || '(خروجی branding نیست)';
-  const prompt = [
-    'مأموریت سرپرست:',
-    plan.workers.map((w, i) => `${i + 1}. ${w}`).join('\n'),
+/** مجری: کامپوننت واقعی TSX تولید می‌کند. */
+async function runWorker(c: SafeComponent): Promise<WorkerOutput> {
+  const system =
+    'تو مجری تیم design تایلندگرد هستی؛ یک برنامه‌نویس فرانت‌اند حرفه‌ای فارسی‌زبان. فقط JSON معتبر با کد واقعی می‌دهی؛ هیچ توضیحی دربارهٔ طراحی نمی‌نویسی، فقط کد.';
+  const buildPrompt = (compact: boolean) => [
+    `کامپوننت «${c.name}» را بساز.`,
+    `مسیر فایل: ${c.filePath}`,
+    `نام export: ${c.exportName}`,
+    `کاربرد: ${c.purpose || '(مشخص نشده)'}`,
+    `الگوهای رجیستری وایب‌فارسی: ${c.registryRefs.join('، ') || '(مشخص نشده)'}`,
+    `پراپ‌ها: ${c.props || '(مشخص نشده)'}`,
     '',
-    'بریف آرت‌دایرکشن (خروجی تیم artdir):',
-    artdirBrief,
+    'قوانین سفت تولید کد:',
+    CODE_RULES,
     '',
-    'خروجی تیم branding:',
-    brandingOutput,
-    '',
-    'نقش تو: مجری تیم design تایلندگرد. هر سه خروجی زیر را بده؛ فقط واقعیت، بدون حدس:',
-    'الف) نقد سه‌چشمی: بریف artdir و آیتم‌های رجیستری وایب‌فارسی را می‌خواند و نقد می‌کند (۱: فارسی‌نویسی و تایپوگرافی فارسی، ۲: بصری راست‌چین، ۳: حرکت و دیتاویز). هر نقد با سه قلم مشخص: کدام المان، چه ایرادی، چه راه‌حلی.',
-    'ب) دیف یا دستور اجرایی دقیق برای dev: با ذکر slug هر آیتم رجیستری؛ انحراف فقط با دلیل مکتوب؛ استایل من‌درآوردی ممنوع، همه چیز توکن‌محور.',
-    'پ) بازبینی نهایی: خروجی را با همان نقد سه‌چشمی بازبینی کن و برای ممیزی vibefarsi و farsiui آماده کن (چک‌لیست ۱۲نقطه‌ای فارسی و راست‌چین هم لحاظ شود).',
+    compact
+      ? 'فقط JSON معتبر و «فشرده» بده با کلید files شامل آرایه‌ای از {path، content}؛ content کل محتوای فایل TSX باشد ولی بدون حاشیه‌روی. بدون توضیح اضافه، بدون markdown.'
+      : 'فقط JSON معتبر بده با کلید files شامل آرایه‌ای از {path، content}؛ content باید کل محتوای فایل TSX باشد. بدون توضیح اضافه، بدون markdown.',
   ].join('\n');
-  return callLLM(prompt, {
-    system: 'تو مجری تیم design تایلندگرد هستی. فارسی تمیز، بدون ادعای بی‌پشتوانه.',
-    temperature: 0.7,
+  const first = await callLLMJson<WorkerOutput>(buildPrompt(false), {
+    system,
+    temperature: 0.5,
+    maxTokens: 6000,
   });
+  if (hasRealFiles(first)) return first;
+  // تلاش دوم: خروجی خالی/بریده بود؛ فشرده بخواه تا در سقف توکن جا شود
+  const second = await callLLMJson<WorkerOutput>(buildPrompt(true), {
+    system,
+    temperature: 0.5,
+    maxTokens: 6000,
+  });
+  if (hasRealFiles(second)) return second;
+  throw new Error('مجری فایل معتبری تولید نکرد (files خالی یا محتوای تهی پس از دو تلاش)');
 }
 
-/** منتقد سخت‌گیر: آیا هر تصمیم slug رجیستری دارد، توکن‌محور است و استایل من‌درآوردی به کار نرفته؟ */
-async function runCritic(workersOutput: string): Promise<CriticVerdict> {
+/** آیا خروجی مجری حداقل یک فایل با محتوای واقعی دارد؟ */
+function hasRealFiles(out: unknown): out is WorkerOutput {
+  if (!out || typeof out !== 'object' || Array.isArray(out)) return false;
+  const files = (out as { files?: unknown }).files;
+  if (!Array.isArray(files) || files.length === 0) return false;
+  return files.some(
+    (f) =>
+      f && typeof f === 'object' &&
+      typeof (f as { content?: unknown }).content === 'string' &&
+      ((f as { content: string }).content.trim().length >= 50),
+  );
+}
+
+/**
+ * منتقد: کد واقعی را می‌خواند و داوری می‌کند.
+ * رد شدن یعنی کد مشکل دارد و نباید کامیت شود؛ نه اینکه تیم کار نکرده.
+ */
+async function runCritic(files: PatchFile[]): Promise<CriticVerdict> {
   const prompt = [
-    'خروجی مجری‌ها:',
-    workersOutput,
+    'کدهای تولیدشده توسط مجری:',
+    ...files.map((f) => `--- ${f.path} ---\n${f.content}`),
     '',
-    'داوری کن و فقط JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جمله)، payload (متن نهایی تأییدشده یا اصلاح‌شده).',
-    'تمرکز داوری: آیا هر تصمیم slug رجیستری دارد، توکن‌محور است و استایل من‌درآوردی به کار نرفته؟',
+    'قوانین سفت:',
+    CODE_RULES,
+    '',
+    'کد را خط‌به‌خط داوری کن:',
+    'الف) TSX معتبر است؟ (تگ متوازن، export درست، interface پراپ‌ها، ایمپورت‌های استفاده‌شده)',
+    'ب) راست‌چین درست است؟ (فقط خاصیت منطقی؛ هیچ ml/mr/pl/pr/text-left نباشد)',
+    'پ) تایپوگرافی فارسی درست است؟ (فونت تیتر و بدنه، ارقام فارسی در متن نمایشی)',
+    'ت) U+2014 در کد یا متن نیست؟',
+    'ث) فقط توکن‌های تم وایب‌فارسی/گرافیت به کار رفته؟ (بدون hex من‌درآوردی، بدون سایه)',
+    'اگر ایراد کوچکی هست، خودت در files اصلاحش کن و approved بده. فقط اگر ایراد ساختاری جدی است رد کن.',
+    'فقط JSON معتبر بده با کلیدهای: approved (بولین)، reason (یک جملهٔ فارسی)، files (آرایهٔ {path، content} نهایی؛ در صورت رد می‌تواند تهی باشد).',
   ].join('\n');
   return callLLMJson<CriticVerdict>(prompt, {
-    system: 'تو منتقد سخت‌گیر تیم design هستی. فقط JSON معتبر می‌دهی.',
+    system:
+      'تو منتقد سخت‌گیر کد تیم design هستی. کد واقعی را داوری می‌کنی نه توضیح را. فقط JSON معتبر می‌دهی.',
     temperature: 0.2,
+    maxTokens: 6000,
   });
 }
 
@@ -134,68 +245,116 @@ async function remember(runId: string, lesson: string): Promise<void> {
   }
 }
 
+/** اعتبارسنجی سبک PatchFile پیش از تحویل. */
+function validatePatches(files: PatchFile[]): string | null {
+  if (!Array.isArray(files) || files.length === 0) return 'فایل تولید نشد';
+  if (files.length > 5) return 'بیش از ۵ فایل در یک چرخه مجاز نیست';
+  for (const f of files) {
+    if (typeof f.path !== 'string' || !f.path.trim()) return 'مسیر یک فایل نامعتبر است';
+    const p = f.path.trim().replace(/^\/+/, '');
+    if (p.includes('..') || p.startsWith('.git') || p.includes('.env'))
+      return `مسیر غیرمجاز: ${p}`;
+    if (!p.startsWith('site/')) return `مسیر باید با site/ شروع شود: ${p}`;
+    if (typeof f.content !== 'string' || f.content.trim().length < 50)
+      return `محتوای فایل ${p} خیلی کوتاه است`;
+    if (f.content.includes('\u2014')) return `U+2014 در فایل ${p} دیده شد`;
+  }
+  return null;
+}
+
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const reportLive = input.reportProgress;
-  await reportLive?.('سرپرست: طراحی مأموریت‌ها', 15);
-  const plan = await runSupervisor(input);
-  await reportLive?.('مجری‌ها: اجرای مأموریت‌ها', 50);
-  const workersOutput = await runWorkers(input, plan);
-  await reportLive?.('منتقد: داوری خروجی', 80);
-  const verdict = await runCritic(workersOutput);
-
   const tasks: QueuedTask[] = [];
   const blockers: string[] = [];
 
-  if (!verdict.approved) {
-    blockers.push(`منتقد design تأیید نکرد: ${verdict.reason}`);
-  } else {
-    tasks.push(
-      {
-        title: 'تحویل دیف یا دستور اجرایی به تیم dev',
-        description:
-          'دیف یا دستور اجرایی دقیق این چرخه (با slug هر آیتم رجیستری و دلیل هر انحراف) برای اجرا به صف تیم dev رفت.',
-        files_hint: 'site/components/**',
-        priority: 'high',
-      },
-      {
-        title: 'بازبینی سه‌چشمی خروجی نهایی',
-        description:
-          'خروجی نهایی این چرخه با نقد سه‌چشمی (فارسی‌نویسی، بصری راست‌چین، حرکت) بازبینی و برای ممیزی vibefarsi و farsiui آماده شد.',
-        files_hint: 'design-system/**',
-        priority: 'medium',
-      },
-      {
-        title: 'ثبت تصمیم‌های طراحی با slug رجیستری',
-        description:
-          'هر تصمیم طراحی این چرخه با slug آیتم رجیستری وایب‌فارسی در دیزاین سیستم تایلندگرد ثبت یا به‌روز شود.',
-        files_hint: 'design-system/decisions.md',
-        priority: 'medium',
-      },
-    );
+  await reportLive?.('سرپرست: انتخاب کامپوننت این چرخه', 15);
+  const plan = await runSupervisor(input);
+  const component = safeComponent(plan);
+  if (!component) {
+    const msg = 'سرپرست کامپوننت معتبری انتخاب نکرد (خروجی JSON ناقص)؛ کار به چرخهٔ بعد موکول شد.';
+    blockers.push(msg);
+    return { team: TEAM, summary: msg, blockers, tasks, approved: false };
   }
 
-  const lesson = verdict.approved
-    ? `چرخهٔ موفق: ${verdict.reason}`
+  await reportLive?.(`مجری: تولید کد ${component.name}`, 50);
+  let workerOut: WorkerOutput;
+  try {
+    workerOut = await runWorker(component);
+  } catch (err) {
+    const msg = `مجری خروجی معتبر نداد: ${err instanceof Error ? err.message : String(err)}؛ کار به چرخهٔ بعد موکول شد.`;
+    blockers.push(msg);
+    return { team: TEAM, summary: msg, blockers, tasks, approved: false };
+  }
+
+  await reportLive?.('منتقد: داوری کد واقعی', 80);
+  const localError = validatePatches(workerOut.files);
+  const rawVerdict: CriticVerdict = localError
+    ? { approved: false, reason: localError, files: [] }
+    : await runCritic(workerOut.files);
+  // حکم ناقص LLM نباید «undefined» چاپ کند
+  const verdict: CriticVerdict = {
+    approved: rawVerdict?.approved === true,
+    reason:
+      typeof rawVerdict?.reason === 'string' && rawVerdict.reason.trim()
+        ? rawVerdict.reason
+        : '(دلیل ثبت نشد)',
+    files: Array.isArray(rawVerdict?.files) ? rawVerdict.files : [],
+  };
+  // PatchFileها برای مرحلهٔ اعمال (تیم dev یا job اعمال) روی همین نتیجه سوار می‌شوند.
+  let patches: PatchFile[] | undefined;
+
+  if (!verdict.approved) {
+    blockers.push(`منتقد design کد را تأیید نکرد: ${verdict.reason}`);
+  } else {
+    const patchError = validatePatches(verdict.files);
+    if (patchError) {
+      blockers.push(`خروجی نهایی منتقد نامعتبر است: ${patchError}`);
+    } else {
+      patches = verdict.files.map((f) => ({
+        path: f.path.trim().replace(/^\/+/, ''),
+        content: f.content,
+      }));
+      tasks.push(
+        {
+          title: `اعمال کامپوننت ${component.name} روی سایت`,
+          description: `کامپوننت ${component.exportName} در ${patches.map((p) => p.path).join('، ')} آمادهٔ کامیت روی شاخهٔ dev ریپوی سایت است (الگوهای رجیستری: ${component.registryRefs.join('، ') || 'ندارد'}).`,
+          files_hint: patches.map((p) => p.path).join(', '),
+          priority: 'high',
+        },
+        {
+          title: 'بازبینی سه‌چشمی کد نهایی',
+          description: `کد ${component.name} از نظر فارسی‌نویسی، راست‌چین و توکن‌های وایب‌فارسی توسط منتقد تأیید شد و برای ممیزی vibefarsi و farsiui آماده است.`,
+          files_hint: 'design-system/decisions.md',
+          priority: 'medium',
+        },
+      );
+    }
+  }
+
+  const approved = patches !== undefined;
+  const lesson = approved
+    ? `کامپوننت موفق: ${component.name} (${component.filePath})`
     : `رد منتقد: ${verdict.reason}`;
   await remember(input.runId, lesson);
 
   // استخراج دانش حرفه‌ای از حکم منتقد و ایندکس در RAG
   const knowledgeResult = await extractCriticKnowledge(
     TEAM,
-    { approved: verdict.approved, reason: verdict.reason, domain: 'طراحی رابط' },
+    { approved, reason: approved ? `کامپوننت ${component.name} تأیید شد` : verdict.reason, domain: 'تولید کامپوننت' },
     input.runId,
   );
   const knowledgeLog = criticKnowledgeLog(knowledgeResult);
 
-  const summary = verdict.approved
-    ? `تیم design این چرخه بریف artdir را با نزدیک‌ترین آیتم‌های رجیستری وایب‌فارسی اجرا کرد؛ نقد سه‌چشمی انجام شد و منتقد تأیید کرد که همهٔ تصمیم‌ها slug رجیستری دارند و توکن‌محور‌اند. دیف اجرایی برای dev در صف است و خروجی نهایی برای ممیزی vibefarsi و farsiui آماده است. ${knowledgeLog}`
-    : `تیم design این چرخه خروجی تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${verdict.reason} نقد سه‌چشمی در بستهٔ بلوکر ثبت شده تا رفع شود. ${knowledgeLog}`;
+  const summary = approved
+    ? `تیم design این چرخه کامپوننت «${component.name}» را به‌صورت کد واقعی TSX تولید کرد (${patches!.map((p) => p.path).join('، ')})؛ منتقد کد را از نظر راست‌چین، تایپوگرافی فارسی و توکن‌های وایب‌فارسی تأیید کرد. ${knowledgeLog}`
+    : `تیم design این چرخه کد تولید کرد ولی منتقد آن را تأیید نکرد و کار به چرخهٔ بعد موکول شد. دلیل: ${verdict.reason} ${knowledgeLog}`;
 
   return {
     team: TEAM,
     summary,
     blockers,
     tasks: tasks.slice(0, 3),
-    approved: verdict.approved,
+    approved,
+    patches,
   };
 }
