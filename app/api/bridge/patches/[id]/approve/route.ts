@@ -17,10 +17,12 @@ import { fail, ok } from '../../../../../../lib/api';
 import { requireManagerAuth } from '../../../../../../lib/manager-auth';
 import {
   getBridgePatch,
-  mergeBranchIntoDev,
   updateBridgePatch,
-  PreMergeGateError,
 } from '../../../../../../lib/bridge';
+import {
+  mergeBranchIntoDev,
+  PreMergeGateError,
+} from '../../../../../../lib/bridge/merge';
 import { GithubError } from '../../../../../../lib/github-changes';
 
 function validId(id: string): boolean {

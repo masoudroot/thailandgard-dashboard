@@ -13,11 +13,11 @@ import { fail, ok } from '../../../../../../lib/api';
 import { requireManagerAuth } from '../../../../../../lib/manager-auth';
 import {
   BridgeDbError,
-  deleteBranchBestEffort,
   getBridgePatch,
   isMissingColumnError,
   updateBridgePatch,
 } from '../../../../../../lib/bridge';
+import { deleteBranchBestEffort } from '../../../../../../lib/bridge/merge';
 
 function validId(id: string): boolean {
   return /^[A-Za-z0-9_-]{1,64}$/.test(id);
