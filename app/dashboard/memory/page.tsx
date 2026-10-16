@@ -14,8 +14,9 @@ import { Field } from '@/components/ui/Input';
 import { SearchInput } from '@/components/ui/search-input';
 import { Collapsible } from '@/components/ui/collapsible';
 
-/** نام‌های فارسی خوانا برای ۱۵ تیم */
+/** نام‌های فارسی خوانا برای تیم‌ها */
 const TEAM_LABELS: Record<TeamName, string> = {
+  leader: 'رهبر',
   artdir: 'طراحی ارشد',
   branding: 'برند',
   content: 'محتوا',
