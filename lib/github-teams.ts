@@ -9,6 +9,7 @@ import type { TeamName } from './types';
 
 /** برچسب فارسی تیم‌های شناخته‌شدهٔ داشبورد. */
 export const TEAM_FA: Record<TeamName, string> = {
+  leader: 'رهبر',
   artdir: 'مدیریت هنری',
   branding: 'برندینگ',
   content: 'محتوا',

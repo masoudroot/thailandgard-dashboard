@@ -35,7 +35,7 @@ export interface QueueRow {
   llm_endpoint_id: string | null;
   /** نام مدل انتخاب‌شده برای این کار؛ خالی = پیش‌فرض تیم */
   llm_model: string | null;
-  /** منشأ تسک: planner-weekly | critic | manual */
+  /** منشأ تسک: planner-weekly | critic | manual | leader */
   source: string | null;
   /** کلید هفتهٔ planner، مثل 2026-W42؛ تسک‌های غیرهفته‌ای نال می‌مانند */
   week_key: string | null;
@@ -105,8 +105,8 @@ async function validateTaskLLM(llm: TaskLLMSelection): Promise<void> {
 
 /** فیلدهای بک‌لاگ planner (مایگریشن 20261016133600)؛ همه اختیاری‌اند. */
 export interface TaskBacklogFields {
-  /** منشأ تسک: planner-weekly | critic | manual */
-  source?: 'planner-weekly' | 'critic' | 'manual';
+  /** منشأ تسک: planner-weekly | critic | manual | leader */
+  source?: 'planner-weekly' | 'critic' | 'manual' | 'leader';
   /** کلید هفتهٔ planner، مثل 2026-W42 */
   week_key?: string;
   /** معیار قبولی تسک؛ متن آزاد */
@@ -131,7 +131,7 @@ export async function enqueueTask(
   if (task.estimate != null && ![1, 2, 3].includes(task.estimate)) {
     throw new InputError('برآورد تلاش (estimate) باید ۱، ۲ یا ۳ باشد.');
   }
-  if (task.source != null && !['planner-weekly', 'critic', 'manual'].includes(task.source)) {
+  if (task.source != null && !['planner-weekly', 'critic', 'manual', 'leader'].includes(task.source)) {
     throw new InputError('منشأ تسک (source) نامعتبر است.');
   }
   const row: Record<string, unknown> = {
@@ -560,7 +560,7 @@ export async function applyTaskCriticVerdict(
 }
 
 /* ==========================================================================
- * بستن قطعی تسک تحویل‌شده (رفع ریشه‌ای زامبی‌شدن صف — مشکل ۲)
+ * بستن قطعی تسک تحویل‌شده (رفع ریشه‌ای زامبی‌شدن صف | مشکل ۲)
  *
  * باگ: ارکستراتور تسک را claim می‌کرد (in_progress) ولی شناسه‌اش را فقط برای
  * تزریق متن نگه می‌داشت؛ هیچ مسیری (موفق/ردشده/ناموفق/خطا) آن را به وضعیت

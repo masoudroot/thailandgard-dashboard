@@ -59,6 +59,7 @@ function unwrapPayload(body: unknown): unknown {
 }
 
 const TEAM_LABEL: Record<TeamName, string> = {
+  leader: 'رهبر',
   artdir: 'طراحی ارشد',
   branding: 'برند',
   content: 'محتوا',

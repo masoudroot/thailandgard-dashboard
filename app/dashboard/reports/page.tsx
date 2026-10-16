@@ -73,6 +73,7 @@ interface CycleReport extends Cycle {
 }
 
 const TEAM_LABELS: Record<TeamName, string> = {
+  leader: 'رهبر',
   artdir: 'طراحی ارشد',
   branding: 'برند',
   content: 'محتوا',

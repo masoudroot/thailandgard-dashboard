@@ -1,9 +1,10 @@
 /**
  * Shared domain types for the ThailandGard agentic dashboard.
- * The 15 AI teams run in waves (wave 1 split into two) per cycle.
+ * The 5 AI teams run in 3 waves per cycle (leader first, then builders).
  */
 
 export type TeamName =
+  | 'leader'
   | 'artdir'
   | 'branding'
   | 'content'
@@ -132,7 +133,7 @@ export interface TeamResult {
   patches?: PatchFile[];
   /**
    * پچ پیشنهادی تیم برای پل «تیم → سایت» (اختیاری).
-   * شکل PatchFile در همین فایل تعریف شده — همان {path, content} در
+   * شکل PatchFile در همین فایل تعریف شده | همان {path, content} در
    * lib/github.ts است، ولی از آنجا ایمپورت نمی‌شود چون github.ts از
    * همین types ایمپورت می‌کند (چرخه‌ای می‌شد).
    * ارکستر آن را در جدول bridge_patches با وضعیت proposed ثبت می‌کند؛
@@ -168,34 +169,15 @@ export interface WaveDefinition {
   teams: TeamName[];
 }
 
-/** All 15 teams in canonical order. */
-export const TEAMS: TeamName[] = [
-  'artdir',
-  'branding',
-  'content',
-  'seo',
-  'analytics',
-  'intel',
-  'lead',
-  'design',
-  'seocontent',
-  'vibefarsi',
-  'farsiui',
-  'design-ir',
-  'dev',
-  'qa',
-  'inspector',
-];
+/** ۵ تیم فعال (دستور مسعود، ۱۴۰۵/۰۷/۲۴): leader اول، بعد ۴ سازنده. */
+export const TEAMS: TeamName[] = ['leader', 'content', 'seo', 'design', 'dev'];
 
 /**
- * Wave plan. Originally 5 waves; wave 1 was split, so there are
- * 6 waves total across the 15 teams.
+ * طرح موج‌ها: موج ۱ فقط leader (بک‌لاگ می‌سازد)؛ موج ۲ content+seo؛
+ * موج ۳ design+dev.
  */
 export const WAVES: WaveDefinition[] = [
-  { wave: 1, teams: ['artdir', 'branding', 'content'] },
-  { wave: 2, teams: ['analytics', 'intel', 'lead'] },
-  { wave: 3, teams: ['design', 'seo', 'seocontent'] },
-  { wave: 4, teams: ['design-ir', 'dev', 'farsiui'] },
-  { wave: 5, teams: ['vibefarsi', 'qa'] },
-  { wave: 6, teams: ['inspector'] },
+  { wave: 1, teams: ['leader'] },
+  { wave: 2, teams: ['content', 'seo'] },
+  { wave: 3, teams: ['design', 'dev'] },
 ];

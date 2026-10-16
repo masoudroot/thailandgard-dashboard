@@ -1,5 +1,5 @@
 /**
- * ارکستراتور چرخه: مدیریت چرخه‌های ۱۵ تیم در ۶ موج.
+ * ارکستراتور چرخه: مدیریت چرخه‌های ۵ تیم در ۳ موج (دستور مسعود، ۱۴۰۵/۰۷/۲۴).
  *
  * معماری: ورسل فقط داشبورد و API مدیریتی است. اجرای تیم‌ها با
  * ورکر گیت‌هاب اکشنز (worker/cycle-worker.ts) انجام می‌شود که در هر
@@ -17,7 +17,6 @@
  */
 import { getSupabase } from './api';
 import { recordEvent } from './operation-events';
-import { faDigits } from './format';
 import { runKnowledgeSubagent } from './knowledge-subagent';
 import {
   acquireLock as acquireLockNew,
@@ -91,11 +90,128 @@ const CONTROL_POLL_MS = 5000;
 /** سقف انتظار برای ادامه‌یافتن (resume) یک ساب‌ایجنت متوقف‌شده: ۳۰ دقیقه. */
 const PAUSE_TIMEOUT_MS = 30 * 60_000;
 /**
- * حداکثر دورهای اجرای یک تیم در حلقهٔ بازبینی منتقد (دستور مسعود):
- * دور ۱ اجرای اول؛ اگر منتقد رد کرد، دور ۲ و ۳ بازاجرا با دستور دقیق منتقد.
- * دور ۳ پایانی است: منتقد فقط نظر می‌دهد و دیگر رد نمی‌کند.
+ * حداکثر دور اصلاح پس از چک سادهٔ رهبر (دستور مسعود، ۱۴۰۵/۰۷/۲۴):
+ * دور ۱ اجرای اول است؛ اگر چک ساده رد کرد، فقط ۱ دور اصلاح با دستور
+ * مشخص انجام می‌شود. بدون حلقهٔ ۳دوره‌ای.
  */
-const MAX_REVIEW_ROUNDS = 3;
+const MAX_FIX_ROUNDS = 1;
+
+/**
+ * خروجی چک سادهٔ رهبر روی کار تیم: «کار می‌کنه؟» بله/نه + یک جمله دلیل.
+ * نه نمره، نه چند دور.
+ */
+export interface SimpleCheckResult {
+  pass: boolean;
+  /** یک جمله دلیل، فارسی. */
+  note: string;
+  /** اگر رد شد، یک دستور مشخص برای دور اصلاح (اختیاری). */
+  fixDirective?: string;
+}
+
+/**
+ * چک سادهٔ رهبر روی خروجی یک تیم (جایگزین حلقهٔ نقد ۳دوره‌ای).
+ * اول چند قانون سبک قاعده‌محور، بعد یک فراخوان LLM سبک با حکم بله/نه.
+ * fail-soft: اگر LLM خطا داد، خروجی پذیرفته می‌شود (اعتماد به تیم) و
+ * این چک هرگز نتیجهٔ تیم را خراب نمی‌کند.
+ */
+export async function runSimpleCheck(team: TeamName, output: TeamResult): Promise<SimpleCheckResult> {
+  // ۱) قواعد سبک: خروجی خالی یا پر از بلاکر، بدون LLM رد می‌شود
+  const summary = (output.summary ?? '').trim();
+  const blockers = (output.blockers ?? []).filter((b) => b && b.trim().length > 0);
+  if (summary.length < 20) {
+    return {
+      pass: false,
+      note: 'خلاصهٔ خروجی خالی یا خیلی کوتاه است؛ تیم چیزی تحویل نداده.',
+      fixDirective: 'خروجی کامل را تولید کن و خلاصهٔ واقعی آن را بنویس؛ خروجی خالی قابل قبول نیست.',
+    };
+  }
+  if (output.approved === false && blockers.length > 0) {
+    return {
+      pass: false,
+      note: `تیم خودش خروجی را تأیید نکرد: ${blockers[0].slice(0, 300)}`,
+      fixDirective: `این ایراد را برطرف کن و خروجی کامل را از نو تولید کن: ${blockers[0].slice(0, 500)}`,
+    };
+  }
+  // ۲) داوری سبک LLM: فقط «کار می‌کنه؟» + یک جمله دلیل + دستور اصلاح
+  try {
+    const { callLLMJson } = await import('./llm');
+    const verdict = await callLLMJson<{ pass: boolean; note: string; fixDirective?: string }>(
+      [
+        `تو رهبر تیم‌های تایلندگرد هستی. خروجی تیم «${team}» را فقط با یک سؤال بسنج: «کار می‌کنه؟»`,
+        'یعنی: آیا تیم واقعاً کاری را که قولش را داده انجام داده و خروجی‌اش قابل استفاده است؟',
+        'نه نمره بده، نه چند دور؛ فقط بله یا نه + یک جمله دلیل.',
+        '',
+        'خلاصهٔ تیم:',
+        summary.slice(0, 3000),
+        blockers.length > 0 ? `\nبلاکرهای ثبت‌شده: ${blockers.slice(0, 3).join(' | ').slice(0, 1000)}` : '',
+        output.tasks && output.tasks.length > 0
+          ? `\nتسک‌های پیشنهادی تیم (${output.tasks.length}): ${output.tasks.map((t) => t.title).join(' | ').slice(0, 500)}`
+          : '',
+        '',
+        'فقط JSON معتبر بده: {"pass": true/false, "note": "یک جمله دلیل فارسی", "fixDirective": "اگر رد شد، یک دستور مشخص و اجرایی برای اصلاح"}',
+        'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
+      ].join('\n'),
+      { system: 'تو رهبر عمل‌گرای تیم‌های تایلندگرد هستی؛ حکم کوتاه و مشخص می‌دهی.' },
+    );
+    const pass = verdict.pass !== false;
+    return {
+      pass,
+      note: String(verdict.note ?? '').trim().slice(0, 500) || (pass ? 'چک رهبر: قابل قبول.' : 'چک رهبر: رد شد.'),
+      fixDirective: pass ? undefined : String(verdict.fixDirective ?? '').trim().slice(0, 1000) || undefined,
+    };
+  } catch {
+    // fail-soft: خطای LLM یعنی چک انجام نشد؛ به تیم اعتماد می‌کنیم
+    return { pass: true, note: 'چک خودکار رهبر انجام نشد؛ خروجی تیم پذیرفته شد.' };
+  }
+}
+
+/**
+ * چرخهٔ یادگیری (دستور مسعود، ۱۴۰۵/۰۷/۲۴): بعد از هر اجرای تیم (موفق یا
+ * ناموفق)، یک فراخوان LLM سبک «از این اجرا چه درس کاربردی گرفتیم؟ (۱ جمله)»
+ * و ثبت آن با upsertGoldenRule. سقف ۱۰ قانون طلایی هر تیم و حذف
+ * کم‌اثرترینِ اضافه را همان ماژول دانش مدیریت می‌کند.
+ * کاملاً fail-soft: خطای ثبت درس هرگز نتیجهٔ تیم را خراب نمی‌کند.
+ */
+export async function recordRunLesson(
+  team: TeamName,
+  status: TeamRunStatus,
+  summary: string,
+): Promise<void> {
+  try {
+    const { callLLMJson } = await import('./llm');
+    const { upsertGoldenRule } = await import('./knowledge/golden-rules');
+    const lesson = await callLLMJson<{ lesson: string }>(
+      [
+        `تیم «${team}» تایلندگرد یک اجرا را با وضعیت «${status}» تمام کرد.`,
+        `خلاصهٔ اجرا: ${summary.slice(0, 1500) || '(خلاصه‌ای ثبت نشد)'}`,
+        '',
+        'از این اجرا چه درس کاربردی و مشخصی برای چرخه‌های بعدی همین تیم گرفتیم؟ فقط ۱ جملهٔ کوتاه و اجرایی بده؛ کلی‌گویی ممنوع.',
+        'فقط JSON معتبر بده: {"lesson": "یک جمله"}',
+        'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
+      ].join('\n'),
+      {
+        system:
+          'تو مربی تیم‌های تایلندگرد هستی؛ درس‌ها را کوتاه، مشخص و اجرایی می‌نویسی.',
+      },
+    );
+    const rule = String(lesson.lesson ?? '').trim().slice(0, 500);
+    if (!rule) return;
+    await upsertGoldenRule(
+      team,
+      rule,
+      `درس خودکار از اجرای تیم ${team} (وضعیت: ${status})`,
+      'learned',
+      50,
+    );
+    console.log(`[orchestrator] درس اجرای تیم ${team} در دانش ثبت شد.`);
+  } catch (err) {
+    // fail-soft: خطای ثبت درس هرگز نتیجهٔ تیم را خراب نمی‌کند
+    console.error(
+      '[orchestrator] ثبت درس تیم ناموفق بود (نادیده):',
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
 
 /** ورودی استاندارد هر تیم. */
 export interface TeamInput {
@@ -114,14 +230,13 @@ export interface TeamInput {
    */
   reportProgress: ProgressReporter;
   /**
-   * دور جاری اجرای تیم در حلقهٔ بازبینی منتقد (۱ = اجرای اول).
-   * ارکستر وقتی منتقد رد می‌کند، تیم را با همین ورودی ولی دور بالاتر
-   * دوباره اجرا می‌کند. حداکثر ۳ دور.
+   * دور جاری اجرای تیم (۱ = اجرای اول؛ ۲ = دور اصلاح پس از چک سادهٔ رهبر).
+   * بیش از ۱ دور اصلاح انجام نمی‌شود (MAX_FIX_ROUNDS).
    */
   round?: number;
   /**
-   * دستور دقیق منتقد از دور قبلی (دلیل رد + کار خواسته‌شده، مثل پرامپت).
-   * فقط از دور ۲ به بعد پر است. تیم‌ها آن را در ابتدای زمینه می‌بینند.
+   * دستور مشخص چک سادهٔ رهبر برای دور اصلاح (دلیل رد + کار خواسته‌شده).
+   * فقط در دور ۲ پر است. تیم‌ها آن را در ابتدای زمینه می‌بینند.
    */
   reviewDirective?: string;
 }
@@ -771,7 +886,7 @@ export async function runSingleTeam(
   // رفع ریشه‌ای زامبی‌شدن صف (مشکل ۲): تسک claimشده باید در پایان هر اجرا
   // (موفق/ردشده/ناموفق/متوقف/ناتمام) حتماً done شود. شناسه بیرون از بلوک
   // claim نگه داشته می‌شود؛ settleClaimedTaskOnce با گارد once از مسیرهای
-  // صریح صدا زده می‌شود و finally هم تور آخر است — هیچ مسیری جا نمی‌ماند.
+  // صریح صدا زده می‌شود و finally هم تور آخر است | هیچ مسیری جا نمی‌ماند.
   // گارد محلی فقط پس از موفقیت واقعی ست می‌شود تا خطای گذرای دیتابیس،
   // تلاش مجدد در finally را از بین نبرد.
   let claimedTask: { id: string; title: string } | null = null;
@@ -880,23 +995,21 @@ export async function runSingleTeam(
       console.log(`[orchestrator] تیم ${team}: دانش ذخیره‌شده‌ای ندارد`);
     }
     const fullRagContext = baseRagContext + teamKnowledgeContext;
-    // حلقهٔ بازبینی منتقد (دستور مسعود): حداکثر ۳ دور، بدون حلقهٔ بی‌نهایت.
-    // دور ۱: اجرای عادی. اگر منتقد رد کرد ← دستور دقیقش (مثل پرامپت) به تیم برمی‌گردد و دور ۲ اجرا می‌شود.
-    // دور ۳ پایانی است: منتقد فقط نظر می‌دهد و دیگر رد نمی‌کند؛ اگر باز هم ایراد بود، rejected ثبت و چرخه ادامه می‌یابد.
-    const extractRejectReason = (r: TeamResult): string => {
-      const fromBlockers = (r.blockers ?? []).join(' ').trim();
-      return (fromBlockers || r.summary || 'دلیلی ثبت نشد').slice(0, 2000);
-    };
-    let result: TeamResult | null = null;
-    let reviewDirective: string | undefined;
-    const roundLog: Array<{ round: number; approved: boolean; reason: string; directive?: string }> = [];
-    for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
-      const directivePrefix =
-        round === 1
-          ? ''
-          : round < MAX_REVIEW_ROUNDS
-            ? `\n\nدستور منتقد برای دور ${faDigits(round)} از ${faDigits(MAX_REVIEW_ROUNDS)} (خروجی دور قبل رد شد):\n${reviewDirective}\n`
-            : `\n\nدور ${faDigits(round)} از ${faDigits(MAX_REVIEW_ROUNDS)} (دور پایانی): منتقد فقط نظر نهایی می‌دهد و خروجی را رد نمی‌کند؛ ایرادهای باقی‌مانده را به‌صورت نظر ثبت کن.\n${reviewDirective ? `آخرین دستور منتقد:\n${reviewDirective}\n` : ''}`;
+    // چرخهٔ جدید (دستور مسعود، ۱۴۰۵/۰۷/۲۴): اجرای یک‌باره + گیت خروجی +
+    // چک سادهٔ رهبر («کار می‌کنه؟»)؛ در صورت رد، حداکثر ۱ دور اصلاح با
+    // دستور مشخص. بدون حلقهٔ ۳دوره‌ای.
+    const { validateWorkerOutput } = await import('./critic-loop');
+    const checkLog: Array<{
+      round: number;
+      approved: boolean;
+      reason: string;
+      directive?: string;
+    }> = [];
+
+    const runTeamOnce = async (fixRound: number, directive?: string): Promise<TeamResult> => {
+      const directivePrefix = directive
+        ? `\n\nدستور رهبر برای دور اصلاح (خروجی دور قبل رد شد):\n${directive}\n`
+        : '';
       const input: TeamInput = {
         cycleId,
         runId: ctx.runId,
@@ -904,66 +1017,64 @@ export async function runSingleTeam(
         memory,
         previousWavesOutput: { ...ctx.previousWavesOutput },
         reportProgress,
-        round,
-        reviewDirective,
+        round: fixRound + 1,
+        reviewDirective: directive,
       };
-      if (round > 1) {
-        await reportProgress(`دور ${faDigits(round)} از ${faDigits(MAX_REVIEW_ROUNDS)}: اجرای مجدد با دستور منتقد`, 5 + round * 5);
+      if (fixRound > 0) {
+        await reportProgress('دور اصلاح با دستور رهبر', 10);
       }
       // Ambient team context: every callLLM inside runTeam automatically uses
       // this team's configured endpoint + model (settings: llm_endpoints/team_models).
-      const roundResult = await runWithTeamContext(team, () => runTeam(input));
-      const approved = roundResult.approved !== false;
-      roundLog.push({
+      return runWithTeamContext(team, () => runTeam(input));
+    };
+
+    const checkOutput = async (round: number, output: TeamResult): Promise<void> => {
+      const gate = validateWorkerOutput(output);
+      const check = gate.valid
+        ? await runSimpleCheck(team, output)
+        : {
+            pass: false,
+            note: `گیت خروجی: ${gate.detail}`,
+            fixDirective: `خروجی نامعتبر است (${gate.detail}). خروجی کامل و معتبر تولید کن.`,
+          };
+      checkLog.push({
         round,
-        approved,
-        reason: approved ? 'تأیید شد' : extractRejectReason(roundResult),
-        ...(reviewDirective ? { directive: reviewDirective.slice(0, 2000) } : {}),
+        approved: check.pass,
+        reason: check.note,
+        ...(check.fixDirective ? { directive: check.fixDirective.slice(0, 2000) } : {}),
       });
-      result = roundResult;
-      if (approved) break;
-      if (round >= MAX_REVIEW_ROUNDS) break;
-      // دستور دقیق برای دور بعد — مثل پرامپت: دلیل رد + کار خواسته‌شده
-      const reason = extractRejectReason(roundResult);
-      reviewDirective =
-        `دلیل رد دور ${faDigits(round)}: ${reason}\n` +
-        `دستور: دقیقاً همین ایراد را برطرف کن و خروجی کامل را از نو تولید کن. ` +
-        `اگر بخشی از خروجی درست بود، همان را نگه دار و فقط بخش ردشده را اصلاح کن. ` +
-        `خروجی این دور باید بدون نیاز به اصلاح دیگری، آمادهٔ تحویل باشد.`;
+    };
+
+    // دور ۱: اجرای اول + گیت خروجی + چک سادهٔ رهبر
+    let result = await runTeamOnce(0);
+    await checkOutput(1, result);
+
+    // دور ۲ (حداکثر ۱ دور اصلاح): فقط اگر رد شد و دستور اصلاح مشخص داریم
+    const lastCheck = checkLog[checkLog.length - 1];
+    if (!lastCheck.approved && lastCheck.directive) {
+      result = await runTeamOnce(1, lastCheck.directive);
+      await checkOutput(2, result);
     }
-    if (!result) {
-      throw new Error(`حلقهٔ بازبینی تیم ${team} هیچ نتیجه‌ای تولید نکرد`);
+    const finalCheck = checkLog[checkLog.length - 1];
+    if (!finalCheck) {
+      throw new Error(`اجرای تیم ${team} هیچ نتیجه‌ای تولید نکرد`);
     }
     const llmCalls = getLLMStats().total;
-    // ثبت درس ردوبدل‌های منتقد در دانش تیم (دستور مسعود) — best-effort.
-    // (جزئیات هر دور را ماژول دانش با recordFeedbackRound ثبت می‌کند.)
-    if (roundLog.some((r) => !r.approved)) {
-      try {
-        const { extractCriticKnowledge } = await import('./knowledge/critic-knowledge');
-        const rejectedRounds = roundLog.filter((r) => !r.approved);
-        const verdictText =
-          `حلقهٔ بازبینی ${roundLog.length} دور طول کشید. ` +
-          rejectedRounds.map((r) => `دور ${r.round} رد شد: ${r.reason}`).join(' ');
-        await extractCriticKnowledge(
-          team,
-          {
-            approved: roundLog[roundLog.length - 1]?.approved ?? false,
-            reason: verdictText.slice(0, 2000),
-            domain: `حلقه بازبینی ${team}`,
-          },
-          ctx.runId,
-        );
-      } catch {
-        // خطای ثبت دانش نباید نتیجهٔ تیم را خراب کند
-      }
+    // چک سادهٔ رهبر تعیین‌کنندهٔ نهایی است: رد بعد از دور اصلاح → rejected
+    if (!finalCheck.approved) {
+      result = {
+        ...result,
+        approved: false,
+        summary: `${result.summary ?? ''}\n\nرد شد در چک رهبر: ${finalCheck.reason}`.trim(),
+      };
     }
-    // تفکیک «رد منتقد» از «خطای سیستمی» (دستور مسعود):
-    // - approved=false یعنی تیم بدون خطای سیستمی اجرایش را تمام کرد ولی منتقد خروجی را رد کرد → 'rejected'
+    // تفکیک «رد رهبر» از «خطای سیستمی» (دستور مسعود):
+    // - approved=false یعنی تیم بدون خطای سیستمی اجرایش را تمام کرد ولی رهبر خروجی را رد کرد → 'rejected'
     // - 'failed' فقط برای خطای واقعی (exception، تایم‌اوت، خطای LLM) در بلوک catch پایین می‌ماند
     const teamStatus: TeamRunStatus = result.approved === false ? 'rejected' : 'success';
-    // ساب‌ایجنت‌ها کارشان را تمام کرده‌اند؛ رد منتقد خطای آن‌ها نیست
+    // ساب‌ایجنت‌ها کارشان را تمام کرده‌اند؛ رد رهبر خطای آن‌ها نیست
     await closeSubagents('success');
-    // تیم ۹: ردیابی استفاده از دانش — کدام چانک‌ها تزریق شدند و آیا مفید بودند؟
+    // تیم ۹: ردیابی استفاده از دانش | کدام چانک‌ها تزریق شدند و آیا مفید بودند؟
     try {
       const { getLastRetrievedChunkIds, recordKnowledgeUsage } = await import('./rag');
       const usedChunkIds = getLastRetrievedChunkIds(team);
@@ -978,15 +1089,13 @@ export async function runSingleTeam(
       progress: 100,
       current_task:
         teamStatus === 'rejected'
-          ? `رد شد توسط منتقد (بعد از ${faDigits(roundLog.length)} دور بازبینی)`
-          : roundLog.length > 1
-            ? `پایان کار (تأیید در دور ${faDigits(roundLog.length)})`
-            : 'پایان کار',
+          ? `رد شد در چک رهبر (${finalCheck.reason.slice(0, 200)})`
+          : 'پایان کار',
       output_summary: result.summary?.slice(0, 4000) ?? null,
       error: teamStatus === 'rejected' ? (result.summary?.slice(0, 4000) ?? null) : null,
       llm_calls: llmCalls,
-      // لاگ همهٔ دورهای حلقهٔ بازبینی (دستور مسعود): دور، تأیید/رد، دلیل، دستور
-      review_rounds: roundLog,
+      // لاگ چک سادهٔ رهبر (دستور مسعود): دور، تأیید/رد، دلیل، دستور اصلاح
+      review_rounds: checkLog,
     });
     // بستن قطعی تسک claimشده (مشکل ۲): موفق یا ردشده، هر دو done می‌شوند؛
     // سرنوشت واقعی در result ثبت می‌ماند. best-effort: خطایش نتیجه تیم را خراب نمی‌کند.
@@ -998,7 +1107,7 @@ export async function runSingleTeam(
     // تیم ردشده (approved=false → rejected) یا ناموفق (failed) اصلاً در bridge_patches ثبت نمی‌شود.
     if (teamStatus !== 'success') {
       console.log(
-        `[orchestrator] پچ تیم ${team} ثبت نشد چون منتقد رد کرد (وضعیت: ${teamStatus}).`,
+        `[orchestrator] پچ تیم ${team} ثبت نشد چون چک رهبر رد کرد (وضعیت: ${teamStatus}).`,
       );
     } else {
       // پچ پیشنهادی تیم → جدول bridge_patches (وضعیت proposed)؛
@@ -1048,11 +1157,13 @@ export async function runSingleTeam(
     try {
       const { checkAndHealTeam } = await import('./self-heal');
       await checkAndHealTeam(team, teamStatus, {
-        rejectionReasons: roundLog.filter((r) => !r.approved).map((r) => r.reason),
+        rejectionReasons: checkLog.filter((r) => !r.approved).map((r) => r.reason),
       });
     } catch {
       /* نادیده: خودترمیمی نباید نتیجه تیم را خراب کند */
     }
+    // چرخهٔ یادگیری (دستور مسعود): ثبت درس این اجرا در دانش تیم (fail-soft)
+    await recordRunLesson(team, teamStatus, result.summary ?? '');
     return result;
   } catch (err) {
     if (err instanceof SubagentStoppedError) {
@@ -1077,7 +1188,7 @@ export async function runSingleTeam(
     }
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[orchestrator] team "${team}" failed:`, message);
-    // لایه ۱ دیده‌بان زنده: خطای اصلی تیم — فقط پیام، نه استک کامل (fail-soft)
+    // لایه ۱ دیده‌بان زنده: خطای اصلی تیم | فقط پیام، نه استک کامل (fail-soft)
     await recordEvent(ctx.runId, team, 'error', {
       message: message.slice(0, 2000),
     });
@@ -1103,6 +1214,8 @@ export async function runSingleTeam(
     } catch {
       /* نادیده */
     }
+    // چرخهٔ یادگیری (دستور مسعود): ثبت درس این اجرای ناموفق در دانش تیم (fail-soft)
+    await recordRunLesson(team, 'failed', message);
     return null;
   } finally {
     clearInterval(heartbeat);

@@ -1,7 +1,8 @@
-/** نام فارسی و مأموریت یک‌خطی ۱۵ تیم (مشترک بین صفحه‌های داشبورد). */
+/** نام فارسی و مأموریت یک‌خطی تیم‌ها (مشترک بین صفحه‌های داشبورد). */
 import type { TeamName } from './types';
 
 export const TEAM_META: Record<TeamName, { faName: string; mission: string }> = {
+  leader: { faName: 'رهبر', mission: 'ساخت بک‌لاگ از داده، تخصیص به سازنده‌ها، چک ساده و یادگیری' },
   artdir: { faName: 'طراحی ارشد', mission: 'نگاه کلی و هدایت هنری کل پروژه' },
   branding: { faName: 'برند', mission: 'هویت برند، لحن و شخصیت تایلندگرد' },
   content: { faName: 'محتوا', mission: 'متن‌ها و پیام‌های اصلی صفحه‌ها' },

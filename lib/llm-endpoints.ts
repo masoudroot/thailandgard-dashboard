@@ -64,6 +64,7 @@ export interface ResolvedTeamLLM {
 
 /** نام فارسی هر تیم برای نمایش در تنظیمات. */
 export const TEAM_FA_NAMES: Record<TeamName, string> = {
+  leader: 'رهبر',
   artdir: 'راهنمای هنری',
   branding: 'برندینگ',
   content: 'محتوا',

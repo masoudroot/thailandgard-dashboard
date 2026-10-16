@@ -209,6 +209,11 @@ export async function evaluateTeamKnowledge(team: TeamName): Promise<TeamKnowled
  */
 export function suggestSources(team: TeamName): string[] {
   const sources: Record<TeamName, string[]> = {
+    leader: [
+      'اینتل روزانه (intel_feed) و روندهای سفر به تایلند',
+      'داده‌های سرچ کنسول: کوئری‌های پرایمپرشن با پوزیشن میانی',
+      'آنالیتیکس صفحات: صفحات پربازدیدِ نیازمند بهینه‌سازی',
+    ],
     artdir: [
       'ترندهای بصری سایت‌هایی مثل Awwwards و Behance',
       'کتاب‌های کلاسیک دیزاین (مثل کتاب‌های Don Norman)',
