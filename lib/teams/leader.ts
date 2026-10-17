@@ -167,7 +167,7 @@ async function loadGscQueries(limit = 30): Promise<GscRow[]> {
       }
       byQuery.set(q, agg);
     }
-    return [...byQuery.entries()]
+    return Array.from(byQuery.entries())
       .map(([query, a]) => ({
         query,
         clicks: a.clicks,
@@ -217,7 +217,7 @@ async function loadPageAnalytics(limit = 30): Promise<PageRow[]> {
       }
       byPath.set(p, agg);
     }
-    return [...byPath.entries()]
+    return Array.from(byPath.entries())
       .map(([page_path, a]) => ({
         page_path,
         views: a.views,
@@ -315,10 +315,10 @@ async function loadExistingGuides(): Promise<ExistingGuide[]> {
     if (!content) return [];
     const slugs: Array<{ slug: string; index: number }> = [];
     const titles: Array<{ title: string; index: number }> = [];
-    for (const m of content.matchAll(/\bslug\s*:\s*["']([a-z0-9-]+)["']/g)) {
+    for (const m of Array.from(content.matchAll(/\bslug\s*:\s*["']([a-z0-9-]+)["']/g)) {
       slugs.push({ slug: m[1], index: m.index ?? 0 });
     }
-    for (const m of content.matchAll(/\btitle\s*:\s*["']([^"']+)["']/g)) {
+    for (const m of Array.from(content.matchAll(/\btitle\s*:\s*["']([^"']+)["']/g)) {
       titles.push({ title: m[1], index: m.index ?? 0 });
     }
     const usedTitle = new Set<number>();
