@@ -18,8 +18,8 @@ const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString();
 const MIN = 60 * 1000;
 
 describe('classifyTeamRun', () => {
-  it('آستانه‌ها همان مقادیر قراردادی‌اند (هنگ ۱۰ دقیقه، مرگ ۱۵ دقیقه)', () => {
-    assert.equal(HANG_NO_PROGRESS_MS, 10 * MIN);
+  it('آستانه‌ها همان مقادیر قراردادی‌اند (هنگ ۱۵ دقیقه، مرگ ۱۵ دقیقه)', () => {
+    assert.equal(HANG_NO_PROGRESS_MS, 15 * MIN);
     assert.equal(DEAD_HEARTBEAT_MS, 15 * MIN);
   });
 
@@ -36,14 +36,14 @@ describe('classifyTeamRun', () => {
     );
   });
 
-  it('سناریوی باگ: ضربان زنده ولی ۱۱ دقیقه بدون پیشرفت → hung', () => {
+  it('سناریوی باگ: ضربان زنده ولی ۱۶ دقیقه بدون پیشرفت → hung', () => {
     // قلب باگ قدیمی: heartbeat هر ۶۰ ثانیه updated_at را تازه نگه می‌داشت
     // و تیم هنگ‌کرده «سالم» دیده می‌شد. حالا updated_at فقط پیشرفت واقعی است.
     assert.equal(
       classifyTeamRun({
         status: 'running',
         heartbeatAt: iso(45 * 1000), // ضربان ۴۵ ثانیه پیش: فرایند زنده است
-        updatedAt: iso(11 * MIN), // آخرین پیشرفت واقعی ۱۱ دقیقه پیش
+        updatedAt: iso(16 * MIN), // آخرین پیشرفت واقعی ۱۶ دقیقه پیش
         startedAt: iso(30 * MIN),
         now: NOW,
       }),
@@ -51,12 +51,12 @@ describe('classifyTeamRun', () => {
     );
   });
 
-  it('مرز آستانه: ۹ دقیقه بی‌پیشرفت هنوز healthy است', () => {
+  it('مرز آستانه: ۱۴ دقیقه بی‌پیشرفت هنوز healthy است', () => {
     assert.equal(
       classifyTeamRun({
         status: 'running',
         heartbeatAt: iso(30 * 1000),
-        updatedAt: iso(9 * MIN),
+        updatedAt: iso(14 * MIN),
         startedAt: iso(30 * MIN),
         now: NOW,
       }),
@@ -100,10 +100,12 @@ describe('classifyTeamRun', () => {
   });
 
   it('ردیف قدیمی بدون heartbeat_at: به updated_at برمی‌گردد', () => {
-    // سازگاری با ردیف‌های پیش از مایگریشن ضربان
+    // سازگاری با ردیف‌های پیش از مایگریشن ضربان.
+    // نکته (۲۵ مهر ۱۴۰۵): چون آستانه‌ی هنگ و مرگ هر دو ۱۵ دقیقه‌اند، ردیف
+    // بی‌ضربان دیگر «هنگ» نمی‌شود — بی‌ضربانیِ بیش از ۱۵ دقیقه یعنی «مرده».
     assert.equal(
-      classifyTeamRun({ status: 'running', updatedAt: iso(11 * MIN), startedAt: iso(30 * MIN), now: NOW }),
-      'hung',
+      classifyTeamRun({ status: 'running', updatedAt: iso(16 * MIN), startedAt: iso(40 * MIN), now: NOW }),
+      'dead',
     );
     assert.equal(
       classifyTeamRun({ status: 'running', updatedAt: iso(20 * MIN), startedAt: iso(30 * MIN), now: NOW }),

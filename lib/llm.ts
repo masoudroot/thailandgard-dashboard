@@ -21,7 +21,10 @@
  *      و روتر سراغ ترکیب بعدی ماتریس می‌رود.
  *      - 429: «صبر کن و دوباره» : اگر همه مردند، تا سقف مشخص صبر می‌کند و
  *        همان کاندیداهای سهمیه‌تمام‌شده را یک دور دیگر امتحان می‌کند.
- *      - 503: فقط همان ترکیب رد می‌شود، مدل بعدی.
+ *      - 503: مدارشکن سطح درگاه (۲۵ مهر ۱۴۰۵) — بعد از چند ۵۰۳ پیاپی از
+ *        یک درگاه (پیش‌فرض ۳)، بقیه‌ی مدل‌های همان درگاه در این فراخوانی
+ *        رد می‌شوند (fail-fast) تا دقیقه‌ها روی درگاهِ مرده نسوزد.
+ *        (ریشه: ده‌ها مدل reformboss یکی‌یکی ۵۰۳ خوردند و تیم seo «هنگ» شد.)
  *      - 401: کلید خراب است؛ کل درگاه رد می‌شود.
  *      - 404 روی مدل اصلی: جایگزین موفق خودکار در team_models ذخیره می‌شود.
  *   ۵. سقف تلاش (پیش‌فرض ۴۸) و سقف زمانی (پیش‌فرض ۴ دقیقه) جلوی گیر کردن
@@ -186,6 +189,13 @@ const maxRouteAttempts = () => numEnv('LLM_MAX_ROUTE_ATTEMPTS', 48); // سقف �
 const routeBudgetMs = () => numEnv('LLM_ROUTE_BUDGET_MS', 240_000);   // سقف زمانی حلقه (۴ دقیقه)
 const maxQuotaWaitMs = () => numEnv('LLM_QUOTA_WAIT_MS', 90_000);     // سقف صبر پاس ۲ روی 429
 const quotaCooldownMs = () => numEnv('LLM_QUOTA_COOLDOWN_MS', COOLDOWN_QUOTA_MS);
+/**
+ * سقف ۵۰۳های پیاپیِ یک درگاه در یک فراخوانی، پیش از fail-fast (مدارشکن سطح درگاه).
+ * ریشه: وقتی آپ‌استریم یک درگاه (مثل reformboss) می‌میرد، همه‌ی مدل‌هایش
+ * پشت سر هم ۵۰۳ می‌دهند؛ بدون مدارشکن، روتر ده‌ها ترکیب مرده را یکی‌یکی
+ * می‌سوزاند و تیم «هنگ» اعلام می‌شود. (۲۵ مهر ۱۴۰۵)
+ */
+const maxConsecutiveUnavailable = () => numEnv('LLM_MAX_CONSECUTIVE_503', 3);
 
 /* ------------------------------------------------------------------ */
 /* Cooldown: مدل‌های خطادار موقتاً از چرخه‌ی کاندیداها خارج می‌شوند     */
@@ -869,6 +879,14 @@ export async function callLLMSmart(
   const trace: string[] = [];
   /** درگاه‌هایی که کلیدشان در همین فراخوانی 401 گرفت: بقیه‌ی ترکیب‌هایشان رد می‌شود */
   const badEndpoints = new Set<string>();
+  /**
+   * مدارشکن ۵۰۳ سطح درگاه (۲۵ مهر ۱۴۰۵): درگاه‌هایی که در همین فراخوانی
+   * پشت سر هم ۵۰۳ دادند؛ بقیه‌ی ترکیب‌هایشان رد می‌شود (fail-fast) تا
+   * دقیقه‌ها روی مدل‌های یک درگاهِ مرده نسوزد.
+   */
+  const deadEndpoints = new Map<string, string>(); // endpointId -> نام درگاه
+  /** شمارنده‌ی ۵۰۳های پیاپی هر درگاه در همین فراخوانی */
+  const unavailableStreak = new Map<string, number>();
   /** کاندیداهایی که 429 گرفتند: برای پاس ۲ («صبر کن و دوباره») */
   const quotaFailed = new Map<
     string,
@@ -887,6 +905,10 @@ export async function callLLMSmart(
       const ep = cand.endpoint;
       if (badEndpoints.has(ep.id)) {
         trace.push(`${ep.name}: کلید نامعتبر (رد شد)`);
+        continue;
+      }
+      if (deadEndpoints.has(ep.id)) {
+        trace.push(`${ep.name}: ۵۰۳ پیاپی داد (fail-fast؛ در این فراخوانی رد شد)`);
         continue;
       }
       if (attempted >= maxAttempts) {
@@ -922,6 +944,7 @@ export async function callLLMSmart(
           continue;
         }
         routeCooldowns.delete(cooldownKey(ep.id, cand.model));
+        unavailableStreak.set(ep.id, 0); // درگاه جواب داد؛ شمارنده‌ی ۵۰۳ پیاپی صفر می‌شود
         // ردیابی سلامت ماندگار: موفقیت = پاک شدن cooldown و صفر شدن شمارنده
         await recordModelSuccess(ep.id, cand.model);
         const ms = Date.now() - t0;
@@ -971,6 +994,21 @@ export async function callLLMSmart(
         }
         // 401 یعنی کلید کل درگاه خراب است؛ بقیه‌ی ترکیب‌های همین درگاه رد می‌شوند
         if (c.kind === 'auth') badEndpoints.add(ep.id);
+        // مدارشکن ۵۰۳ (۲۵ مهر ۱۴۰۵): اگر یک درگاه پشت سر هم ۵۰۳ بدهد، یعنی
+        // مشکل از خود درگاه/آپ‌استریمش است نه آن مدل خاص؛ بقیه‌ی مدل‌هایش را
+        // در همین فراخوانی امتحان نمی‌کنیم. هر نتیجه‌ی غیر-۵۰۳ شمارنده را صفر می‌کند.
+        if (c.kind === 'unavailable') {
+          const n = (unavailableStreak.get(ep.id) ?? 0) + 1;
+          unavailableStreak.set(ep.id, n);
+          if (n >= maxConsecutiveUnavailable() && !deadEndpoints.has(ep.id)) {
+            deadEndpoints.set(ep.id, ep.name);
+            const msg = `درگاه ${ep.name}: ${n} خطای ۵۰۳ پیاپی؛ بقیه‌ی مدل‌هایش در این فراخوانی رد می‌شوند (fail-fast)`;
+            trace.push(msg);
+            console.log(`${tag} ${msg}`);
+          }
+        } else {
+          unavailableStreak.set(ep.id, 0);
+        }
       }
     }
     return null;
@@ -1008,9 +1046,13 @@ export async function callLLMSmart(
       plan.skipped.length > 0 ? ` ردشده‌ها: ${plan.skipped.join('؛ ')}.` : '';
     const budgetNote = budgetExceeded ? ' سقف زمانی روتر تمام شد.' : '';
     const capNote = attemptCapHit ? ' سقف تعداد تلاش روتر تمام شد.' : '';
+    const deadNote =
+      deadEndpoints.size > 0
+        ? ` درگاه‌های fail-fast‌شده (۵۰۳ پیاپی): ${Array.from(deadEndpoints.values()).join('، ')}.`
+        : '';
     const msg =
       `همه‌ی مدل‌ها و درگاه‌ها ناموفق بودند و هیچ پاسخی گرفته نشد. ` +
-      `جزئیات: ${detail}.${skipNote}${budgetNote}${capNote} ` +
+      `جزئیات: ${detail}.${skipNote}${budgetNote}${capNote}${deadNote} ` +
       `اگر سهمیه تمام شده، چند دقیقه صبر کنید یا در تنظیمات مدل دیگری انتخاب کنید.`;
     stats.errors += 1;
     stats.lastError = detail;

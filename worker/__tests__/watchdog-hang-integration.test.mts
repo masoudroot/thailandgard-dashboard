@@ -221,8 +221,8 @@ test('شناسایی/هشدار/ری‌استارت واقعی تیم هنگ‌�
          values ($1,$2,1,'running',$3,$4,$5,'مرحله‌ی تست')`,
         [cycleId, team, isoAgo(startedAgo), isoAgo(updatedAgo), hbAgoMs === null ? null : isoAgo(hbAgoMs)],
       );
-    // تیم هنگ‌کرده‌ی مصنوعی: ضربان می‌زند (۳۰ ثانیه پیش) ولی ۱۱ دقیقه بی‌پیشرفت
-    await mk('team-hung', 30 * MIN, 11 * MIN, 30_000);
+    // تیم هنگ‌کرده‌ی مصنوعی: ضربان می‌زند (۳۰ ثانیه پیش) ولی ۱۶ دقیقه بی‌پیشرفت
+    await mk('team-hung', 30 * MIN, 16 * MIN, 30_000);
     // تیم سالم: پیشرفت ۲ دقیقه پیش
     await mk('team-healthy', 20 * MIN, 2 * MIN, 30_000);
     // فرایند مرده: ۱۶ دقیقه بی‌ضربان
