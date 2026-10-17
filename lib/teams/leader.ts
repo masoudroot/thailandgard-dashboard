@@ -33,7 +33,7 @@
 import { getSupabase } from '../api';
 import { readSiteFile } from '../bridge/read';
 import { callLLMJson } from '../llm';
-import { enqueueTask } from '../taskqueue';
+import { enqueueTask, formatError } from '../taskqueue';
 import type {
   MemoryEntry,
   ProgressReporter,
@@ -548,7 +548,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     );
     planned = Array.isArray(res.tasks) ? res.tasks : [];
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = formatError(err);
     blockers.push(`طراحی تسک با LLM ناموفق بود: ${msg}`);
     return { team: TEAM, summary: blockers[0], blockers, tasks: [], approved: false };
   }
@@ -615,7 +615,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       queued.push({ title, description, files_hint: filesHint, priority });
       console.log(`[leader] تسک «${title}» برای تیم ${team} ثبت شد (id=${id}).`);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = formatError(err);
       blockers.push(`ثبت تسک «${title}» ناموفق بود: ${msg}`);
     }
   }

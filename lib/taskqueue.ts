@@ -119,6 +119,31 @@ export interface TaskBacklogFields {
   dedupe_key?: string;
 }
 
+/**
+ * خطاها را به متن خوانا تبدیل می‌کند. خطاهای supabase-js آبجکت ساده‌اند
+ * (instanceof Error == false) و String(err) روی آن‌ها فقط «[object Object]»
+ * می‌دهد؛ پس message/code/hint/details را جدا استخراج می‌کنیم.
+ */
+export function formatError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err != null && typeof err === 'object') {
+    const o = err as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof o.message === 'string' && o.message) parts.push(o.message);
+    if (typeof o.code === 'string' && o.code) parts.push(`(code: ${o.code})`);
+    if (typeof o.hint === 'string' && o.hint) parts.push(`hint: ${o.hint}`);
+    if (typeof o.details === 'string' && o.details) parts.push(`details: ${o.details}`);
+    if (parts.length > 0) return parts.join(' ');
+    try {
+      const json = JSON.stringify(o);
+      if (json && json !== '{}') return json;
+    } catch {
+      /* ignore */
+    }
+  }
+  return String(err);
+}
+
 /** Registers a task in `build_queue` with status=pending. Returns the new row id. */
 export async function enqueueTask(
   task: QueuedTask & {
@@ -175,7 +200,7 @@ export async function enqueueTask(
     } catch (err) {
       // ستون‌های llm یا بک‌لاگ هنوز migrate نشده‌اند (کد 42703): بدون آن‌ها
       // ثبت کن تا جریان فعلی ثبت کار نشکند؛ فیلدهای حذف‌شده نادیده گرفته می‌شوند.
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = formatError(err);
       const code = (err as { code?: string })?.code;
       const isMissingColumn =
         code === '42703' || /llm_endpoint_id|llm_model|source|week_key|acceptance|estimate|depends_on|dedupe_key/.test(msg);
