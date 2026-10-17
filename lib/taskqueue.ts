@@ -151,6 +151,11 @@ export interface TaskBacklogFields {
  * خطاها را به متن خوانا تبدیل می‌کند. خطاهای supabase-js آبجکت ساده‌اند
  * (instanceof Error == false) و String(err) روی آن‌ها فقط «[object Object]»
  * می‌دهد؛ پس message/code/hint/details را جدا استخراج می‌کنیم.
+ *
+ * رفع باگ ۱۴۰۵/۰۷/۲۵: خطاهای بی‌پیام لبه (مثلاً آبجکت خالی {}) پیش‌تر به
+ * «[object Object]» فروکاسته می‌شدند و علت واقعی گم می‌شد. حالا وضعیت HTTP
+ * (که insertRow روی خطا می‌چسباند) استخراج می‌شود و در بدترین حالت هم یک
+ * نشانگر خوانا برمی‌گردد، نه «[object Object]».
  */
 export function formatError(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -159,8 +164,14 @@ export function formatError(err: unknown): string {
     const parts: string[] = [];
     if (typeof o.message === 'string' && o.message) parts.push(o.message);
     if (typeof o.code === 'string' && o.code) parts.push(`(code: ${o.code})`);
+    else if (typeof o.code === 'number') parts.push(`(code: ${o.code})`);
     if (typeof o.hint === 'string' && o.hint) parts.push(`hint: ${o.hint}`);
     if (typeof o.details === 'string' && o.details) parts.push(`details: ${o.details}`);
+    // وضعیت HTTP که لایه‌ی دیتابیس روی خطاهای بی‌پیام می‌چسباند
+    if (typeof o.status === 'number') {
+      const st = typeof o.statusText === 'string' && o.statusText ? ` ${o.statusText}` : '';
+      parts.push(`(http: ${o.status}${st})`);
+    }
     if (parts.length > 0) return parts.join(' ');
     try {
       const json = JSON.stringify(o);
@@ -168,6 +179,11 @@ export function formatError(err: unknown): string {
     } catch {
       /* ignore */
     }
+    // آخرین راه: هرگز «[object Object]» برنگردان
+    const ctor = (o as { constructor?: unknown }).constructor;
+    const ctorName = typeof ctor === 'function' ? (ctor as { name?: string }).name : undefined;
+    if (ctorName && ctorName !== 'Object') return `[خطای ${ctorName} بدون پیام]`;
+    return '[خطای بدون پیام از لایه‌ی دیتابیس]';
   }
   return String(err);
 }
@@ -208,12 +224,17 @@ export async function enqueueTask(
     const payload = Object.fromEntries(
       Object.entries(row).filter(([k, v]) => !omit.includes(k) && v !== undefined),
     );
-    const { data, error } = await getSupabase()
+    const { data, error, status, statusText } = await getSupabase()
       .from('build_queue')
       .insert(payload)
       .select('id')
       .single();
-    if (error) throw error;
+    if (error) {
+      // رفع باگ ۱۴۰۵/۰۷/۲۵: خطاهای لبه‌ی سوپابیس گاهی آبجکت خالیِ بی‌پیام‌اند ({})؛
+      // وضعیت HTTP را به خود خطا می‌چسبانیم تا formatError چیزی برای گفتن داشته باشد
+      // و دیگر «enqueueTask failed: [object Object]» دیده نشود.
+      throw Object.assign(error, { status, statusText });
+    }
     return data.id as string;
   };
   const attempts: string[][] = [
@@ -694,4 +715,80 @@ export async function settleClaimedTask(
   if (settledClaimIds.has(id)) return;
   await completeTask(id, buildClaimedTaskResult(outcome, detail));
   settledClaimIds.add(id);
+}
+
+/**
+ * بستن تسک‌های یتیمِ تیمِ ازکارافتاده (مکمل جاروی سلامت).
+ *
+ * ریشه‌ی باگ (۱۴۰۵/۰۷/۲۵): وقتی فرایند تیم بدون settle می‌میرد (SIGKILL،
+ * ری‌بوت ماشین، SIGTERM از timeout)، تسک claimشده برای همیشه in_progress
+ * می‌ماند. چون claimNextTaskForTeam اول تسک in_progress تیم را برمی‌گرداند،
+ * همان تسک کهنه در چرخه‌ی بعدی دوباره تحویل داده می‌شود و صف عملاً مسموم
+ * می‌ماند (مشاهده‌شده در چرخه‌ی run-20261017044522-rq2ho6 پس از ری‌بوت:
+ * تسک از چرخه‌ی روز قبل claim شده بود و run_id همان چرخه‌ی قدیمی را داشت).
+ *
+ * دامنه: تسک‌های in_progress همین تیم که یا به همین چرخه وصل‌اند یا به
+ * چرخه‌ای تمام‌شده (یا هیچ چرخه‌ای). تسکِ چرخه‌ی فعالِ دیگر دست‌نخورده
+ * می‌ماند تا با فرایند زنده‌ای تداخل نکنیم.
+ *
+ * بستن با شرط status='in_progress' انجام می‌شود (compare-and-set) تا اگر
+ * فرایند زنده‌ای دیرهنگام خودش settle کرد، نتیجه‌ی واقعی‌اش بازنویسی نشود.
+ *
+ * @returns تعداد تسک‌های بسته‌شده
+ */
+export async function settleOrphanedClaimedTasks(
+  team: string,
+  cycleId: string,
+  reason: string,
+): Promise<number> {
+  const sb = getSupabase();
+  // چرخه‌های فعال: تسکِ آن‌ها یتیم نیست
+  const { data: activeCycles } = await sb
+    .from('cycles')
+    .select('id')
+    .in('status', ['running', 'pausing', 'paused']);
+  const activeIds = new Set((activeCycles ?? []).map((c) => (c as { id: string }).id));
+  const { data, error } = await sb
+    .from('build_queue')
+    .select('id, title, run_id')
+    .eq('team', team)
+    .eq('status', 'in_progress');
+  if (error) {
+    console.error(`[taskqueue] خواندن تسک‌های یتیم تیم ${team} خطا داد:`, formatError(error));
+    return 0;
+  }
+  let settled = 0;
+  for (const row of (data ?? []) as { id: string; title: string; run_id: string | null }[]) {
+    if (!isValidTaskId(row.id)) continue;
+    const runId = row.run_id ?? null;
+    // فقط یتیم‌های واقعی: همین چرخه، بدون چرخه، یا چرخه‌ی تمام‌شده
+    if (runId && runId !== cycleId && activeIds.has(runId)) continue;
+    try {
+      const { data: updated, error: updErr } = await sb
+        .from('build_queue')
+        .update({
+          status: 'done',
+          result: buildClaimedTaskResult('interrupted', {
+            team,
+            title: row.title ?? '',
+            summary: reason,
+          }),
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', row.id)
+        .eq('status', 'in_progress')
+        .select('id');
+      if (updErr) {
+        console.error(`[taskqueue] بستن تسک یتیم ${row.id} خطا داد:`, formatError(updErr));
+        continue;
+      }
+      if (updated && (updated as unknown[]).length > 0) {
+        settled += 1;
+        console.log(`[taskqueue] تسک یتیم تیم ${team} با سرنوشت «interrupted» بسته شد (id=${row.id}).`);
+      }
+    } catch (err) {
+      console.error(`[taskqueue] بستن تسک یتیم ${row.id} خطا داد:`, formatError(err));
+    }
+  }
+  return settled;
 }
