@@ -15,6 +15,25 @@ import { getSetting } from '../lib/settings';
 import { sweepHungTeams } from '../lib/team-health';
 import { recoverDeadCycles, isAutoRestartableAfterKill } from '../lib/cycle-recovery';
 
+/**
+ * نگهبان مرگ خاموش (۲۵ مهر ۱۴۰۵): ریجکشن هندل‌نشده نباید پروسه را بی‌صدا بکشد.
+ * قبلاً دو هنگ (content و branding) با قطع ضربان و بدون هیچ لاگی رخ داد؛
+ * محتمل‌ترین علت کرش بر اثر unhandledRejection بود. حالا خطا لاگ می‌شود و
+ * پروسه زنده می‌ماند تا نگهبان هنگ، تیم را تمیز ناموفق ثبت کند.
+ */
+process.on('unhandledRejection', (reason) => {
+  console.error(
+    '[cycle-worker] unhandledRejection (پروسه زنده ماند):',
+    reason instanceof Error ? (reason.stack ?? reason.message) : String(reason),
+  );
+});
+process.on('uncaughtException', (err) => {
+  console.error(
+    '[cycle-worker] uncaughtException (پروسه زنده ماند):',
+    err instanceof Error ? (err.stack ?? err.message) : String(err),
+  );
+});
+
 /** سقف پردازش پچ‌های یتیم در هر تیک، تا بودجه‌ی زمانی جاب خورده نشود. */
 const ORPHAN_SWEEP_LIMIT = 3;
 /** کلید تنظیمات شروع خودکار چرخه‌ی بعدی (مقادیر: true/false؛ پیش‌فرض روشن). */
