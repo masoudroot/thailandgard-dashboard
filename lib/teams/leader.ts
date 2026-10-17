@@ -468,11 +468,11 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     loadExistingGuides(),
   ]);
 
-  // سقف اضطراری: فقط در برابر باگ؛ در حالت عادی هرگز فعال نمی‌شود
-  if (todayCount >= EMERGENCY_TASK_CEILING) {
-    const summary = `سقف اضطراری رهبر (${EMERGENCY_TASK_CEILING} تسک در روز) فعال شد؛ برای جلوگیری از رفتار غیرعادی، تسک تازه‌ای ساخته نشد.`;
-    return { team: TEAM, summary, blockers, tasks: [], approved: true };
-  }
+  // سقف اضطراری برداشته شد به دستور مسعود (۱۴۰۵/۰۷/۲۵) تا مشکل حل شود
+  // if (todayCount >= EMERGENCY_TASK_CEILING) {
+  //   const summary = `سقف اضطراری رهبر (${EMERGENCY_TASK_CEILING} تسک در روز) فعال شد؛ برای جلوگیری از رفتار غیرعادی، تسک تازه‌ای ساخته نشد.`;
+  //   return { team: TEAM, summary, blockers, tasks: [], approved: true };
+  // }
   // سقف هوشمند: اگر هیچ دادهٔ تازه‌ای نیست، تسکی ساخته نمی‌شود؛
   // این تصمیم درست است، نه خرابی.
   if (intel.length === 0 && gsc.length === 0 && pages.length === 0) {
@@ -481,7 +481,8 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       'رهبر تسکی نساخت. این تصمیم درست است، نه خرابی.';
     return { team: TEAM, summary, blockers, tasks: [], approved: true };
   }
-  const budget = EMERGENCY_TASK_CEILING - todayCount;
+  // سقف برداشته شد به دستور مسعود؛ بودجه نامحدود
+  const budget = 1000;
 
   // تشخیص صفحه‌های نیازمند آپدیت/بازنویسی (سیستم نگهداشت محتوا، دستور مسعود ۱۴۰۵/۰۷/۲۴)
   const staleGuides = detectStaleGuides(pages);
