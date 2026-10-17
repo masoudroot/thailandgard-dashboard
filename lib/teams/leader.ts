@@ -315,10 +315,10 @@ async function loadExistingGuides(): Promise<ExistingGuide[]> {
     if (!content) return [];
     const slugs: Array<{ slug: string; index: number }> = [];
     const titles: Array<{ title: string; index: number }> = [];
-    for (const m of Array.from(content.matchAll(/\bslug\s*:\s*["']([a-z0-9-]+)["']/g)) {
+    for (const m of Array.from(content.matchAll(/\bslug\s*:\s*["']([a-z0-9-]+)["']/g))) {
       slugs.push({ slug: m[1], index: m.index ?? 0 });
     }
-    for (const m of Array.from(content.matchAll(/\btitle\s*:\s*["']([^"']+)["']/g)) {
+    for (const m of Array.from(content.matchAll(/\btitle\s*:\s*["']([^"']+)["']/g))) {
       titles.push({ title: m[1], index: m.index ?? 0 });
     }
     const usedTitle = new Set<number>();
@@ -595,7 +595,6 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     withLoaderTimeout(loadPageAnalytics(), [] as PageRow[]),
     withLoaderTimeout(loadOpenTasks(), [] as Array<{ team: string; title: string }>),
     withLoaderTimeout(loadExistingGuides(), [] as ExistingGuide[]),
-  ]);
   ]);
 
   // سقف هوشمند: اگر هیچ دادهٔ تازه‌ای نیست، تسکی ساخته نمی‌شود؛
