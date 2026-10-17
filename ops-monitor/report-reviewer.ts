@@ -4,7 +4,7 @@
  * دستور مسعود (۲۵ مهر ۱۴۰۵): «گزارش‌ها را خودت چک کن و خودت تصمیم بگیر؛
  * من فوروارد نکنم.»
  *
- * هر ۳۰ دقیقه از کرون اجرا می‌شود:
+ * هر ۱۰ دقیقه از کرون اجرا می‌شود:
  * ۱. team_runهای تازهٔ تمام‌شده را از واترمارک به بعد می‌خواند
  * ۲. برای هر تیم چک‌های کیفی محتوایی (فراتر از دروازهٔ ساختاری) اعمال می‌کند
  * ۳. bridge_patches گیرکرده در needs_review را بررسی می‌کند
@@ -22,6 +22,10 @@
 
 import { getSupabase } from '../lib/api';
 import { sendTelegram } from '../lib/notify';
+import { WAVES } from '../lib/types';
+
+/** تیم‌های فعال فعلی (از پیکربندی موج‌ها)؛ تیم‌های قدیمی (branding و...) ارجاع نمی‌شوند. */
+const ACTIVE_TEAMS: ReadonlySet<string> = new Set(WAVES.flatMap((w) => w.teams));
 
 const WATERMARK_KEY = 'report_reviewer_watermark';
 const EM_DASH = '—';
@@ -210,6 +214,11 @@ async function reviewTeamRun(
 ): Promise<ReviewResult> {
   const team = run.team;
   const summary = (run.output_summary ?? '').trim();
+
+  // ۰. تیم غیرفعال (قدیمی، خارج از موج‌های فعلی): نادیده بگیر؛ ارجاع بی‌معنی است.
+  if (!ACTIVE_TEAMS.has(team)) {
+    return ok(`تیم ${team} در پیکربندی فعلی فعال نیست؛ نادیده گرفته شد.`);
+  }
 
   // ۱. بررسی الگوی تکراری: ۳ اجرای پیاپی ناموفق همین تیم در ۲۴ ساعت اخیر؟
   // (فقط تاریخ تازه؛ تاریخ سیستم ۱۵تیمی قدیمی شمرده نمی‌شود)
