@@ -89,6 +89,34 @@ function toOutput(row: QueueRow): QueuedTaskOutput {
   };
 }
 
+/* ==========================================================================
+ * گارد شناسهٔ تسک (رفع باگ ۱۴۰۵/۰۷/۲۵: claim ردیف null)
+ *
+ * ریشهٔ باگ: تابع دیتابیس claim_next_build_task وقتی صف تیم خالی است،
+ * به‌جای null یک ردیفِ all-null برمی‌گرداند؛ در PL/pgSQL متغیر row-type
+ * مقداردهی‌نشده با RETURN یک کامپوزیتِ همه‌فیلد-null تولید می‌کند (نه
+ * SQL NULL). PostgREST آن را {"id": null, ...} سریالایز می‌کند،
+ * maybeSingle() آن را ردیف واقعی می‌پندارد و ارکستراتور در پایان اجرا
+ * completeTask را با id=null صدا می‌زند → خطای uuid.
+ *
+ * قرارداد دفاعی: هیچ شناسهٔ نامعتبر/nullی به توابع نوشتنی صف نمی‌رسد؛
+ * claim بدون تسک معتبر یعنی «صف خالی» و با لاگ تمیز رد می‌شود.
+ * ========================================================================== */
+
+const TASK_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** شناسهٔ تسک فقط وقتی معتبر است که UUID واقعی باشد. */
+export function isValidTaskId(id: unknown): id is string {
+  return typeof id === 'string' && TASK_ID_RE.test(id);
+}
+
+/** گارد ورودی توابع صف: شناسهٔ نامعتبر هرگز به دیتابیس نمی‌رسد. */
+function assertValidTaskId(id: unknown, caller: string): asserts id is string {
+  if (!isValidTaskId(id)) {
+    throw new InputError(`شناسهٔ تسک نامعتبر است (${caller}): ${String(id)}`);
+  }
+}
+
 /** ورودی انتخاب مدل برای یک کار. */
 export interface TaskLLMSelection {
   endpointId: string;
@@ -117,6 +145,47 @@ export interface TaskBacklogFields {
   depends_on?: string;
   /** کلید یکتاسازی؛ همراه week_key یکتا می‌شود */
   dedupe_key?: string;
+}
+
+/**
+ * خطاها را به متن خوانا تبدیل می‌کند. خطاهای supabase-js آبجکت ساده‌اند
+ * (instanceof Error == false) و String(err) روی آن‌ها فقط «[object Object]»
+ * می‌دهد؛ پس message/code/hint/details را جدا استخراج می‌کنیم.
+ *
+ * رفع باگ ۱۴۰۵/۰۷/۲۵: خطاهای بی‌پیام لبه (مثلاً آبجکت خالی {}) پیش‌تر به
+ * «[object Object]» فروکاسته می‌شدند و علت واقعی گم می‌شد. حالا وضعیت HTTP
+ * (که insertRow روی خطا می‌چسباند) استخراج می‌شود و در بدترین حالت هم یک
+ * نشانگر خوانا برمی‌گردد، نه «[object Object]».
+ */
+export function formatError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err != null && typeof err === 'object') {
+    const o = err as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof o.message === 'string' && o.message) parts.push(o.message);
+    if (typeof o.code === 'string' && o.code) parts.push(`(code: ${o.code})`);
+    else if (typeof o.code === 'number') parts.push(`(code: ${o.code})`);
+    if (typeof o.hint === 'string' && o.hint) parts.push(`hint: ${o.hint}`);
+    if (typeof o.details === 'string' && o.details) parts.push(`details: ${o.details}`);
+    // وضعیت HTTP که لایه‌ی دیتابیس روی خطاهای بی‌پیام می‌چسباند
+    if (typeof o.status === 'number') {
+      const st = typeof o.statusText === 'string' && o.statusText ? ` ${o.statusText}` : '';
+      parts.push(`(http: ${o.status}${st})`);
+    }
+    if (parts.length > 0) return parts.join(' ');
+    try {
+      const json = JSON.stringify(o);
+      if (json && json !== '{}') return json;
+    } catch {
+      /* ignore */
+    }
+    // آخرین راه: هرگز «[object Object]» برنگردان
+    const ctor = (o as { constructor?: unknown }).constructor;
+    const ctorName = typeof ctor === 'function' ? (ctor as { name?: string }).name : undefined;
+    if (ctorName && ctorName !== 'Object') return `[خطای ${ctorName} بدون پیام]`;
+    return '[خطای بدون پیام از لایه‌ی دیتابیس]';
+  }
+  return String(err);
 }
 
 /** Registers a task in `build_queue` with status=pending. Returns the new row id. */
@@ -155,12 +224,17 @@ export async function enqueueTask(
     const payload = Object.fromEntries(
       Object.entries(row).filter(([k, v]) => !omit.includes(k) && v !== undefined),
     );
-    const { data, error } = await getSupabase()
+    const { data, error, status, statusText } = await getSupabase()
       .from('build_queue')
       .insert(payload)
       .select('id')
       .single();
-    if (error) throw error;
+    if (error) {
+      // رفع باگ ۱۴۰۵/۰۷/۲۵: خطاهای لبه‌ی سوپابیس گاهی آبجکت خالیِ بی‌پیام‌اند ({})؛
+      // وضعیت HTTP را به خود خطا می‌چسبانیم تا formatError چیزی برای گفتن داشته باشد
+      // و دیگر «enqueueTask failed: [object Object]» دیده نشود.
+      throw Object.assign(error, { status, statusText });
+    }
     return data.id as string;
   };
   const attempts: string[][] = [
@@ -175,7 +249,7 @@ export async function enqueueTask(
     } catch (err) {
       // ستون‌های llm یا بک‌لاگ هنوز migrate نشده‌اند (کد 42703): بدون آن‌ها
       // ثبت کن تا جریان فعلی ثبت کار نشکند؛ فیلدهای حذف‌شده نادیده گرفته می‌شوند.
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = formatError(err);
       const code = (err as { code?: string })?.code;
       const isMissingColumn =
         code === '42703' || /llm_endpoint_id|llm_model|source|week_key|acceptance|estimate|depends_on|dedupe_key/.test(msg);
@@ -209,6 +283,7 @@ export async function listTasks(status?: string): Promise<QueuedTaskOutput[]> {
 
 /** Marks a pending task as approved for execution. */
 export async function approveTask(id: string): Promise<void> {
+  assertValidTaskId(id, 'approveTask');
   const { error } = await getSupabase()
     .from('build_queue')
     .update({ status: 'approved' })
@@ -219,6 +294,7 @@ export async function approveTask(id: string): Promise<void> {
 
 /** Marks a pending task as rejected with a reason (stored in `result`). */
 export async function rejectTask(id: string, reason: string): Promise<void> {
+  assertValidTaskId(id, 'rejectTask');
   const { error } = await getSupabase()
     .from('build_queue')
     .update({ status: 'rejected', result: reason, completed_at: new Date().toISOString() })
@@ -229,6 +305,8 @@ export async function rejectTask(id: string, reason: string): Promise<void> {
 
 /** Marks an approved task as done with its execution result (and optional commit SHA). */
 export async function completeTask(id: string, result: string, commitSha?: string): Promise<void> {
+  // گارد ریشه‌ای باگ ۱۴۰۵/۰۷/۲۵: id نامعتبر/null هرگز به کوئری نمی‌رسد.
+  assertValidTaskId(id, 'completeTask');
   const { error } = await getSupabase()
     .from('build_queue')
     .update({
@@ -244,6 +322,7 @@ export async function completeTask(id: string, result: string, commitSha?: strin
 
 /** Reads one task row by id. */
 export async function getTask(id: string): Promise<QueuedTaskOutput | null> {
+  assertValidTaskId(id, 'getTask');
   const { data, error } = await getSupabase()
     .from('build_queue')
     .select('*')
@@ -261,6 +340,7 @@ export async function setTaskLLM(
   id: string,
   selection: TaskLLMSelection | null,
 ): Promise<void> {
+  assertValidTaskId(id, 'setTaskLLM');
   if (selection) await validateTaskLLM(selection);
   const { error } = await getSupabase()
     .from('build_queue')
@@ -404,6 +484,7 @@ export async function listApprovedTasksForTeam(team: string): Promise<QueuedTask
  * (محدودیت قدیمی)، خطا را قورت می‌دهد تا اجرا متوقف نشود؛ وضعیت approved می‌ماند.
  */
 export async function markTaskRunning(id: string): Promise<void> {
+  assertValidTaskId(id, 'markTaskRunning');
   const { error } = await getSupabase()
     .from('build_queue')
     .update({ status: 'in_progress' })
@@ -416,6 +497,7 @@ export async function markTaskRunning(id: string): Promise<void> {
  * نکرد، خطا در ستون result می‌ماند و وضعیت دست‌نخورده می‌ماند (صادقانه).
  */
 export async function markTaskFailed(id: string, errorMessage: string): Promise<void> {
+  assertValidTaskId(id, 'markTaskFailed');
   const patch = {
     result: `اجرای کار ناموفق بود: ${errorMessage}`.slice(0, 4000),
     completed_at: new Date().toISOString(),
@@ -495,7 +577,10 @@ async function claimNextTaskBestEffort(team: string): Promise<QueuedTaskOutput |
     .select('*')
     .maybeSingle();
   if (claimErr) throw new Error(`claimNextTaskBestEffort failed: ${claimErr.message}`);
-  return claimed ? toOutput(claimed as QueueRow) : null;
+  const claimedRow = claimed as QueueRow | null;
+  // گارد دفاعی: ردیف بدون شناسهٔ معتبر هرگز «تسک» محسوب نمی‌شود.
+  if (!claimedRow || !isValidTaskId(claimedRow.id)) return null;
+  return toOutput(claimedRow);
 }
 
 /**
@@ -509,7 +594,15 @@ export async function claimNextTaskForTeam(team: string): Promise<QueuedTaskOutp
       .rpc('claim_next_build_task', { p_team: team })
       .maybeSingle();
     if (error) throw error;
-    return data ? toOutput(data as QueueRow) : null;
+    const row = data as QueueRow | null;
+    // گارد ریشه‌ای باگ ۱۴۰۵/۰۷/۲۵: وقتی صف خالی است، تابع دیتابیس یک ردیفِ
+    // all-null برمی‌گرداند (id=null)؛ این «تسک» نیست، «صف خالی» است و دور
+    // با لاگ تمیز رد می‌شود، نه با claim جعلی و خطای بعدی در completeTask.
+    if (!row || !isValidTaskId(row.id)) {
+      console.log(`[taskqueue] تیم ${team}: تسک آماده‌ای در صف نیست (claim برگشتی معتبر نداد)؛ رد شد.`);
+      return null;
+    }
+    return toOutput(row);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const code = (err as { code?: string })?.code;
@@ -622,4 +715,80 @@ export async function settleClaimedTask(
   if (settledClaimIds.has(id)) return;
   await completeTask(id, buildClaimedTaskResult(outcome, detail));
   settledClaimIds.add(id);
+}
+
+/**
+ * بستن تسک‌های یتیمِ تیمِ ازکارافتاده (مکمل جاروی سلامت).
+ *
+ * ریشه‌ی باگ (۱۴۰۵/۰۷/۲۵): وقتی فرایند تیم بدون settle می‌میرد (SIGKILL،
+ * ری‌بوت ماشین، SIGTERM از timeout)، تسک claimشده برای همیشه in_progress
+ * می‌ماند. چون claimNextTaskForTeam اول تسک in_progress تیم را برمی‌گرداند،
+ * همان تسک کهنه در چرخه‌ی بعدی دوباره تحویل داده می‌شود و صف عملاً مسموم
+ * می‌ماند (مشاهده‌شده در چرخه‌ی run-20261017044522-rq2ho6 پس از ری‌بوت:
+ * تسک از چرخه‌ی روز قبل claim شده بود و run_id همان چرخه‌ی قدیمی را داشت).
+ *
+ * دامنه: تسک‌های in_progress همین تیم که یا به همین چرخه وصل‌اند یا به
+ * چرخه‌ای تمام‌شده (یا هیچ چرخه‌ای). تسکِ چرخه‌ی فعالِ دیگر دست‌نخورده
+ * می‌ماند تا با فرایند زنده‌ای تداخل نکنیم.
+ *
+ * بستن با شرط status='in_progress' انجام می‌شود (compare-and-set) تا اگر
+ * فرایند زنده‌ای دیرهنگام خودش settle کرد، نتیجه‌ی واقعی‌اش بازنویسی نشود.
+ *
+ * @returns تعداد تسک‌های بسته‌شده
+ */
+export async function settleOrphanedClaimedTasks(
+  team: string,
+  cycleId: string,
+  reason: string,
+): Promise<number> {
+  const sb = getSupabase();
+  // چرخه‌های فعال: تسکِ آن‌ها یتیم نیست
+  const { data: activeCycles } = await sb
+    .from('cycles')
+    .select('id')
+    .in('status', ['running', 'pausing', 'paused']);
+  const activeIds = new Set((activeCycles ?? []).map((c) => (c as { id: string }).id));
+  const { data, error } = await sb
+    .from('build_queue')
+    .select('id, title, run_id')
+    .eq('team', team)
+    .eq('status', 'in_progress');
+  if (error) {
+    console.error(`[taskqueue] خواندن تسک‌های یتیم تیم ${team} خطا داد:`, formatError(error));
+    return 0;
+  }
+  let settled = 0;
+  for (const row of (data ?? []) as { id: string; title: string; run_id: string | null }[]) {
+    if (!isValidTaskId(row.id)) continue;
+    const runId = row.run_id ?? null;
+    // فقط یتیم‌های واقعی: همین چرخه، بدون چرخه، یا چرخه‌ی تمام‌شده
+    if (runId && runId !== cycleId && activeIds.has(runId)) continue;
+    try {
+      const { data: updated, error: updErr } = await sb
+        .from('build_queue')
+        .update({
+          status: 'done',
+          result: buildClaimedTaskResult('interrupted', {
+            team,
+            title: row.title ?? '',
+            summary: reason,
+          }),
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', row.id)
+        .eq('status', 'in_progress')
+        .select('id');
+      if (updErr) {
+        console.error(`[taskqueue] بستن تسک یتیم ${row.id} خطا داد:`, formatError(updErr));
+        continue;
+      }
+      if (updated && (updated as unknown[]).length > 0) {
+        settled += 1;
+        console.log(`[taskqueue] تسک یتیم تیم ${team} با سرنوشت «interrupted» بسته شد (id=${row.id}).`);
+      }
+    } catch (err) {
+      console.error(`[taskqueue] بستن تسک یتیم ${row.id} خطا داد:`, formatError(err));
+    }
+  }
+  return settled;
 }

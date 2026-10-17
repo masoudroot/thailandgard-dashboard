@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { settleOrphanedClaimedTasks } from './taskqueue';
 
 /**
  * سلامت اجرای تیم‌ها: تشخیص «هنگ» در برابر «سالم» و «مرده».
@@ -237,6 +238,26 @@ export async function sweepHungTeams(
       continue;
     }
     console.log(`[team-health] تیم ${t.team} «${t.health === 'hung' ? 'هنگ' : 'مرده'}» شناخته و ناموفق ثبت شد.`);
+    // بستن تسک‌های یتیم: اگر فرایند تیم بدون settle مرده باشد (ری‌بوت/SIGKILL)،
+    // تسک claimشده‌اش in_progress می‌ماند و چرخه‌ی بعدی همان کهنه را تحویل
+    // می‌گیرد؛ این‌جا با سرنوشت interrupted بسته می‌شود. fail-soft است.
+    try {
+      const healthFa = t.health === 'hung' ? 'هنگ' : 'مرگ فرایند';
+      const settled = await settleOrphanedClaimedTasks(
+        t.team,
+        cycleId,
+        `تیم ${t.team} در جاروی سلامت «${healthFa}» شناخته و ناموفق ثبت شد؛ ` +
+          `فرایند اجراکننده در دسترس نیست (${error}).`,
+      );
+      if (settled > 0) {
+        console.log(`[team-health] ${settled} تسک یتیم تیم ${t.team} بسته شد.`);
+      }
+    } catch (err) {
+      console.error(
+        `[team-health] بستن تسک‌های یتیم تیم ${t.team} خطا داد:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
     results.push({
       team: t.team,
       health: t.health,

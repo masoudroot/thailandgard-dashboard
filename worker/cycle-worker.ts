@@ -15,10 +15,35 @@ import { getSetting } from '../lib/settings';
 import { sweepHungTeams } from '../lib/team-health';
 import { recoverDeadCycles, isAutoRestartableAfterKill } from '../lib/cycle-recovery';
 
+/**
+ * نگهبان مرگ خاموش (۲۵ مهر ۱۴۰۵): ریجکشن هندل‌نشده نباید پروسه را بی‌صدا بکشد.
+ * قبلاً دو هنگ (content و branding) با قطع ضربان و بدون هیچ لاگی رخ داد؛
+ * محتمل‌ترین علت کرش بر اثر unhandledRejection بود. حالا خطا لاگ می‌شود و
+ * پروسه زنده می‌ماند تا نگهبان هنگ، تیم را تمیز ناموفق ثبت کند.
+ */
+process.on('unhandledRejection', (reason) => {
+  console.error(
+    '[cycle-worker] unhandledRejection (پروسه زنده ماند):',
+    reason instanceof Error ? (reason.stack ?? reason.message) : String(reason),
+  );
+});
+process.on('uncaughtException', (err) => {
+  console.error(
+    '[cycle-worker] uncaughtException (پروسه زنده ماند):',
+    err instanceof Error ? (err.stack ?? err.message) : String(err),
+  );
+});
+
 /** سقف پردازش پچ‌های یتیم در هر تیک، تا بودجه‌ی زمانی جاب خورده نشود. */
 const ORPHAN_SWEEP_LIMIT = 3;
 /** کلید تنظیمات شروع خودکار چرخه‌ی بعدی (مقادیر: true/false؛ پیش‌فرض روشن). */
 const AUTO_START_SETTING_KEY = 'auto_start_next_cycle';
+/**
+ * سقف خرابی‌های پیاپی چرخه پیش از توقف شروع خودکار.
+ * بعد از این تعداد چرخه‌ی پیاپیِ ناموفق، دیگر خودکار شروع نمی‌کنیم تا
+ * علت سیستمی بررسی شود. با سیاست ارجاع بازبین گزارش (۳ ناموفقی پیاپی) هم‌خوان است.
+ */
+const MAX_CONSECUTIVE_CYCLE_FAILURES = 3;
 
 /**
  * جاروی پچ‌های یتیم پل اجرا.
@@ -62,9 +87,13 @@ async function sweepOrphanedBridgePatches(): Promise<void> {
  * اگر آخرین چرخه با success بسته شده و تنظیم auto_start_next_cycle مخالف
  * صریح (false) نیست، خودکار beginCycle می‌زند تا سیستم تا دخالت دستی نخوابد.
  * (دستور مسعود: سایت کاملاً خودکار باشد.)
- * اگر آخرین چرخه failed بود، چرخه‌ی تازه نمی‌سازد — نیاز به توجه دارد؛
- * استثنا: چرخه‌ای که با kill مرده و بازیابی شده (KILLED) — آن خودکار
- * با چرخه‌ای تمیز ادامه می‌یابد، چون kill رویداد زیرساختی است نه سیگنال کیفی.
+ * اگر آخرین چرخه failed بود هم چرخه‌ی تازه می‌سازد — پارک نمی‌شود
+ * (دستور مسعود، ۲۵ مهر ۱۴۰۵)؛ استثنا: اگر خرابی‌های پیاپی به سقف
+ * MAX_CONSECUTIVE_CYCLE_FAILURES رسید، شروع خودکار متوقف می‌شود تا علت
+ * سیستمی بررسی شود (جلوگیری از حلقه‌ی بی‌پایان چرخه‌های ناموفق).
+ * چرخه‌ای که با kill مرده و بازیابی شده (KILLED) هم خودکار با چرخه‌ای
+ * تمیز ادامه می‌یابد، چون kill رویداد زیرساختی است نه سیگنال کیفی.
+ * وضعیت‌های stopped/paused/pausing (توقف دستی/کاربری) خودکار شروع نمی‌شوند.
  * اگر اصلاً چرخه‌ای نبود هم هیچ‌چیز نمی‌سازد؛ شروع اول دستی است.
  */
 async function autoStartNextCycleIfNeeded(): Promise<{ cycleId: string; runId: string } | null> {
@@ -78,18 +107,34 @@ async function autoStartNextCycleIfNeeded(): Promise<{ cycleId: string; runId: s
     .from('cycles')
     .select('id, status, error')
     .order('started_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) {
+    .limit(MAX_CONSECUTIVE_CYCLE_FAILURES);
+  if (error || !data || data.length === 0) {
     console.log('no previous cycle; waiting for manual start');
     return null;
   }
-  const last = data as { id: string; status: string; error?: string | null };
-  if (last.status !== 'success' && !isAutoRestartableAfterKill(last)) {
+  const last = data[0] as { id: string; status: string; error?: string | null };
+
+  // (۲۵ مهر ۱۴۰۵، دستور مسعود): چرخه‌ی ناموفق هم خودکار ادامه می‌یابد —
+  // دیگر پارک نمی‌شود. فقط اگر خرابی‌های پیاپی به سقف رسید، متوقف می‌مانیم.
+  if (last.status === 'failed') {
+    let streak = 0;
+    for (const c of data as Array<{ status: string }>) {
+      if (c.status === 'failed') streak++;
+      else break;
+    }
+    if (streak >= MAX_CONSECUTIVE_CYCLE_FAILURES) {
+      console.log(
+        `last ${streak} cycles failed consecutively; not auto-starting (needs attention)`,
+      );
+      return null;
+    }
+    console.log(
+      `last cycle ${last.id} failed (streak ${streak}/${MAX_CONSECUTIVE_CYCLE_FAILURES}); auto-starting a new cycle`,
+    );
+  } else if (last.status !== 'success' && !isAutoRestartableAfterKill(last)) {
     console.log(`last cycle ${last.id} ended with '${last.status}'; not auto-starting (needs attention)`);
     return null;
-  }
-  if (isAutoRestartableAfterKill(last)) {
+  } else if (isAutoRestartableAfterKill(last)) {
     console.log(`last cycle ${last.id} was killed and recovered; auto-starting a clean cycle`);
   }
   const { cycleId, runId } = await beginCycle();
@@ -236,7 +281,7 @@ async function main(): Promise<void> {
 
   // claim اتمیک تیم: اگر ورکر دیگری هم‌زمان همین تیم را برداشت، ما عقب می‌نشینیم
   const owner: LockOwner = {
-    engine: 'github-actions',
+    engine: process.env.CYCLE_ENGINE ?? 'github-actions',
     runId: process.env.GITHUB_RUN_ID ?? `worker-${Date.now()}`,
   };
   const teamRunId = await claimTeam(cycleId, nextTeam, currentWaveDef.wave, owner);
