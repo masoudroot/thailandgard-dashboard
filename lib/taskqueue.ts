@@ -89,6 +89,34 @@ function toOutput(row: QueueRow): QueuedTaskOutput {
   };
 }
 
+/* ==========================================================================
+ * گارد شناسهٔ تسک (رفع باگ ۱۴۰۵/۰۷/۲۵: claim ردیف null)
+ *
+ * ریشهٔ باگ: تابع دیتابیس claim_next_build_task وقتی صف تیم خالی است،
+ * به‌جای null یک ردیفِ all-null برمی‌گرداند؛ در PL/pgSQL متغیر row-type
+ * مقداردهی‌نشده با RETURN یک کامپوزیتِ همه‌فیلد-null تولید می‌کند (نه
+ * SQL NULL). PostgREST آن را {"id": null, ...} سریالایز می‌کند،
+ * maybeSingle() آن را ردیف واقعی می‌پندارد و ارکستراتور در پایان اجرا
+ * completeTask را با id=null صدا می‌زند → خطای uuid.
+ *
+ * قرارداد دفاعی: هیچ شناسهٔ نامعتبر/nullی به توابع نوشتنی صف نمی‌رسد؛
+ * claim بدون تسک معتبر یعنی «صف خالی» و با لاگ تمیز رد می‌شود.
+ * ========================================================================== */
+
+const TASK_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** شناسهٔ تسک فقط وقتی معتبر است که UUID واقعی باشد. */
+export function isValidTaskId(id: unknown): id is string {
+  return typeof id === 'string' && TASK_ID_RE.test(id);
+}
+
+/** گارد ورودی توابع صف: شناسهٔ نامعتبر هرگز به دیتابیس نمی‌رسد. */
+function assertValidTaskId(id: unknown, caller: string): asserts id is string {
+  if (!isValidTaskId(id)) {
+    throw new InputError(`شناسهٔ تسک نامعتبر است (${caller}): ${String(id)}`);
+  }
+}
+
 /** ورودی انتخاب مدل برای یک کار. */
 export interface TaskLLMSelection {
   endpointId: string;
@@ -234,6 +262,7 @@ export async function listTasks(status?: string): Promise<QueuedTaskOutput[]> {
 
 /** Marks a pending task as approved for execution. */
 export async function approveTask(id: string): Promise<void> {
+  assertValidTaskId(id, 'approveTask');
   const { error } = await getSupabase()
     .from('build_queue')
     .update({ status: 'approved' })
@@ -244,6 +273,7 @@ export async function approveTask(id: string): Promise<void> {
 
 /** Marks a pending task as rejected with a reason (stored in `result`). */
 export async function rejectTask(id: string, reason: string): Promise<void> {
+  assertValidTaskId(id, 'rejectTask');
   const { error } = await getSupabase()
     .from('build_queue')
     .update({ status: 'rejected', result: reason, completed_at: new Date().toISOString() })
@@ -254,6 +284,8 @@ export async function rejectTask(id: string, reason: string): Promise<void> {
 
 /** Marks an approved task as done with its execution result (and optional commit SHA). */
 export async function completeTask(id: string, result: string, commitSha?: string): Promise<void> {
+  // گارد ریشه‌ای باگ ۱۴۰۵/۰۷/۲۵: id نامعتبر/null هرگز به کوئری نمی‌رسد.
+  assertValidTaskId(id, 'completeTask');
   const { error } = await getSupabase()
     .from('build_queue')
     .update({
@@ -269,6 +301,7 @@ export async function completeTask(id: string, result: string, commitSha?: strin
 
 /** Reads one task row by id. */
 export async function getTask(id: string): Promise<QueuedTaskOutput | null> {
+  assertValidTaskId(id, 'getTask');
   const { data, error } = await getSupabase()
     .from('build_queue')
     .select('*')
@@ -286,6 +319,7 @@ export async function setTaskLLM(
   id: string,
   selection: TaskLLMSelection | null,
 ): Promise<void> {
+  assertValidTaskId(id, 'setTaskLLM');
   if (selection) await validateTaskLLM(selection);
   const { error } = await getSupabase()
     .from('build_queue')
@@ -429,6 +463,7 @@ export async function listApprovedTasksForTeam(team: string): Promise<QueuedTask
  * (محدودیت قدیمی)، خطا را قورت می‌دهد تا اجرا متوقف نشود؛ وضعیت approved می‌ماند.
  */
 export async function markTaskRunning(id: string): Promise<void> {
+  assertValidTaskId(id, 'markTaskRunning');
   const { error } = await getSupabase()
     .from('build_queue')
     .update({ status: 'in_progress' })
@@ -441,6 +476,7 @@ export async function markTaskRunning(id: string): Promise<void> {
  * نکرد، خطا در ستون result می‌ماند و وضعیت دست‌نخورده می‌ماند (صادقانه).
  */
 export async function markTaskFailed(id: string, errorMessage: string): Promise<void> {
+  assertValidTaskId(id, 'markTaskFailed');
   const patch = {
     result: `اجرای کار ناموفق بود: ${errorMessage}`.slice(0, 4000),
     completed_at: new Date().toISOString(),
@@ -520,7 +556,10 @@ async function claimNextTaskBestEffort(team: string): Promise<QueuedTaskOutput |
     .select('*')
     .maybeSingle();
   if (claimErr) throw new Error(`claimNextTaskBestEffort failed: ${claimErr.message}`);
-  return claimed ? toOutput(claimed as QueueRow) : null;
+  const claimedRow = claimed as QueueRow | null;
+  // گارد دفاعی: ردیف بدون شناسهٔ معتبر هرگز «تسک» محسوب نمی‌شود.
+  if (!claimedRow || !isValidTaskId(claimedRow.id)) return null;
+  return toOutput(claimedRow);
 }
 
 /**
@@ -534,7 +573,15 @@ export async function claimNextTaskForTeam(team: string): Promise<QueuedTaskOutp
       .rpc('claim_next_build_task', { p_team: team })
       .maybeSingle();
     if (error) throw error;
-    return data ? toOutput(data as QueueRow) : null;
+    const row = data as QueueRow | null;
+    // گارد ریشه‌ای باگ ۱۴۰۵/۰۷/۲۵: وقتی صف خالی است، تابع دیتابیس یک ردیفِ
+    // all-null برمی‌گرداند (id=null)؛ این «تسک» نیست، «صف خالی» است و دور
+    // با لاگ تمیز رد می‌شود، نه با claim جعلی و خطای بعدی در completeTask.
+    if (!row || !isValidTaskId(row.id)) {
+      console.log(`[taskqueue] تیم ${team}: تسک آماده‌ای در صف نیست (claim برگشتی معتبر نداد)؛ رد شد.`);
+      return null;
+    }
+    return toOutput(row);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const code = (err as { code?: string })?.code;

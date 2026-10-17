@@ -32,6 +32,7 @@ import { runWithTeamContext } from './llm';
 import { notifyTeamReport } from './notify';
 import {
   claimNextTaskForTeam,
+  isValidTaskId,
   listApprovedTasksForTeam,
   settleClaimedTask,
   type ClaimedTaskOutcome,
@@ -960,7 +961,7 @@ export async function runSingleTeam(
     let claimedTaskContext = '';
     try {
       const claimed = await claimNextTaskForTeam(team);
-      if (claimed) {
+      if (claimed && isValidTaskId(claimed.id)) {
         // شناسه بیرون نگه داشته می‌شود تا در پایان اجرا (هر سرنوشتی) بسته شود.
         claimedTask = { id: claimed.id, title: claimed.title };
         claimedTaskContext =
@@ -974,6 +975,11 @@ export async function runSingleTeam(
           .update({ current_task: `کار صف: ${claimed.title}`.slice(0, 500) })
           .eq('id', runRowId);
         if (curErr) console.error(`[orchestrator] failed to set current_task for ${team}:`, curErr.message);
+      } else if (claimed) {
+        // تور آخر دفاعی: نباید رخ دهد (گارد در claimNextTaskForTeam)، ولی اگر
+        // ردیفی نامعتبر رسید، با لاگ تمیز نادیده گرفته می‌شود؛ شناسه‌ای ذخیره
+        // نمی‌شود تا completeTask هرگز با id نامعتبر صدا زده نشود.
+        console.log(`[orchestrator] تیم ${team}: خروجی claim معتبر نبود؛ نادیده گرفته شد.`);
       }
     } catch (err) {
       console.error(
