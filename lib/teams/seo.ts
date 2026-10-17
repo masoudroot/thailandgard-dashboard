@@ -320,7 +320,7 @@ function extractTargetSlugs(
       if (sp.matchers.some((rx) => rx.test(t))) staticTargets.add(sp.id);
     }
   }
-  return { forced: [...forced], staticTargets: [...staticTargets], unknown: [...unknown] };
+  return { forced: Array.from(forced), staticTargets: Array.from(staticTargets), unknown: Array.from(unknown) };
 }
 
 /** خلاصه تیم محتوا از خروجی موج‌های قبلی */
