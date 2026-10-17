@@ -21,6 +21,7 @@ import {
   type CriticRoundRecord,
 } from '../knowledge/critic-knowledge';
 import { readRepoFile } from '../github';
+import { SITE_REPO, BRIDGE_BASE_BRANCH } from '../bridge/commit';
 import {
   runCriticLoop,
   combineReviewDirectives,
@@ -293,6 +294,7 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
           '- کد باید کامل و قابل اجرا باشد؛ تکه‌کد ناقص یا placeholder مثل // ... ممنوع.\n' +
           '- برای رابط فارسی: فقط logical CSS (ms- me- ps- pe- start- end-)، هرگز ml- pl- text-left.\n' +
           '- ایمپورت‌ها دقیق و نسبی باشند؛ هیچ‌چیز حدسی ایمپورت نکن. قبل از ایمپورت، مطمئن شو آن ماژول/کامپوننت واقعاً وجود دارد.\n' +
+          '- اگر محتوای فعلی فایل داده شد (اصلاح فایل موجود): ساختار، قابلیت‌ها و استایل موجود را حفظ کن و فقط همان را عوض کن که دستور گفته؛ بازنویسی کوری که بخش‌های دیگر فایل را حذف یا خراب کند ممنوع.\n' +
           '- روت‌های API (POST/PUT/PATCH): حتماً request.json() را در try/catch بگذار؛ ورودی را اعتبارسنجی کن (فیلدهای لازم، نوع داده)؛ خطاها را با status مناسب برگردان (۴۰۰ برای ورودی نامعتبر، ۵۰۰ برای خطای سرور).\n' +
           '- هیچ‌وقت await بدون try/catch برای عملیات نامطمئن (fetch، دیتابیس، فایل) ننویس.\n' +
           '- ساختار کد تمیز: هر تابع یک کار؛ نام‌های معنادار؛ بدون کد مرده یا کامنتِ به‌جای کد.';
@@ -349,12 +351,19 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
       }
       cachedPlan = plan;
 
-      // ۲) خواندن محتوای فعلی فایل‌ها از ریپو (برای action=modify)
+      // ۲) خواندن محتوای فعلی فایل‌ها از ریپوی سایت (شاخهٔ dev — همان مبنای پل)
+      // یافتهٔ ممیزی یکپارچگی: قبلاً از ریپوی کانفیگ (داشبورد) و ref=master خوانده می‌شد،
+      // یعنی عملاً همیشه ۴۰۴ و null بود و مجری «از صفر» بازنویسی می‌کرد.
       await reportLive?.('خواندن فایل‌های واقعی ریپو', 30);
-      for (const task of plan.tasks) {
+      for (let i = 0; i < plan.tasks.length; i++) {
+        const task = plan.tasks[i];
+        await reportLive?.(`خواندن فایل ${i + 1} از ${plan.tasks.length}: ${task.path}`, 30);
         if (task.action === 'modify') {
           try {
-            const content = await readRepoFile(task.path);
+            const content = await readRepoFile(task.path, {
+              repo: SITE_REPO,
+              ref: BRIDGE_BASE_BRANCH,
+            });
             cachedContents.set(task.path, content);
           } catch {
             // گیت‌هاب متصل نیست یا فایل نیست؛ مجری با instruction جلو می‌رود
@@ -473,6 +482,8 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
         : verdict.reason,
       instruction: verdict.instruction?.trim() || undefined,
     };
+    // ضربان زنده پیش از کار دیتابیس+RAG (یافته: نقطهٔ کور بدون ضربان)
+    await reportLive?.(`منتقد: ثبت دانش دور ${round}`, 88);
     const knowledgeResult = await extractCriticKnowledge(
       TEAM,
       {
@@ -539,6 +550,8 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
     : `تیم dev این چرخه پچ تأییدشده نداشت؛ دلیل: ${reason}`;
 
   if (approved) {
+    // ضربان زنده پیش از نوشتن حافظه (یافته: نقطهٔ کور بدون ضربان)
+    await reportLive?.('ثبت آموخته‌ها در حافظه', 95);
     await writeMemory(TEAM, `learned:${runId}`, {
       content: summary.slice(0, 2000),
       approved,
