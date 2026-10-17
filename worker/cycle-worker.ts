@@ -236,7 +236,7 @@ async function main(): Promise<void> {
 
   // claim اتمیک تیم: اگر ورکر دیگری هم‌زمان همین تیم را برداشت، ما عقب می‌نشینیم
   const owner: LockOwner = {
-    engine: 'github-actions',
+    engine: process.env.CYCLE_ENGINE ?? 'github-actions',
     runId: process.env.GITHUB_RUN_ID ?? `worker-${Date.now()}`,
   };
   const teamRunId = await claimTeam(cycleId, nextTeam, currentWaveDef.wave, owner);

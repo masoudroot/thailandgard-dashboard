@@ -348,7 +348,7 @@ export async function beginCycle(): Promise<{ cycleId: string; runId: string }> 
   // قفل قدیمی، دو beginCycle هم‌زمان نمی‌توانند هر دو موفق شوند.
   const cycleId = crypto.randomUUID();
   const owner: LockOwner = {
-    engine: process.env.GITHUB_RUN_ID ? 'github-actions' : 'vercel',
+    engine: process.env.CYCLE_ENGINE ?? (process.env.GITHUB_RUN_ID ? 'github-actions' : 'vercel'),
     runId,
   };
   try {
