@@ -459,13 +459,26 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const queued: QueuedTask[] = [];
 
   await reportLive?.('خواندن فیدرهای داده', 10);
-  const [intel, gsc, pages, todayCount, openTasks, existingGuides] = await Promise.all([
-    loadIntelFeed(),
-    loadGscQueries(),
-    loadPageAnalytics(),
-    countTodayLeaderTasks(),
-    loadOpenTasks(),
-    loadExistingGuides(),
+  // هر لودر به‌تنهایی fail-soft است (خطا ← مقدار خالی)؛ ولی قفل‌کردن یک لودر
+  // (اتصال معلق بدون timeout در لایهٔ سوپابیس) نه خطا می‌دهد نه برمی‌گردد و
+  // Promise.all را برای همیشه نگه می‌دارد. این سقف زمانی، لودر قفل‌کرده را هم
+  // به مقدار پیش‌فرض fail-soft برمی‌گرداند تا کل تیم نمیرد.
+  const LOADER_TIMEOUT_MS = 45_000;
+  const withLoaderTimeout = <T>(promise: Promise<T>, fallback: T): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<T>((resolve) => {
+      timer = setTimeout(() => resolve(fallback), LOADER_TIMEOUT_MS);
+    });
+    return Promise.race([promise, timeout]).finally(() => {
+      if (timer !== undefined) clearTimeout(timer);
+    });
+  };
+  const [intel, gsc, pages, openTasks, existingGuides] = await Promise.all([
+    withLoaderTimeout(loadIntelFeed(), [] as IntelItem[]),
+    withLoaderTimeout(loadGscQueries(), [] as GscRow[]),
+    withLoaderTimeout(loadPageAnalytics(), [] as PageRow[]),
+    withLoaderTimeout(loadOpenTasks(), [] as Array<{ team: string; title: string }>),
+    withLoaderTimeout(loadExistingGuides(), [] as ExistingGuide[]),
   ]);
 
   // سقف اضطراری برداشته شد به دستور مسعود (۱۴۰۵/۰۷/۲۵) تا مشکل حل شود
@@ -559,7 +572,15 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   let skippedDup = 0;
   let skippedInvalid = 0;
   let convertedSemantic = 0;
-  for (const p of planned.slice(0, budget)) {
+  const batch = planned.slice(0, budget);
+  for (let i = 0; i < batch.length; i++) {
+    const p = batch[i];
+    // ضربان زنده در هر تسک: حلقهٔ ثبت با خروجی بزرگ LLM یا دیتابیس کند ممکن
+    // است دقایق طول بکشد؛ بدون ضربان تازه، نگهبان «هنگ» اعلام می‌کند (الگوی
+    // فیکس seo/dev/content). درصد صعودی است تا گزارش ادغام نشود؛ لیبل ثابت
+    // می‌ماند تا سطر ساب‌ایجنت تکثیر نشود.
+    const enqueuePct = 75 + Math.round((24 * (i + 1)) / batch.length);
+    await reportLive?.('ثبت تسک‌ها در صف', enqueuePct);
     const team = String(p.team ?? '').trim();
     let title = String(p.title ?? '').trim();
     let description = String(p.description ?? '').trim();
@@ -622,16 +643,25 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   }
 
   await reportLive?.('پایان کار', 100);
-  const summary =
-    `رهبر ${queued.length} تسک تازه از داده ساخت و در صف ثبت کرد ` +
+  const statsClause =
     `(اینتل: ${intel.length} آیتم، سرچ کنسول: ${gsc.length} کوئری، آنالیتیکس: ${pages.length} صفحه، ` +
-    `نگهداشت محتوا: ${staleGuides.length} صفحه نیازمند آپدیت/بازنویسی).` +
+    `نگهداشت محتوا: ${staleGuides.length} صفحه نیازمند آپدیت/بازنویسی)`;
+  const skippedClause =
     (skippedDup > 0 ? ` ${skippedDup} مورد تکراری رد شد.` : '') +
     (convertedSemantic > 0
       ? ` ${convertedSemantic} تسک content با موضوع تکراری به [آپدیت] راهنمای موجود تبدیل شد.`
       : '') +
-    (skippedInvalid > 0 ? ` ${skippedInvalid} مورد نامعتبر رد شد.` : '') +
-    (blockers.length > 0 ? ` ${blockers.length} خطای ثبت.` : '');
+    (skippedInvalid > 0 ? ` ${skippedInvalid} مورد نامعتبر رد شد.` : '');
+  // وقتی رهبر آگاهانه صفر تسک می‌سازد (داده بود ولی چیز باارزشی برای اجرا
+  // نبود)، خلاصه باید همان عبارت «دادهٔ تازه» را داشته باشد تا استثنای سقف
+  // هوشمند در چک سادهٔ ارکستر (runSimpleCheck) آن را «تصمیم درست» بشناسد و
+  // به اشتباه رد نکند؛ وگرنه دور اصلاح بیهوده اجرا می‌شود.
+  const summary =
+    queued.length === 0 && blockers.length === 0
+      ? `دادهٔ تازه‌ای که ارزش اجرا داشته باشد در این چرخه پیدا نشد؛ رهبر تسکی نساخت. این تصمیم درست است، نه خرابی. ${statsClause}.${skippedClause}`
+      : `رهبر ${queued.length} تسک تازه از داده ساخت و در صف ثبت کرد ${statsClause}.` +
+        skippedClause +
+        (blockers.length > 0 ? ` ${blockers.length} خطای ثبت.` : '');
 
   return {
     team: TEAM,
