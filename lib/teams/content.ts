@@ -664,7 +664,9 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     // ۳. مجری ۲: نگارش متن کامل راهنما (منطق فعلی؛ در دور ۲/۳ دستور منتقد تزریق می‌شود)
     // دستور مستقیم حلقهٔ بیرونی (reviewDirective) بالاترین اولویت را دارد.
     const combinedInstruction = combineReviewDirectives(input.reviewDirective, prevInstruction);
-    await reportLive?.('مجری ۲: نگارش راهنما', 60);
+    // ضربان زنده پیش از نگارش: این LLM call با maxTokens بالا ممکن است
+    // چند دقیقه طول بکشد؛ بدون ضربان تازه، نگهبان «هنگ» اعلام می‌کند.
+    await reportLive?.(`مجری ۲: نگارش راهنما (دور ${round})`, 60);
     const draft = await callLLMJson<GuideDraft>(
       [
         ...(combinedInstruction
@@ -797,6 +799,10 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     round: number,
     verdict: CriticVerdictV2,
   ): Promise<void> => {
+    // ضربان زنده پیش از ثبت دانش: extractCriticKnowledge کار دیتابیس و RAG
+    // انجام می‌دهد و ممکن است دقایق طول بکشد؛ بدون این، نگهبان تیم را
+    // «هنگ» اعلام می‌کند (یافته: تایم‌اوت ۱۵ دقیقه‌ای ورکر تیم content).
+    await reportLive?.(`منتقد: ثبت دانش دور ${round}`, 85);
     const record: CriticRoundRecord = {
       round,
       approved: verdict.approved,
@@ -871,6 +877,8 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   patches.push({ path: GUIDES_PATH, content: newFileContent });
 
   // ثبت آموخته‌ها در حافظه (منطق فعلی، غنی‌شده با تاریخچه دورهای حلقه)
+  // ضربان زنده پیش از نوشتن حافظه: عملیات دیتابیس ممکن است طول بکشد.
+  await reportLive?.('ثبت آموخته‌ها در حافظه', 95);
   await writeMemory({
     team: TEAM,
     key: `learned:${input.runId}`,
