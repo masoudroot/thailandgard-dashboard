@@ -18,6 +18,10 @@
  *
  * قانون همیشگی تیم: هیچ عددی بدون سند نوشته نمی‌شود؛ فقط واقعیت، بدون حدس.
  * قانون مسعود: خط تیرهٔ بلند (U+2014) مطلقاً ممنوع.
+ * قانون مسعود: لحن کلیشه‌ای مطلقاً ممنوع؛ هر جمله با محک «مردم واقعاً این‌طور حرف می‌زنند؟»
+ *   سنجیده می‌شود؛ اصطلاح من‌درآوردی ممنوع (قرارداد فارسی‌نویسی:
+ *   ~/workspace/custom-skills/local-persian-natural-writing/CONTRACT.md).
+ * قانون املا: هجی درست «خائو سوک» است؛ هرگز «کائو سوک» ننویس.
  */
 
 import { callLLMJson } from '../llm';
@@ -221,7 +225,18 @@ function replaceGuide(fileContent: string, slug: string, newGuideTs: string): st
     throw new Error(`بلوک راهنمای «${slug}» در فایل پیدا نشد؛ جایگزینی ممکن نیست.`);
   }
   const idx = fileContent.indexOf(oldBlock);
-  return fileContent.slice(0, idx) + newGuideTs.trim() + fileContent.slice(idx + oldBlock.length);
+  // بلوک استخراج‌شده با «\n  {» شروع می‌شود؛ بلوک تازه باید دقیقاً همان پیشوند
+  // (newline + تورفتگی) را بگیرد. trim روی ابتدای رشته تورفتگی را می‌ریخت و «{»
+  // به انتهای بلوک قبلی می‌چسبید؛ آن‌وقت lastIndexOf «\n  {» در استخراج بعدی
+  // این بلوک را رد می‌کرد و بلوک راهنمای قبلی (اشتباه) جایگزین می‌شد.
+  const braceIdx = oldBlock.indexOf('{');
+  const prefix = braceIdx > 0 ? oldBlock.slice(0, braceIdx) : '';
+  return (
+    fileContent.slice(0, idx) +
+    prefix +
+    newGuideTs.trim() +
+    fileContent.slice(idx + oldBlock.length)
+  );
 }
 
 const SYSTEM_SUPERVISOR = 'تو سرپرست تیم content تایلندگرد هستی.';
@@ -253,11 +268,20 @@ function todayFa(): string {
 }
 
 /**
+ * اصلاح قطعی غلط‌های املایی شناخته‌شده، مستقل از رفتار LLM.
+ * در آخرین گیت پیش از ساخت پچ اعمال می‌شود.
+ * (فهرست فقط با دستور صریح مسعود تغییر می‌کند.)
+ */
+function fixKnownTypos(s: string): string {
+  return s.replace(/کائو سوک/g, 'خائو سوک');
+}
+
+/**
  * ساخت آبجکت TypeScript راهنما با سبک فایل guides.ts.
  * همهٔ رشته‌ها sanitize و escape می‌شوند.
  */
 function buildGuideTs(pick: SupervisorPick, draft: GuideDraft): string {
-  const q = (s: string) => `"${escapeTsString(sanitizePersian(s))}"`;
+  const q = (s: string) => `"${escapeTsString(sanitizePersian(fixKnownTypos(s)))}"`;
   const lines: string[] = [];
   lines.push('  {');
   lines.push(`    slug: ${q(pick.slug)},`);
@@ -313,18 +337,22 @@ function insertGuide(fileContent: string, guideTs: string): string {
   );
 }
 
-/** اعتبارسنجی اولیهٔ پیش‌نویس. */
+/** اعتبارسنجی اولیهٔ پیش‌نویس؛ دقیقاً مطابق آنچه پرامپت‌ها می‌خواهند. */
 function validateDraft(draft: GuideDraft): string | null {
+  if (!draft || typeof draft !== 'object') return 'پیش‌نویس خالی یا نامعتبر است.';
   if (!draft.title || draft.title.trim().length < 5) return 'تیتر راهنما کوتاه یا خالی است.';
   if (!draft.excerpt || draft.excerpt.trim().length < 20) return 'چکیده خالی یا خیلی کوتاه است.';
   if (!Array.isArray(draft.sections) || draft.sections.length < 3)
     return 'راهنما حداقل ۳ بخش می‌خواهد.';
   for (const s of draft.sections) {
-    if (!s.heading || !Array.isArray(s.paragraphs) || s.paragraphs.length === 0)
-      return 'یک بخش بدون تیتر یا بدون پاراگراف است.';
+    if (!s.heading || !Array.isArray(s.paragraphs) || s.paragraphs.length < 2)
+      return 'هر بخش حداقل ۲ پاراگراف می‌خواهد.';
+    for (const p of s.paragraphs) {
+      if (!p || p.trim().length < 20) return 'یک پاراگراف خالی یا خیلی کوتاه است.';
+    }
   }
-  if (!Array.isArray(draft.faqs) || draft.faqs.length < 2)
-    return 'راهنما حداقل ۲ سؤال متداول می‌خواهد.';
+  if (!Array.isArray(draft.faqs) || draft.faqs.length < 3)
+    return 'راهنما حداقل ۳ سؤال متداول می‌خواهد.';
   return null;
 }
 
@@ -337,7 +365,8 @@ function criticInstructionFromReason(reason: string): string {
   return [
     `متن را بر اساس این نقد اصلاح کن: «${r}»`,
     'بخش‌های ضعیف را بازنویسی کن؛ هر عدد یا ادعای بدون سند را حذف کن؛',
-    'لحن را طبیعی، انسانی و کاربردی برای مسافر واقعی نگه دار؛',
+    'لحن را طبیعی، انسانی و کاربردی برای مسافر واقعی نگه دار؛ لحن کلیشه‌ای و اصطلاح من‌درآوردی ممنوع؛',
+    'هجی درست «خائو سوک» است؛ هرگز «کائو سوک» ننویس؛',
     'در پایان دوباره کنترل کن هیچ کاراکتر U+2014 و هیچ عدد بی‌سندی در متن نباشد.',
   ].join(' ');
 }
@@ -347,7 +376,7 @@ function criticInstructionFromReason(reason: string): string {
  */
 function criticAcceptanceFromReason(reason: string): string {
   const r = reason.trim() || 'متن ایراد دارد';
-  return `وقتی درست است که نقد «${r}» دیگر دربارهٔ متن صدق نکند و هر چهار معیار داوری (فارسی طبیعی، بدون U+2014، اعداد سنددار، کاربردی بودن) رعایت شده باشند.`;
+  return `وقتی درست است که نقد «${r}» دیگر دربارهٔ متن صدق نکند و هر پنج معیار داوری (فارسی طبیعی بدون کلیشه، بدون U+2014، اعداد سنددار، کاربردی بودن، هجی درست «خائو سوک») رعایت شده باشند.`;
 }
 
 /* ==========================================================================
@@ -417,6 +446,8 @@ async function runRefreshFlow(
         '',
         'قواعد همیشگی:',
         '- رجیستر «شما»؛ لحن گرم و انسانی',
+        '- لحن کلیشه‌ای مطلقاً ممنوع؛ اصطلاح من‌درآوردی نساز',
+        '- هجی درست «خائو سوک» است؛ هرگز «کائو سوک» ننویس',
         '- ۳ تا ۵ بخش، هر بخش ۲ تا ۳ پاراگراف کوتاه و کاربردی',
         '- ۳ تا ۴ سؤال متداول با جواب مستقیم',
         '- هیچ عددی بدون سند؛ کاراکتر U+2014 مطلقاً ممنوع',
@@ -476,7 +507,7 @@ async function runRefreshFlow(
         `${kindFa} راهنمای «${currentTitle}»:`,
         draftText,
         '',
-        'داوری کن. معیارها: فارسی طبیعی، بدون U+2014، اعداد سنددار، کاربردی بودن.',
+        'داوری کن. معیارها: فارسی طبیعی و بدون کلیشه (اگر کلیشه‌ای است رد کن)، بدون U+2014، اعداد سنددار، کاربردی بودن، هجی درست «خائو سوک» (نه «کائو سوک»).',
         isUpdate
           ? 'برای آپدیت: آیا اطلاعات تازه اضافه و کهنه حذف شده؟'
           : 'برای بازنویسی: آیا ساختار واقعاً تازه است؟',
@@ -519,19 +550,25 @@ async function runRefreshFlow(
 
   patches.push({ path: GUIDES_PATH, content: newFileContent });
 
-  // ثبت در حافظه
-  await writeMemory({
-    team: TEAM,
-    key: `learned:${input.runId}`,
-    value: JSON.stringify({
-      kind: task.kind,
-      slug: task.slug,
-      title: cleanDraft.title,
-      reason: task.reason,
-      sectionsCount: cleanDraft.sections.length,
-      faqsCount: cleanDraft.faqs.length,
-    }),
-  });
+  // ثبت در حافظه (fail-soft: خطای دیتابیس نباید پچ آماده را بسوزاند)
+  await reportLive?.('ثبت در حافظه', 95);
+  try {
+    await writeMemory({
+      team: TEAM,
+      key: `learned:${input.runId}`,
+      value: JSON.stringify({
+        kind: task.kind,
+        slug: task.slug,
+        title: cleanDraft.title,
+        reason: task.reason,
+        sectionsCount: cleanDraft.sections.length,
+        faqsCount: cleanDraft.faqs.length,
+      }),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    blockers.push(`ثبت حافظه ناموفق بود (پچ حفظ شد): ${msg}`);
+  }
 
   const summary =
     `${kindFa} راهنمای «${cleanDraft.title}» (اسلاگ: ${task.slug}) انجام شد؛ ` +
@@ -550,6 +587,8 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const patches: PatchFile[] = [];
 
   let knowledgeSection = '';
+  // ضربان زنده پیش از فراخوانی RAG/دیتابیس؛ بدون آن، نگهبان «هنگ» اعلام می‌کند.
+  await reportLive?.('بازیابی دانش تیم', 2);
   try {
     knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
   } catch {
@@ -623,6 +662,10 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         ].join('\n'),
         { system: SYSTEM_SUPERVISOR },
       );
+      // گارد خروجی LLM: در ران‌تایم ممکن است null/غیرشیء برگردد (تایپ Promise<T> تضمین نمی‌کند)
+      if (!pick || typeof pick !== 'object') {
+        throw new Error('سرپرست خروجی معتبر برنگرداند؛ انتخاب موضوع ناموفق بود.');
+      }
       const slug = String(pick.slug || '')
         .trim()
         .toLowerCase()
@@ -647,6 +690,9 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         ].join('\n'),
         { system: SYSTEM_WORKER },
       );
+      if (!facts || typeof facts !== 'object') {
+        throw new Error('مجری ۱ خروجی معتبر برنگرداند؛ استخراج واقعیت‌ها ناموفق بود.');
+      }
 
       cachedPick = pick;
       cachedFacts = facts.facts || '';
@@ -682,6 +728,10 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         '',
         'یک راهنمای کامل فارسی بنویس با این مشخصات:',
         '- رجیستر «شما»؛ لحن گرم و انسانی، مثل راهنمای باتجربه نه مقالهٔ ماشینی',
+        '- لحن کلیشه‌ای مطلقاً ممنوع (جمله‌های قالبی و توخالی ننویس)',
+        '- هر جمله را با این محک بسنج: «مردم واقعاً این‌طور حرف می‌زنند؟»؛ اگر نه، از نو بساز',
+        '- اصطلاح من‌درآوردی نساز؛ از واژه‌هایی استفاده کن که مسافران واقعاً می‌گویند',
+        '- هجی درست «خائو سوک» است؛ هرگز «کائو سوک» ننویس',
         '- ۳ تا ۵ بخش، هر بخش ۲ تا ۳ پاراگراف کوتاه و کاربردی',
         '- ۳ تا ۴ سؤال متداول با جواب مستقیم و کوتاه',
         '- چکیده (excerpt) حداکثر ۲ جمله، ترغیب‌کننده',
@@ -746,10 +796,11 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         draftText,
         '',
         'داوری کن. معیارها:',
-        '۱. فارسی طبیعی و انسانی است یا ماشینی و کلیشه‌ای؟',
+        '۱. فارسی طبیعی و انسانی است یا ماشینی و کلیشه‌ای؟ (اگر کلیشه‌ای است، رد کن)',
         '۲. کاراکتر U+2014 دارد؟ (اگر دارد، رد کن)',
         '۳. هر عدد سند دارد یا حدسی است؟',
         '۴. برای مسافر واقعی کاربردی است یا حرف کلی می‌زند؟',
+        '۵. هجی «کائو سوک» غلط است (درستش «خائو سوک» است)؛ اگر دیدی رد کن',
         'فقط JSON معتبر بده: {"approved": true/false, "score": ۰ تا ۱۰۰, "reason": "یک جمله"}',
         CRITIC_SCORE_PROMPT_LINE,
         'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
@@ -878,24 +929,30 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   // ثبت آموخته‌ها در حافظه (منطق فعلی، غنی‌شده با تاریخچه دورهای حلقه)
   // ضربان زنده پیش از نوشتن حافظه: عملیات دیتابیس ممکن است طول بکشد.
+  // fail-soft: خطای دیتابیس نباید پچ آماده را بسوزاند.
   await reportLive?.('ثبت آموخته‌ها در حافظه', 95);
-  await writeMemory({
-    team: TEAM,
-    key: `learned:${input.runId}`,
-    value: JSON.stringify({
-      slug,
-      title: cleanDraft.title,
-      approved: loopResult.approved,
-      finalRound: loopResult.finalRound,
-      rounds: loopResult.verdicts.map((v, i) => ({
-        round: i + 1,
-        approved: v.approved,
-        reason: v.reason || v.finalOpinion || '',
-      })),
-      sectionsCount: cleanDraft.sections.length,
-      faqsCount: cleanDraft.faqs.length,
-    }),
-  });
+  try {
+    await writeMemory({
+      team: TEAM,
+      key: `learned:${input.runId}`,
+      value: JSON.stringify({
+        slug,
+        title: cleanDraft.title,
+        approved: loopResult.approved,
+        finalRound: loopResult.finalRound,
+        rounds: loopResult.verdicts.map((v, i) => ({
+          round: i + 1,
+          approved: v.approved,
+          reason: v.reason || v.finalOpinion || '',
+        })),
+        sectionsCount: cleanDraft.sections.length,
+        faqsCount: cleanDraft.faqs.length,
+      }),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    blockers.push(`ثبت حافظه ناموفق بود (پچ حفظ شد): ${msg}`);
+  }
 
   const tasks: QueuedTask[] = [];
   const hadRejection = loopResult.verdicts.some((v) => !v.approved);
