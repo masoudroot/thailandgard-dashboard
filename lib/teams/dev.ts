@@ -25,6 +25,7 @@ import {
   runCriticLoop,
   combineReviewDirectives,
   parseCriticScore,
+  retryInCycle,
   CRITIC_SCORE_PROMPT_LINE,
   type CriticLoopResult,
   type CriticVerdictV2,
@@ -272,6 +273,8 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
     plan: SupervisorPlan,
     prevInstruction?: string,
   ): Promise<WorkerPatch[]> => {
+    // ضربان زنده پیش از شروع مجری‌های موازی (یافته: هنگ ۱۰ دقیقه‌ای بدون پیشرفت)
+    await reportLive?.(`مجری‌ها: نوشتن ${plan.tasks.length} فایل`, 55);
     const patches = await Promise.all(
       plan.tasks.map(async (task) => {
         const current = cachedContents.get(task.path);
@@ -289,7 +292,10 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
           '- حداکثر ۲۰ کیلوبایت برای هر فایل؛ فایل بزرگ‌تر حذف می‌شود، پس کد را جمع‌وجور و کامل بنویس.\n' +
           '- کد باید کامل و قابل اجرا باشد؛ تکه‌کد ناقص یا placeholder مثل // ... ممنوع.\n' +
           '- برای رابط فارسی: فقط logical CSS (ms- me- ps- pe- start- end-)، هرگز ml- pl- text-left.\n' +
-          '- ایمپورت‌ها دقیق و نسبی باشند؛ هیچ‌چیز حدسی ایمپورت نکن.';
+          '- ایمپورت‌ها دقیق و نسبی باشند؛ هیچ‌چیز حدسی ایمپورت نکن. قبل از ایمپورت، مطمئن شو آن ماژول/کامپوننت واقعاً وجود دارد.\n' +
+          '- روت‌های API (POST/PUT/PATCH): حتماً request.json() را در try/catch بگذار؛ ورودی را اعتبارسنجی کن (فیلدهای لازم، نوع داده)؛ خطاها را با status مناسب برگردان (۴۰۰ برای ورودی نامعتبر، ۵۰۰ برای خطای سرور).\n' +
+          '- هیچ‌وقت await بدون try/catch برای عملیات نامطمئن (fetch، دیتابیس، فایل) ننویس.\n' +
+          '- ساختار کد تمیز: هر تابع یک کار؛ نام‌های معنادار؛ بدون کد مرده یا کامنتِ به‌جای کد.';
         const raw = await callLLM(workerPrompt, {
           system: WORKER_SYSTEM,
           temperature: 0.4,
@@ -320,13 +326,26 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
         'قواعد: حداکثر ۳ فایل؛ مسیرها نسبی و دقیق؛ هرگز فایل .env یا package-lock را انتخاب نکن؛ ' +
         'instruction باید آن‌قدر دقیق باشد که مجری بدون سؤال کد را بنویسد.';
       await reportLive?.('سرپرست: انتخاب فایل‌ها و هدف', 15);
-      const supervisorRaw = await callLLM(supervisorPrompt, {
-        system: SUPERVISOR_SYSTEM,
-        temperature: 0.3,
-      });
-      const plan = normalizePlan(supervisorRaw);
+      // تلاش مجدد در همین چرخه اگر سرپرست JSON معتبر برنگرداند (یافته: ۱۱ رد
+      // در ۲۴ ساعت با خطای «سرپرست پلن معتبر برنگرداند»). دستور مسعود: هیچ‌کاری
+      // به چرخهٔ بعد موکول نمی‌شود.
+      const plan = await retryInCycle(
+        async () => {
+          const supervisorRaw = await callLLM(supervisorPrompt, {
+            system: SUPERVISOR_SYSTEM,
+            temperature: 0.3,
+          });
+          return normalizePlan(supervisorRaw);
+        },
+        (p): p is SupervisorPlan => p !== null,
+        {
+          maxAttempts: 3,
+          label: 'پلن سرپرست',
+          onProgress: (msg) => reportLive?.(msg, 15),
+        },
+      );
       if (!plan) {
-        throw new Error('سرپرست پلن معتبر برنگرداند؛ این چرخه پچی تولید نشد.');
+        throw new Error('سرپرست پس از ۳ تلاش پلن معتبر برنگرداند؛ این چرخه پچی تولید نشد.');
       }
       cachedPlan = plan;
 
