@@ -4,11 +4,11 @@
  * رهبر، بک‌لاگ را از داده می‌سازد، تخصیص می‌دهد، چک ساده می‌کند و یادگیری
  * را مدیریت می‌کند. در هر چرخه:
  *
- *   ورودی: intel_feed (تازه‌ترین‌ها)، gsc_queries، page_analytics
- *   خروجی: سقف هوشمند؛ فقط وقتی دادهٔ تازه و واقعی است، تسک تازه برای
+ *   ورودی: intel_feed (۷ روز اخیر)، gsc_queries (۷ روز اخیر، تجمیع‌شده بر اساس
+ *           کوئری)، page_analytics (۷ روز اخیر، تجمیع‌شده بر اساس مسیر صفحه)
+ *   خروجی: سقف هوشمند: فقط وقتی دادهٔ تازه و واقعی است، تسک تازه برای
  *           ۴ تیم سازنده (content، seo، design، dev) ساخته می‌شود؛ صفر تسک
- *           هم اگر دادهٔ تازه‌ای نیست، تصمیم درست است. سقف اضطراری ۲۰ تسک
- *           در روز به دستور مسعود (۱۴۰۵/۰۷/۲۵) برداشته شد و برنمی‌گردد.
+ *           هم اگر دادهٔ تازه‌ای نیست، تصمیم درست است.
  *
  * هر تسک: عنوان، توضیح مشخص، معیار قبولی (acceptance)، برآورد تلاش
  * (estimate: ۱=کم‌ریسک، ۲=متوسط، ۳=سنگین).
@@ -24,7 +24,7 @@
  * وقتی تسک می‌سازد که دادهٔ تازه و واقعی در فیدرها باشد، تکراری نباشد، و
  * واقعاً ارزش اجرا داشته باشد. (سقف اضطراری ۲۰ تسک/روز که قبلاً برای
  * جلوگیری از انفجار در صورت باگ بود، به دستور مسعود در ۱۴۰۵/۰۷/۲۵
- * برداشته شد.)
+ * برداشته شد و برنمی‌گردد؛ بودجه نامحدود ولی فقط برای دادهٔ واقعی.)
  *
  * قانون همیشگی: هیچ دادهٔ نمایشی؛ اگر فیدر داده‌ای خالی بود، رهبر از
  * همان دادهٔ موجود کار می‌کند و صادقانه گزارش می‌دهد.
@@ -103,12 +103,14 @@ interface PlannedTask {
   files_hint: string;
 }
 
-/** خواندن تازه‌ترین آیتم‌های اینتل (fail-soft). */
+/** خواندن آیتم‌های اینتلِ ۷ روز اخیر، تازه‌ترین اول (fail-soft). */
 async function loadIntelFeed(limit = 20): Promise<IntelItem[]> {
   try {
+    const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
     const { data, error } = await getSupabase()
       .from('intel_feed')
       .select('title, summary, source_name, blog_angle, created_at')
+      .gte('created_at', since)
       .order('created_at', { ascending: false })
       .limit(limit);
     if (error) return [];
@@ -117,6 +119,16 @@ async function loadIntelFeed(limit = 20): Promise<IntelItem[]> {
     return [];
   }
 }
+
+/**
+ * خواندن کوئری‌های ۷ روز اخیر سرچ کنسول، تجمیع‌شده بر اساس کوئری (fail-soft).
+ *
+ * جدول gsc_queries ردیف روزانه دارد (UNIQUE(query, date))؛ پس ردیف‌ها اول
+ * در حافظه تجمیع می‌شوند وگرنه یک کوئری تا ۷ بار تکرار می‌شد و آستانه‌های
+ * نگهداشت روی عدد روزانهٔ اشتباه اعمال می‌شد. CTR از نو حساب می‌شود و
+ * پوزیشن میانگین وزنی با ایمپرشن است.
+ * ردیف‌های دیتابیس با safeNum ضدّتهی‌سازی می‌شوند تا null سر جایشان ننشیند.
+ */
 
 /** عدد امن از دیتابیس: هر چه غیرعددی بود، صفر. */
 function safeNum(v: unknown): number {
@@ -127,35 +139,55 @@ function safeNum(v: unknown): number {
 function safeNumOrNull(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
-
-/** خواندن کوئری‌های ۷ روز اخیر سرچ کنسول، مرتب بر اساس ایمپرشن (fail-soft).
- * ردیف‌های دیتابیس ضدّتهی‌سازی می‌شوند تا null سر جایشان ننشیند. */
 async function loadGscQueries(limit = 30): Promise<GscRow[]> {
   try {
     const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
     const { data, error } = await getSupabase()
       .from('gsc_queries')
-      .select('query, clicks, impressions, ctr, avg_position')
+      .select('query, clicks, impressions, avg_position')
       .gte('date', since)
-      .order('impressions', { ascending: false })
-      .limit(limit);
+      .order('date', { ascending: false }) // اگر برش ۵۰۰۰ ردیف فعال شد، تازه‌ترین روزها بمانند
+      .limit(5000);
     if (error) return [];
-    return ((data ?? []) as Array<Record<string, unknown>>)
-      .map((r) => ({
-        query: String(r.query ?? '').trim(),
-        clicks: safeNum(r.clicks),
-        impressions: safeNum(r.impressions),
-        ctr: safeNumOrNull(r.ctr),
-        avg_position: safeNumOrNull(r.avg_position),
+    const byQuery = new Map<
+      string,
+      { clicks: number; impressions: number; posW: number; posImp: number }
+    >();
+    for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+      const q = String(r.query ?? '').trim();
+      if (!q) continue;
+      const imp = safeNum(r.impressions);
+      const agg = byQuery.get(q) ?? { clicks: 0, impressions: 0, posW: 0, posImp: 0 };
+      agg.clicks += safeNum(r.clicks);
+      agg.impressions += imp;
+      const pos = safeNumOrNull(r.avg_position);
+      if (pos != null && imp > 0) {
+        agg.posW += pos * imp;
+        agg.posImp += imp;
+      }
+      byQuery.set(q, agg);
+    }
+    return [...byQuery.entries()]
+      .map(([query, a]) => ({
+        query,
+        clicks: a.clicks,
+        impressions: a.impressions,
+        ctr: a.impressions > 0 ? a.clicks / a.impressions : null,
+        avg_position: a.posImp > 0 ? a.posW / a.posImp : null,
       }))
-      .filter((r) => r.query.length > 0);
+      .sort((x, y) => y.impressions - x.impressions)
+      .slice(0, limit);
   } catch {
     return [];
   }
 }
 
-/** خواندن آنالیتیکس ۷ روز اخیر صفحات (fail-soft).
- * ردیف‌های دیتابیس ضدّتهی‌سازی می‌شوند تا null سر جایشان ننشیند. */
+/**
+ * خواندن آنالیتیکس ۷ روز اخیر صفحات، تجمیع‌شده بر اساس مسیر صفحه (fail-soft).
+ *
+ * مثل gsc_queries، جدول page_analytics هم ردیف روزانه دارد؛ آستانه‌های
+ * نگهداشت (ایمپرشن ۱۰۰+/۵۰۰+) روی جمع ۷ روزه معنا دارند نه روی ردیف روزانه.
+ */
 async function loadPageAnalytics(limit = 30): Promise<PageRow[]> {
   try {
     const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
@@ -163,18 +195,38 @@ async function loadPageAnalytics(limit = 30): Promise<PageRow[]> {
       .from('page_analytics')
       .select('page_path, views, clicks, impressions, avg_position')
       .gte('date', since)
-      .order('impressions', { ascending: false })
-      .limit(limit);
+      .order('date', { ascending: false }) // اگر برش ۵۰۰۰ ردیف فعال شد، تازه‌ترین روزها بمانند
+      .limit(5000);
     if (error) return [];
-    return ((data ?? []) as Array<Record<string, unknown>>)
-      .map((r) => ({
-        page_path: String(r.page_path ?? '').trim(),
-        views: safeNum(r.views),
-        clicks: safeNum(r.clicks),
-        impressions: safeNum(r.impressions),
-        avg_position: safeNumOrNull(r.avg_position),
+    const byPath = new Map<
+      string,
+      { views: number; clicks: number; impressions: number; posW: number; posImp: number }
+    >();
+    for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+      const p = String(r.page_path ?? '').trim();
+      if (!p) continue;
+      const imp = safeNum(r.impressions);
+      const agg = byPath.get(p) ?? { views: 0, clicks: 0, impressions: 0, posW: 0, posImp: 0 };
+      agg.views += safeNum(r.views);
+      agg.clicks += safeNum(r.clicks);
+      agg.impressions += imp;
+      const pos = safeNumOrNull(r.avg_position);
+      if (pos != null && imp > 0) {
+        agg.posW += pos * imp;
+        agg.posImp += imp;
+      }
+      byPath.set(p, agg);
+    }
+    return [...byPath.entries()]
+      .map(([page_path, a]) => ({
+        page_path,
+        views: a.views,
+        clicks: a.clicks,
+        impressions: a.impressions,
+        avg_position: a.posImp > 0 ? a.posW / a.posImp : null,
       }))
-      .filter((r) => r.page_path.length > 0);
+      .sort((x, y) => y.impressions - x.impressions)
+      .slice(0, limit);
   } catch {
     return [];
   }
@@ -198,9 +250,25 @@ async function loadOpenTasks(): Promise<Array<{ team: string; title: string }>> 
   }
 }
 
-/** نرمال‌سازی عنوان برای مقایسهٔ ضدتکراری. */
+/**
+ * نرمال‌سازی عنوان برای مقایسهٔ ضدتکراری (فارسی‌آگاه).
+ *
+ * نیم‌فاصله، ی/ک عربی، ارقام فارسی و نقطه‌گذاری یکدست می‌شوند تا «می‌شود»
+ * با «می شود»، «۱۴۰۵» با «1405» و «راهنما!» با «راهنما» یکسان دیده شوند.
+ */
 function normalizeTitle(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, ' ');
+  return s
+    .replace(/[‌‍]/g, ' ')
+    .replace(/[ي]/g, 'ی')
+    .replace(/[ك]/g, 'ک')
+    .replace(/[ة]/g, 'ه')
+    .replace(/[ً-ْٰ]/g, '') // اعراب (حرکت‌گذاری)
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[«»"'`]/g, ' ')
+    .replace(/[؟?!:؛،.\-–…/٪٫ـ•()[\]{}]/g, ' ')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /** آیا این تسک، موضوعش با یکی از تسک‌های باز همان تیم هم‌پوشانی دارد؟ */
@@ -236,16 +304,44 @@ const GUIDES_PATH = 'site/lib/guides.ts';
 /**
  * خواندن راهنماهای موجود از ریپوی سایت (fail-soft؛ اگر گیت‌هاب متصل نبود،
  * ضدتکراری معنایی بی‌صدا غیرفعال می‌شود).
+ *
+ * اسلاگ و تیتر ممکن است در آبجکت به هر ترتیبی باشند و فیلدهای طولانی
+ * (مثل description) بینشان فاصله بیندازد؛ پس بر اساس نزدیکی موقعیت در
+ * متن جفت می‌شوند، نه با فاصلهٔ ثابت روبه‌جلو. کوتیشن تکی هم پشتیبانی می‌شود.
  */
 async function loadExistingGuides(): Promise<ExistingGuide[]> {
   try {
     const content = await readSiteFile(GUIDES_PATH);
     if (!content) return [];
+    const slugs: Array<{ slug: string; index: number }> = [];
+    const titles: Array<{ title: string; index: number }> = [];
+    for (const m of content.matchAll(/\bslug\s*:\s*["']([a-z0-9-]+)["']/g)) {
+      slugs.push({ slug: m[1], index: m.index ?? 0 });
+    }
+    for (const m of content.matchAll(/\btitle\s*:\s*["']([^"']+)["']/g)) {
+      titles.push({ title: m[1], index: m.index ?? 0 });
+    }
+    const usedTitle = new Set<number>();
+    const seenSlug = new Set<string>();
     const out: ExistingGuide[] = [];
-    const re = /slug:\s*"([a-z0-9-]+)"[\s\S]{0,400}?title:\s*"([^"]+)"/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(content)) !== null) {
-      out.push({ slug: m[1], title: m[2] });
+    const MAX_GAP = 2000; // حداکثر فاصلهٔ قابل‌قبول اسلاگ تا تیتر همسایه
+    for (const s of slugs) {
+      if (seenSlug.has(s.slug)) continue;
+      let best = -1;
+      let bestDist = MAX_GAP;
+      titles.forEach((t, i) => {
+        if (usedTitle.has(i)) return;
+        const dist = Math.abs(t.index - s.index);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = i;
+        }
+      });
+      if (best >= 0) {
+        usedTitle.add(best);
+        seenSlug.add(s.slug);
+        out.push({ slug: s.slug, title: titles[best].title });
+      }
     }
     return out;
   } catch {
@@ -272,9 +368,12 @@ const TOPIC_STOPWORDS = new Set([
 function normalizeTopicText(s: string): string {
   return s
     .replace(/[‌‍]/g, ' ')
+    .replace(/[ي]/g, 'ی') // ی عربی ← ی فارسی
+    .replace(/[ك]/g, 'ک') // ک عربی ← ک فارسی
+    .replace(/[ً-ْٰ]/g, '') // اعراب (حرکت‌گذاری)
     .replace(/[«»"'`]/g, ' ')
-    .replace(/[؟?!:؛،.\-–—()[\]{}]/g, ' ')
-    .replace(/\d+/g, ' ')
+    .replace(/[؟?!:؛،.\-–()[\]{}]/g, ' ')
+    .replace(/[\d۰-۹]+/g, ' ') // حذف عددها (لاتین و فارسی؛ عدد موضوع نیست)
     .toLowerCase();
 }
 
@@ -285,6 +384,7 @@ function extractTopicKeywords(s: string): Set<string> {
     if (w.length < 3 || TOPIC_STOPWORDS.has(w)) continue;
     const stemmed = w
       .replace(/(های|هایی|هایم|هایتان|هاشان)$/, '')
+      .replace(/ها$/, '') // جمع چسبیده: «ویزاها» ← «ویزا»
       .replace(/(ترین|تر)$/, '');
     if (stemmed.length >= 3 && !TOPIC_STOPWORDS.has(stemmed)) out.add(stemmed);
   }
@@ -353,7 +453,7 @@ function convertToUpdateTask(p: PlannedTask, guide: ExistingGuide): PlannedTask 
     description:
       `اسلاگ: ${guide.slug}\n` +
       `دلیل: موضوع تسک پیشنهادی («${p.title}») با راهنمای موجود «${guide.title}» هم‌پوشانی معنایی دارد؛ به‌جای ساخت محتوای تازه، همان موجود به‌روز می‌شود.\n` +
-      `کار: اطلاعات تازه و مفید دربارهٔ «${p.title}» اضافه شود؛ اطلاعات غلط/قدیمی حذف؛ حداقل ۲ لینک داخلی تازه؛ تاریخ به‌روزرسانی عوض شود\n` +
+      `کار: اطلاعات تازه و مفید دربارهٔ «${p.title}» اضافه شود؛ اطلاعات غلط/قدیمی حذف؛ حداقل ۲ لینک داخلی تازه؛ تاریخ به‌روزرسانی عوض شود؛ نشانی (URL) صفحه عوض نشود\n` +
       `زاویهٔ پیشنهادی اولیه: ${p.description.slice(0, 400)}`,
     files_hint: GUIDES_PATH,
   };
@@ -366,6 +466,8 @@ function summarizeIntel(items: IntelItem[]): string {
     .map(
       (it, i) =>
         `${i + 1}. ${it.title ?? '(بدون تیتر)'}` +
+        (it.created_at ? ` (${it.created_at.slice(0, 10)})` : '') +
+        (it.source_name ? ` [منبع: ${it.source_name.slice(0, 40)}]` : '') +
         (it.summary ? ` | ${it.summary.slice(0, 160)}` : '') +
         (it.blog_angle ? ` [زاویه: ${it.blog_angle.slice(0, 80)}]` : ''),
     )
@@ -379,6 +481,7 @@ function summarizeGsc(rows: GscRow[]): string {
     .map(
       (r, i) =>
         `${i + 1}. «${r.query}» | ایمپرشن ${r.impressions}، کلیک ${r.clicks}، ` +
+        `CTR ${r.ctr != null ? `${(r.ctr * 100).toFixed(1)}٪` : '؟'}، ` +
         `پوزیشن ${r.avg_position != null ? r.avg_position.toFixed(1) : '؟'}`,
     )
     .join('\n');
@@ -388,11 +491,14 @@ function summarizePages(rows: PageRow[]): string {
   if (rows.length === 0) return '(دادهٔ آنالیتیکس صفحات در ۷ روز اخیر نیست)';
   return rows
     .slice(0, 20)
-    .map(
-      (r, i) =>
-        `${i + 1}. ${r.page_path} | بازدید ${r.views}، ایمپرشن ${r.impressions}، ` +
-        `پوزیشن ${r.avg_position != null ? r.avg_position.toFixed(1) : '؟'}`,
-    )
+    .map((r, i) => {
+      const ctr = r.impressions > 0 ? `${((r.clicks / r.impressions) * 100).toFixed(1)}٪` : '؟';
+      return (
+        `${i + 1}. ${r.page_path} | بازدید ${r.views}، کلیک ${r.clicks}، ` +
+        `ایمپرشن ${r.impressions}، CTR ${ctr}، ` +
+        `پوزیشن ${r.avg_position != null ? r.avg_position.toFixed(1) : '؟'}`
+      );
+    })
     .join('\n');
 }
 

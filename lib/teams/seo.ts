@@ -8,12 +8,14 @@
  * لایهٔ پل (lib/bridge) پچ را روی شاخهٔ ai-bridge کامیت و PR می‌سازد.
  *
  * خط لوله:
- *   ۱. خواندن اسلاگ‌های راهنماها و h1های موجود از ریپوی سایت
+ *   ۰. تحویل تسک صف ساخت از ragContext (اسلاگ‌های اجباری؛ بازتولید حتی
+ *      اگر متای کهنه داشته باشند؛ پیش از هر تصمیم «کاری نیست»)
+ *   ۱. خواندن اسلاگ‌های راهنماها، تورها و دسته‌بندی‌ها و h1های موجود از ریپوی سایت
  *   ۲. حلقه نقد ۳ دوره‌ای (lib/critic-loop.ts):
  *      دور ۱: سرپرست (انتخاب ۱ تا ۳ اسلاگ اولویت‌دار) ← مجری (h1+متا)
  *      دور ۲: منتقد داوری می‌کند؛ رد ← دستور دقیق ← مجری همان اسلاگ‌ها را اصلاح می‌کند
  *      دور ۳: فقط نظارت و نظر نهایی (حق رد ندارد)
- *   ۳. کدژن قطعی: درج در H1_OVERRIDES و META_OVERRIDES
+ *   ۳. کدژن قطعی: درج در H1_OVERRIDES و META_OVERRIDES (بازنویسی برای اجباری‌ها)
  */
 
 import type {
@@ -59,6 +61,16 @@ export interface SeoTeamInput {
   /** دانش بازیابی‌شده از RAG (اختیاری) */
   knowledge?: string;
   /**
+   * زمینهٔ کامل ارکستر (یافتهٔ ممیزی یکپارچگی: این فیلد پیش‌تر در ورودی
+   * سئو نبود و تسک claimشده از صف ساخت بی‌صدا گم می‌شد؛ ارکستر آن را
+   * «موفق» می‌بست در حالی که کاری انجام نشده بود).
+   * ارکستر تسک claimشده را با قالب «کار تحویل‌شده از صف ساخت» و تسک‌های
+   * تأییدشده را با «کارهای تأییدشدهٔ در انتظار» در همین رشته تزریق می‌کند.
+   */
+  ragContext?: string;
+  /** شمارهٔ دور اجرای تیم (۱ = اجرای اول؛ ۲ = دور اصلاح پس از چک رهبر). */
+  round?: number;
+  /**
    * دستور مستقیم منتقد از حلقهٔ بیرونی ارکستراتور (همین چرخه)؛ بالاترین
    * اولویت را دارد و در ابتدای دستور مجری‌ها تزریق می‌شود.
    */
@@ -66,15 +78,38 @@ export interface SeoTeamInput {
 }
 
 const GUIDES_PATH = 'site/lib/guides.ts';
+/** منابع اسلاگ صفحات تور و دسته‌بندی‌ها (یافتهٔ ممیزی: پیش‌تر خوانده نمی‌شدند و بی‌صدا جا می‌ماندند). */
+const TOURS_PATH = 'site/lib/tours.ts';
+const TOUR_CATEGORIES_PATH = 'site/lib/tour-categories.ts';
 const SEO_H1_PATH = 'site/lib/seo-h1.ts';
 const SEO_META_PATH = 'site/lib/seo-meta.ts';
 
-/** حداکثر اسلاگ در هر چرخه. */
+/** حداکثر اسلاگ در هر چرخه (حالت خودکار). */
 const MAX_SLUGS_PER_CYCLE = 3;
+/** سقف اسلاگ‌های اجباری از تسک صف (جلوگیری از فرار چرخه). */
+const MAX_FORCED_SLUGS = 5;
+
+/** نوع صفحه برای تولید متای متناسب با نیت جست‌وجو. */
+type SeoPageType = 'guide' | 'tour' | 'category';
+
+/** صفحات استاتیک شناخته‌شده: متایشان در page.tsx خودشان است، نه در نگاشت‌های سئو. */
+const STATIC_PAGES: Array<{ id: string; title: string; matchers: RegExp[] }> = [
+  { id: 'about', title: 'درباره تایلندگرد', matchers: [/درباره( ما)?/, /\babout\b/i] },
+  { id: 'contact', title: 'تماس با تایلندگرد', matchers: [/تماس/, /\bcontact\b/i] },
+];
+
+/** یک صفحهٔ شناخته‌شدهٔ سایت با نوعش. */
+interface SeoPage {
+  slug: string;
+  title: string;
+  type: SeoPageType;
+}
 
 /** یک قلم خروجی سئو برای یک اسلاگ */
 interface SeoItem {
   slug: string;
+  /** نوع صفحه؛ لحن متا را متناسب با نیت جست‌وجو تنظیم می‌کند. */
+  pageType: SeoPageType;
   title: string;
   h1: string;
   metaTitle: string;
@@ -137,6 +172,157 @@ function extractMetaKeys(fileContent: string | null): string[] {
   return keys;
 }
 
+/**
+ * استخراج جفت‌های slug/title از فایل tours.ts (ساختار دقیق فایل سایت ممکن
+ * است فرق کند؛ پس تحمل‌پذیر: برای هر slug نزدیک‌ترین title یا name را
+ * در پنجرهٔ ۸۰۰ نویسه‌ای جلو/عقب پیدا می‌کند).
+ */
+function extractTours(
+  fileContent: string,
+): Array<{ slug: string; title: string }> {
+  const out: Array<{ slug: string; title: string }> = [];
+  const seen = new Set<string>();
+  const slugRe = /slug:\s*"([a-z0-9-]+)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = slugRe.exec(fileContent)) !== null) {
+    const slug = m[1];
+    if (seen.has(slug)) continue;
+    seen.add(slug);
+    const fwd = fileContent.slice(m.index, m.index + 800);
+    const back = fileContent.slice(Math.max(0, m.index - 800), m.index);
+    const titleRe = /(?:title|name):\s*"((?:[^"\\]|\\.)*)"/;
+    const tm = titleRe.exec(fwd) ?? titleRe.exec(back);
+    const title = tm ? tm[1].replace(/\\"/g, '"') : slug;
+    out.push({ slug, title });
+  }
+  return out;
+}
+
+/**
+ * استخراج اسلاگ دسته‌بندی‌های تور (best-effort؛ اگر فایل یا ساختار عوض
+ * شده باشد، خالی برمی‌گرداند و چرخه با راهنماها/تورها ادامه می‌دهد).
+ */
+function extractCategorySlugs(fileContent: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /slug:\s*"([a-z0-9-]+)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(fileContent)) !== null) {
+    if (!seen.has(m[1])) {
+      seen.add(m[1]);
+      out.push(m[1]);
+    }
+  }
+  return out;
+}
+
+/* ==========================================================================
+ * خواندن تسک‌های صف ساخت از ragContext
+ *
+ * ارکستر تسک claimشده را با این قالب تزریق می‌کند:
+ *   کار تحویل‌شده از صف ساخت (در اولویت اجرا):
+ *   عنوان: ...
+ *   شرح: ...
+ *   معیار قبولی: ...
+ * و تسک‌های تأییدشده را با «کارهای تأییدشدهٔ در انتظار این تیم» و خط‌های
+ * «- عنوان: شرح». سئو پیش‌تر ragContext را نداشت و این تسک‌ها بی‌صدا گم
+ * می‌شدند (ارکستر آن‌ها را «موفق» می‌بست در حالی که کاری انجام نشده بود).
+ * ========================================================================== */
+
+/** تسک claimشده از صف ساخت. */
+interface ClaimedSeoTask {
+  title: string;
+  description: string;
+  acceptance: string;
+}
+
+/** استخراج تسک claimشده از ragContext. */
+function parseClaimedSeoTask(ragContext: string | undefined): ClaimedSeoTask | null {
+  if (!ragContext) return null;
+  const after = ragContext.split('کار تحویل‌شده از صف ساخت')[1];
+  if (!after) return null;
+  const block = after
+    .split('کارهای تأییدشدهٔ در انتظار')[0]
+    .split('دانش ذخیره‌شده')[0];
+  const title = /عنوان:\s*([^\n]+)/.exec(block)?.[1]?.trim() ?? '';
+  if (!title) return null;
+  const descMatch = /شرح:\s*([\s\S]*?)(?=\nمعیار قبولی:|$)/.exec(block);
+  const acceptance = /معیار قبولی:\s*([^\n]+)/.exec(block)?.[1]?.trim() ?? '';
+  return { title, description: (descMatch?.[1] ?? '').trim(), acceptance };
+}
+
+/** استخراج تسک‌های تأییدشدهٔ در انتظار (خط‌های «- عنوان: شرح»). */
+function parseApprovedSeoTasks(
+  ragContext: string | undefined,
+): Array<{ title: string; description: string }> {
+  if (!ragContext) return [];
+  const after = ragContext.split('کارهای تأییدشدهٔ در انتظار')[1];
+  if (!after) return [];
+  const block = after.split('دانش ذخیره‌شده')[0];
+  const out: Array<{ title: string; description: string }> = [];
+  const re = /^-\s*([^:\n]{2,200}):\s*([^\n]*)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(block)) !== null) {
+    out.push({ title: m[1].trim(), description: m[2].trim() });
+  }
+  return out;
+}
+
+/**
+ * دستور رهبر برای دور اصلاح که ارکستر در ابتدای ragContext تزریق می‌کند
+ * («دستور رهبر برای دور اصلاح (خروجی دور قبل رد شد): ...»).
+ * اگر input.reviewDirective به هر دلیلی نرسیده باشد، این پس‌زدگی (fallback)
+ * همان دستور را از ragContext برمی‌گرداند.
+ */
+function parseDirectivePrefix(ragContext: string | undefined): string | undefined {
+  if (!ragContext) return undefined;
+  const m = /دستور رهبر برای دور اصلاح[^\n]*\n([\s\S]*?)(?=\n\n|$)/.exec(ragContext);
+  const d = m?.[1]?.trim();
+  return d ? d : undefined;
+}
+
+/** نتیجهٔ تفکیک اسلاگ‌های هدف تسک. */
+interface TargetSlugs {
+  /** اسلاگ‌های شناخته‌شده (راهنما/تور/دسته)؛ بازتولید اجباری. */
+  forced: string[];
+  /** صفحات استاتیک هدف (متا در page.tsx خودشان؛ در پچ نمی‌نشینند). */
+  staticTargets: string[];
+  /** اسلاگ‌های صریح «اسلاگ: xxx» که در هیچ منبعی پیدا نشدند (گزارش صادقانه، نه سکوت). */
+  unknown: string[];
+}
+
+/**
+ * استخراج اسلاگ‌های هدف از عنوان/شرح تسک‌ها.
+ * - خط صریح «اسلاگ: xxx» بالاترین اعتبار را دارد؛
+ * - توکن‌های اسلاگ‌مانند فقط وقتی قبول‌اند که در اسلاگ‌های شناخته‌شده باشند
+ *   (تا کلمات انگلیسی متن، هدف کاذب نسازند).
+ */
+function extractTargetSlugs(
+  texts: string[],
+  knownSlugs: Set<string>,
+): TargetSlugs {
+  const forced = new Set<string>();
+  const staticTargets = new Set<string>();
+  const unknown = new Set<string>();
+  for (const t of texts) {
+    const explicitRe = /اسلاگ:\s*([a-z0-9-]+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = explicitRe.exec(t)) !== null) {
+      const s = m[1];
+      if (knownSlugs.has(s)) forced.add(s);
+      else unknown.add(s);
+    }
+    const tokens = t.match(/[a-z0-9][a-z0-9-]{1,79}/g) ?? [];
+    for (const tok of tokens) {
+      if (knownSlugs.has(tok)) forced.add(tok);
+    }
+    for (const sp of STATIC_PAGES) {
+      if (sp.matchers.some((rx) => rx.test(t))) staticTargets.add(sp.id);
+    }
+  }
+  return { forced: [...forced], staticTargets: [...staticTargets], unknown: [...unknown] };
+}
+
 /** خلاصه تیم محتوا از خروجی موج‌های قبلی */
 function getContentSummary(
   previousWavesOutput: SeoTeamInput['previousWavesOutput'],
@@ -150,14 +336,19 @@ function getContentSummary(
 /**
  * درج ورودی‌های تازه در نگاشت H1_OVERRIDES.
  * نقطهٔ درج: «};» پایانی نگاشت، پیش از کامنت «قاعدهٔ مشتق‌سازی».
+ * پس‌زدگی: اگر ساختار فایل عوض شده باشد (نشانگر نیست)، درج پیش از آخرین
+ * «};» فایل انجام می‌شود تا تیم به‌جای بلاکر، پچ سالم بسازد.
  */
 function insertH1Overrides(fileContent: string, items: SeoItem[]): string {
   const marker = '/** قاعدهٔ مشتق‌سازی';
   const markerIdx = fileContent.indexOf(marker);
-  if (markerIdx < 0) {
-    throw new Error('ساختار فایل seo-h1.ts شناخته نشد.');
+  let closeIdx: number;
+  if (markerIdx >= 0) {
+    closeIdx = fileContent.lastIndexOf('};', markerIdx);
+  } else {
+    console.warn('[seo] نشانگر درج seo-h1.ts پیدا نشد؛ درج پیش از آخرین «};» انجام شد.');
+    closeIdx = fileContent.lastIndexOf('};');
   }
-  const closeIdx = fileContent.lastIndexOf('};', markerIdx);
   if (closeIdx < 0) {
     throw new Error('پایان نگاشت H1_OVERRIDES پیدا نشد.');
   }
@@ -224,13 +415,18 @@ export function resolveMeta(
 
 /**
  * درج ورودی‌های تازه در نگاشت META_OVERRIDES فایل موجود.
+ * پس‌زدگی: اگر تابع resolveMeta در فایل نیست (ساختار عوض شده)، درج پیش
+ * از آخرین «};» انجام می‌شود.
  */
 function insertMetaOverrides(fileContent: string, items: SeoItem[]): string {
   const markerIdx = fileContent.indexOf('export function resolveMeta');
-  if (markerIdx < 0) {
-    throw new Error('ساختار فایل seo-meta.ts شناخته نشد.');
+  let closeIdx: number;
+  if (markerIdx >= 0) {
+    closeIdx = fileContent.lastIndexOf('};', markerIdx);
+  } else {
+    console.warn('[seo] نشانگر درج seo-meta.ts پیدا نشد؛ درج پیش از آخرین «};» انجام شد.');
+    closeIdx = fileContent.lastIndexOf('};');
   }
-  const closeIdx = fileContent.lastIndexOf('};', markerIdx);
   if (closeIdx < 0) {
     throw new Error('پایان نگاشت META_OVERRIDES پیدا نشد.');
   }
@@ -246,6 +442,44 @@ function insertMetaOverrides(fileContent: string, items: SeoItem[]): string {
   return (
     fileContent.slice(0, closeIdx) + `\n${entries}\n` + fileContent.slice(closeIdx)
   );
+}
+
+/**
+ * حذف ورودی‌های موجود اسلاگ‌های اجباری از H1_OVERRIDES پیش از درج تازه
+ * (بازنویسی متای کهنه، نه تکرار کلید).
+ */
+function removeH1Entries(fileContent: string, slugs: Set<string>): string {
+  if (slugs.size === 0) return fileContent;
+  return fileContent
+    .split('\n')
+    .filter((line) => {
+      const m = /^\s*"([^"]+)"\s*:/.exec(line);
+      return !(m && slugs.has(m[1]));
+    })
+    .join('\n');
+}
+
+/**
+ * حذف بلوک‌های موجود اسلاگ‌های اجباری از META_OVERRIDES پیش از درج تازه.
+ * بلوک هر اسلاگ چندخطی است: "slug": { title: ..., description: ..., },
+ */
+function removeMetaEntries(fileContent: string, slugs: Set<string>): string {
+  if (slugs.size === 0) return fileContent;
+  const lines = fileContent.split('\n');
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const m = /^\s*"([^"]+)"\s*:\s*\{\s*$/.exec(lines[i]);
+    if (m && slugs.has(m[1])) {
+      i += 1;
+      while (i < lines.length && !/^\s*\},?\s*$/.test(lines[i])) i += 1;
+      i += 1; // خط بستن بلوک هم رد شود
+      continue;
+    }
+    out.push(lines[i]);
+    i += 1;
+  }
+  return out.join('\n');
 }
 
 /** اعتبارسنجی قلم سئو پیش از داوری. */
@@ -284,7 +518,6 @@ function criticAcceptanceFromReason(reason: string): string {
   const r = reason.trim() || 'خروجی سئو ایراد دارد';
   return `وقتی درست است که نقد «${r}» دیگر دربارهٔ خروجی صدق نکند و برای هر اسلاگ: h1 از تایتل جدا باشد، متا تایتل ۵۰ تا ۶۰ نویسه، دیسکریپشن ۱۲۰ تا ۱۶۰ نویسه، فارسی طبیعی و بدون U+2014 باشد.`;
 }
-
 /**
  * اجرای تیم سئو برای یک چرخه: تولید h1 و متا تگ واقعی + پچ.
  * (مهاجرت به حلقه نقد ۳ دوره‌ای lib/critic-loop.ts)
@@ -305,17 +538,22 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
   const combinedKnowledge = [knowledgeSection, knowledgeText].filter(Boolean).join('\n\n');
   const contentSummary = getContentSummary(previousWavesOutput);
 
-  // ۰. خواندن وضعیت جاری سئوی سایت
+  // ۰. خواندن وضعیت جاری سئوی سایت (راهنماها + تورها + دسته‌بندی‌ها)
   await reportLive?.('خواندن وضعیت سئوی سایت', 5);
   let guidesFile: string | null = null;
   let h1File: string | null = null;
   let metaFile: string | null = null;
+  let toursFile: string | null = null;
+  let categoriesFile: string | null = null;
   try {
     [guidesFile, h1File] = await Promise.all([
       readSiteFile(GUIDES_PATH),
       readSiteFile(SEO_H1_PATH),
     ]);
     metaFile = await readSiteFile(SEO_META_PATH).catch(() => null);
+    // تورها و دسته‌بندی‌ها fail-soft: اگر فایل نیست، چرخه با راهنماها ادامه می‌دهد.
+    toursFile = await readSiteFile(TOURS_PATH).catch(() => null);
+    categoriesFile = await readSiteFile(TOUR_CATEGORIES_PATH).catch(() => null);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     blockers.push(`خواندن فایل‌های سئو از ریپوی سایت ناموفق بود: ${msg}`);
@@ -326,13 +564,68 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     return { team: TEAM, summary: blockers[0], blockers, tasks: [], approved: false };
   }
 
-  const guides = extractGuides(guidesFile);
+  // فهرست یکپارچهٔ صفحات شناخته‌شده با نوعشان (راهنما/تور/دسته)
+  const pages: SeoPage[] = [];
+  const seenPage = new Set<string>();
+  const addPage = (slug: string, title: string, type: SeoPageType) => {
+    if (!slug || seenPage.has(slug)) return;
+    seenPage.add(slug);
+    pages.push({ slug, title: title || slug, type });
+  };
+  for (const g of extractGuides(guidesFile)) addPage(g.slug, g.title, 'guide');
+  if (toursFile) {
+    for (const t of extractTours(toursFile)) addPage(t.slug, t.title, 'tour');
+  }
+  if (categoriesFile) {
+    for (const s of extractCategorySlugs(categoriesFile)) addPage(s, s, 'category');
+  }
+  const knownSlugs = new Set(pages.map((p) => p.slug));
+  const pageBySlug = new Map(pages.map((p) => [p.slug, p]));
+
   const h1Keys = new Set(extractH1Keys(h1File));
   const metaKeys = new Set(extractMetaKeys(metaFile));
-  const missing = guides.filter((g) => !h1Keys.has(g.slug) || !metaKeys.has(g.slug));
-  if (missing.length === 0) {
-    const summary = 'همهٔ راهنماها h1 و متا تگ اختصاصی دارند؛ کاری برای این چرخه نبود.';
-    await writeMemory({ team: TEAM, key: `learned:${runId}`, value: JSON.stringify({ noop: true }) });
+  const missing = pages.filter((p) => !h1Keys.has(p.slug) || !metaKeys.has(p.slug));
+
+  // ---------- تحویل تسک‌های صف ساخت (پیش از هر تصمیم «کاری نیست») ----------
+  // ارکستر تسک claimشده و تسک‌های تأییدشده را در ragContext تزریق می‌کند.
+  // اسلاگ‌های هدف این تسک‌ها «اجباری»‌اند: حتی اگر متای کهنه داشته باشند،
+  // بازتولید می‌شوند (حذف ورودی قدیمی + درج تازه).
+  const claimedTask = parseClaimedSeoTask(input.ragContext);
+  const approvedTasks = parseApprovedSeoTasks(input.ragContext);
+  const taskTexts = [
+    ...(claimedTask ? [`${claimedTask.title}\n${claimedTask.description}`] : []),
+    ...approvedTasks.map((t) => `${t.title}\n${t.description}`),
+  ];
+  const targets = extractTargetSlugs(taskTexts, knownSlugs);
+  const forcedSlugs = targets.forced.slice(0, MAX_FORCED_SLUGS);
+  const forcedSet = new Set(forcedSlugs);
+  const outerDirective =
+    (input.reviewDirective ?? '').trim() ||
+    parseDirectivePrefix(input.ragContext) ||
+    undefined;
+  if (claimedTask) {
+    await reportLive?.(`تسک صف دریافت شد: ${claimedTask.title}`, 8);
+  }
+
+  if (missing.length === 0 && forcedSlugs.length === 0) {
+    // حتی در حالت «کاری نیست»، سرنوشت تسک صف باید صادقانه گزارش شود؛
+    // وگرنه ارکستر آن را «موفق» می‌بندد در حالی که هیچ کاری نشده.
+    const noopNotes: string[] = [];
+    if (claimedTask) {
+      noopNotes.push(`تسک صف «${claimedTask.title}» هیچ اسلاگ شناخته‌شده‌ای نداشت؛ کاری برای آن انجام نشد.`);
+    }
+    if (targets.unknown.length > 0) {
+      noopNotes.push(`اسلاگ‌های ناشناخته در تسک: ${targets.unknown.join('، ')}.`);
+    }
+    if (targets.staticTargets.length > 0) {
+      noopNotes.push(
+        `صفحات استاتیک هدف (${targets.staticTargets.join('، ')}) متایشان در page.tsx خودشان است؛ در حوزهٔ نگاشت‌های سئو نیستند.`,
+      );
+    }
+    const summary =
+      'همهٔ صفحه‌ها h1 و متا تگ اختصاصی دارند و اسلاگ اجباری تازه‌ای از صف نیامده؛ کاری برای این چرخه نبود.' +
+      (noopNotes.length > 0 ? ' ' + noopNotes.join(' ') : '');
+    await writeMemory({ team: TEAM, key: `learned:${runId}`, value: JSON.stringify({ noop: true, claimedTask: claimedTask?.title ?? null }) });
     return { team: TEAM, summary, blockers: [], tasks: [], approved: true };
   }
 
@@ -351,12 +644,25 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     prevInstruction?: string,
   ): Promise<SeoItem[]> => {
     const items: SeoItem[] = [];
+    const skipped: string[] = [];
     for (const slug of slugs) {
       // ضربان زنده در هر اسلاگ: حلقه LLM ممکن است دقایق طول بکشد؛ بدون این،
       // نگهبان تیم را «هنگ» اعلام می‌کند (یافته: تایم‌اوت ۱۵ دقیقه‌ای ورکر).
       await reportLive?.(`مجری: تولید سئو برای ${slug}`, 60);
-      const guide = guides.find((g) => g.slug === slug);
-      if (!guide) continue;
+      const page = pageBySlug.get(slug);
+      if (!page) {
+        // دیگر سکوت نمی‌کنیم: اسلاگ ناشناخته در خلاصه گزارش می‌شود تا تسک
+        // صف با «موفق» کاذب بسته نشود.
+        skipped.push(slug);
+        continue;
+      }
+      // لحن متا متناسب با نیت جست‌وجوی نوع صفحه.
+      const typeHint =
+        page.type === 'tour'
+          ? 'نوع صفحه: تور (نیت تراکنشی). متا تایتل و دیسکریپشن باید حس «رزرو/قیمت/برنامه سفر» بدهند ولی صادقانه بمانند؛ از ادعای قیمت مشخص خودداری کن.'
+          : page.type === 'category'
+            ? 'نوع صفحه: دسته‌بندی تورها (نیت مرور و مقایسه). متا باید دامنهٔ انتخاب‌ها را نشان بدهد، نه یک تور خاص.'
+            : 'نوع صفحه: راهنمای آموزشی (نیت اطلاعاتی). متا باید وعدهٔ پاسخ کامل و کاربردی بدهد.';
       // ریشه‌ی باگ: خطای یک اسلاگ (مثلاً JSON نامعتبر پس از ۳ تلاش روی همه‌ی
       // مدل‌ها) کل تیم را می‌کشت. حالا هر اسلاگ جداگانه تاب می‌آورد؛ اگر همه
       // مردند، runWorkers پایین‌تر با پیام واضح خطا می‌دهد.
@@ -368,7 +674,8 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
             ? ['دستور منتقد برای اصلاح این دور (حتماً رعایت کن):', prevInstruction, '']
             : []),
           `اسلاگ: ${slug}`,
-          `تیتر صفحه: ${guide.title}`,
+          `تیتر صفحه: ${page.title}`,
+          typeHint,
           '',
           'برای این صفحه تولید کن:',
           '۱. h1: مستقل از تایتل، دربردارندهٔ کلمهٔ کلیدی اصلی، حداکثر ۶۰ نویسه، فارسی طبیعی. ممنوع: لحن کلیک‌بیت، اغراق، صفت‌های توخالی («بهترین»، «فوق‌العاده»، «بی‌نظیر»). h1 باید توصیفی و دقیق باشد، نه تبلیغاتی.',
@@ -399,23 +706,28 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
       }
       const item: SeoItem = rawItem;
       item.slug = slug;
-      item.title = guide.title;
+      item.pageType = page.type;
+      item.title = page.title;
       item.h1 = sanitizePersian(item.h1);
       item.metaTitle = sanitizePersian(item.metaTitle);
       item.metaDescription = sanitizePersian(item.metaDescription);
-      const err = validateItem(item, guide.title);
+      const err = validateItem(item, page.title);
       if (err) {
         console.warn(`[seo] قلم نامعتبر برای اسلاگ ${slug}: ${err}`);
         continue;
       }
       items.push(item);
     }
+    if (skipped.length > 0) {
+      console.warn(`[seo] اسلاگ‌های ناشناخته رد شدند (در هیچ منبع صفحه‌ای نیستند): ${skipped.join('، ')}`);
+    }
     return items;
   };
 
   /**
    * runWorkers: سرپرست (دور ۱) + مجری هر دور.
-   * دور ۱: انتخاب ۱ تا ۳ اسلاگ اولویت‌دار + تولید اقلام؛
+   * دور ۱: اگر تسک صف اسلاگ اجباری داده، همان‌ها (بدون انتخاب سرپرست)؛
+   *        وگرنه سرپرست ۱ تا ۳ اسلاگ اولویت‌دار انتخاب می‌کند؛
    * دور ۲/۳: تولید دوبارهٔ همان اسلاگ‌ها با دستور منتقد.
    */
   const runWorkers = async (
@@ -423,41 +735,57 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     prevInstruction?: string,
   ): Promise<WorkerRoundOutput> => {
     if (round === 1) {
-      // سرپرست: انتخاب ۱ تا ۳ اسلاگ اولویت‌دار (منطق فعلی، بدون تغییر)
-      await reportLive?.('سرپرست: انتخاب اسلاگ‌ها', 20);
-      const candidates = missing
-        .slice(0, 12)
-        .map((g) => `- ${g.slug}: ${g.title}`)
-        .join('\n');
-      const pickRaw = await callLLM(
-        [
-          'اسلاگ‌های بدون h1/متای اختصاصی:',
-          candidates,
-          '',
-          'خلاصه تیم محتوا:',
-          contentSummary,
-          '',
-          combinedKnowledge ? `دانش:\n${combinedKnowledge}\n` : '',
-          `حداکثر ${MAX_SLUGS_PER_CYCLE} اسلاگ پراولویت (تازه‌ها و پرترافیک‌ها اول) انتخاب کن.`,
-          'فقط JSON معتبر بده: {"slugs": ["slug-1", "slug-2"]}',
-          'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
-        ].join('\n'),
-        { system: SYSTEM_SUPERVISOR, temperature: 0.3 },
-      );
-      let slugs: string[] = [];
-      try {
-        const parsed = JSON.parse(pickRaw.match(/\{[\s\S]*\}/)?.[0] ?? '{}') as { slugs?: string[] };
-        slugs = (Array.isArray(parsed.slugs) ? parsed.slugs : [])
-          .map((s) => String(s).trim())
-          .filter((s) => missing.some((m) => m.slug === s))
-          .slice(0, MAX_SLUGS_PER_CYCLE);
-      } catch {
-        slugs = [];
+      if (forcedSlugs.length > 0) {
+        // تسک صف بالاترین اولویت را دارد؛ سرپرست دور زده می‌شود تا دقیقاً
+        // همان اسلاگ‌های خواسته‌شده کار شوند، نه حدس تازه.
+        await reportLive?.(`تسک صف: بازتولید سئو برای ${forcedSlugs.length} اسلاگ اجباری`, 20);
+        cachedSlugs = forcedSlugs;
+      } else {
+        // سرپرست: انتخاب ۱ تا ۳ اسلاگ اولویت‌دار
+        await reportLive?.('سرپرست: انتخاب اسلاگ‌ها', 20);
+        const typeLabel = (t: SeoPageType) =>
+          t === 'tour' ? 'تور' : t === 'category' ? 'دسته' : 'راهنما';
+        const candidates = missing
+          .slice(0, 12)
+          .map((p) => `- ${p.slug} [${typeLabel(p.type)}]: ${p.title}`)
+          .join('\n');
+        const pickRaw = await callLLM(
+          [
+            ...(outerDirective
+              ? [
+                  'دستور رهبر برای این دور (حتماً در انتخاب اسلاگ رعایت کن):',
+                  outerDirective,
+                  '',
+                ]
+              : []),
+            'اسلاگ‌های بدون h1/متای اختصاصی:',
+            candidates,
+            '',
+            'خلاصه تیم محتوا:',
+            contentSummary,
+            '',
+            combinedKnowledge ? `دانش:\n${combinedKnowledge}\n` : '',
+            `حداکثر ${MAX_SLUGS_PER_CYCLE} اسلاگ پراولویت (تازه‌ها و پرترافیک‌ها اول) انتخاب کن.`,
+            'فقط JSON معتبر بده: {"slugs": ["slug-1", "slug-2"]}',
+            'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
+          ].join('\n'),
+          { system: SYSTEM_SUPERVISOR, temperature: 0.3 },
+        );
+        let slugs: string[] = [];
+        try {
+          const parsed = JSON.parse(pickRaw.match(/\{[\s\S]*\}/)?.[0] ?? '{}') as { slugs?: string[] };
+          slugs = (Array.isArray(parsed.slugs) ? parsed.slugs : [])
+            .map((s) => String(s).trim())
+            .filter((s) => missing.some((m) => m.slug === s))
+            .slice(0, MAX_SLUGS_PER_CYCLE);
+        } catch {
+          slugs = [];
+        }
+        if (slugs.length === 0) {
+          slugs = missing.slice(0, Math.min(2, missing.length)).map((m) => m.slug);
+        }
+        cachedSlugs = slugs;
       }
-      if (slugs.length === 0) {
-        slugs = missing.slice(0, Math.min(2, missing.length)).map((m) => m.slug);
-      }
-      cachedSlugs = slugs;
     } else {
       await reportLive?.(`دور ${round}: اصلاح با دستور منتقد`, 50);
     }
@@ -470,7 +798,7 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     await reportLive?.('مجری: تولید h1 و متا تگ', 60);
     const items = await generateSeoItems(
       slugs,
-      combineReviewDirectives(input.reviewDirective, prevInstruction),
+      combineReviewDirectives(outerDirective, prevInstruction),
     );
     if (items.length === 0) {
       throw new Error('هیچ قلم سئوی معتبری در این دور تولید نشد.');
@@ -491,7 +819,7 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
       [
         'خروجی سئو:',
         ...output.items.flatMap((it) => [
-          `اسلاگ: ${it.slug}`,
+          `اسلاگ: ${it.slug} (نوع صفحه: ${it.pageType === 'tour' ? 'تور' : it.pageType === 'category' ? 'دسته‌بندی' : 'راهنما'})`,
           `تیتر: ${it.title}`,
           `h1: ${it.h1}`,
           `متا تایتل: ${it.metaTitle}`,
@@ -592,16 +920,20 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
 
   const items = loopResult.output.items;
 
-  // کدژن قطعی: پچ h1 و پچ متا (منطق فعلی)
+  // کدژن قطعی: پچ h1 و پچ متا.
+  // - اسلاگ‌های اجباری (تسک صف): بازنویسی؛ ورودی کهنه حذف و تازه درج می‌شود
+  //   (یافتهٔ ممیزی: پیش‌تر متای موجود هرگز به‌روز نمی‌شد)؛
+  // - بقیه: فقط درج برای اسلاگ‌هایی که ورودی ندارند.
   try {
-    const h1Items = items.filter((it) => !h1Keys.has(it.slug));
+    const h1Items = items.filter((it) => forcedSet.has(it.slug) || !h1Keys.has(it.slug));
     if (h1Items.length > 0) {
-      patches.push({ path: SEO_H1_PATH, content: insertH1Overrides(h1File, h1Items) });
+      const h1Base = removeH1Entries(h1File, forcedSet);
+      patches.push({ path: SEO_H1_PATH, content: insertH1Overrides(h1Base, h1Items) });
     }
-    const metaItems = items.filter((it) => !metaKeys.has(it.slug));
+    const metaItems = items.filter((it) => forcedSet.has(it.slug) || !metaKeys.has(it.slug));
     if (metaItems.length > 0) {
       const metaContent = metaFile
-        ? insertMetaOverrides(metaFile, metaItems)
+        ? insertMetaOverrides(removeMetaEntries(metaFile, forcedSet), metaItems)
         : buildSeoMetaFile(metaItems);
       patches.push({ path: SEO_META_PATH, content: metaContent });
     }
@@ -616,11 +948,14 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
   }
 
   // ثبت حافظه (غنی‌شده با تاریخچه دورهای حلقه)
+  await reportLive?.('ثبت آموخته‌ها در حافظه', 95);
   await writeMemory({
     team: TEAM,
     key: `learned:${runId}`,
     value: JSON.stringify({
       slugs: items.map((it) => it.slug),
+      forced: forcedSlugs,
+      claimedTask: claimedTask?.title ?? null,
       approved: loopResult.approved,
       finalRound: loopResult.finalRound,
       rounds: loopResult.verdicts.map((v, i) => ({
@@ -642,10 +977,54 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     });
   }
 
+  // ---------- گزارش صادقانهٔ سرنوشت تسک صف ----------
+  // ارکستر تسک claimشده را بر اساس همین خلاصه «موفق» می‌بندد؛ پس خلاصه
+  // باید دقیق بگوید کدام هدف تسک انجام شد و کدام نه.
+  const doneSlugs = new Set(items.map((it) => it.slug));
+  const forcedDone = forcedSlugs.filter((s) => doneSlugs.has(s));
+  const forcedMissed = forcedSlugs.filter((s) => !doneSlugs.has(s));
+  const taskNotes: string[] = [];
+  if (claimedTask) {
+    if (forcedSlugs.length > 0) {
+      taskNotes.push(
+        `تسک صف «${claimedTask.title}»: ${forcedDone.length} اسلاگ بازتولید شد (${forcedDone.join('، ') || 'هیچ‌کدام'})` +
+        (forcedMissed.length > 0 ? `؛ ${forcedMissed.length} اسلاگ ناموفق ماند (${forcedMissed.join('، ')})` : '') +
+        '.',
+      );
+    } else {
+      taskNotes.push(
+        `تسک صف «${claimedTask.title}» هیچ اسلاگ شناخته‌شده‌ای نداشت؛ حالت خودکار اجرا شد.`,
+      );
+    }
+  }
+  if (targets.unknown.length > 0) {
+    taskNotes.push(
+      `اسلاگ‌های ناشناخته در تسک (در هیچ منبع صفحه‌ای نیستند و کاری برایشان نشد): ${targets.unknown.join('، ')}.`,
+    );
+  }
+  for (const spId of targets.staticTargets) {
+    const sp = STATIC_PAGES.find((s) => s.id === spId);
+    if (!sp) continue;
+    taskNotes.push(
+      `صفحهٔ استاتیک «${sp.title}»: متایش در page.tsx خودش است، نه در نگاشت‌های سئو؛ در پچ نیامد.`,
+    );
+    // پیشنهاد به رهبر: این کارِ تیم dev است، نه سئو.
+    tasks.push({
+      title: `سئوی صفحه استاتیک ${sp.title}`,
+      description:
+        `متای صفحهٔ ${sp.title} داخل کامپوننت page.tsx خودش تعریف می‌شود و نگاشت‌های H1_OVERRIDES/META_OVERRIDES آن را پوشش نمی‌دهند. ` +
+        `کار: متا تایتل و دیسکریپشن بهینهٔ فارسی برای این صفحه مستقیم در page.tsx بنویس (تیم dev).`,
+      files_hint: `site/app/${sp.id}/page.tsx`,
+      priority: 'medium',
+    });
+  }
+
   const summary =
     `برای ${items.length} صفحه h1 و متا تگ واقعی تولید شد (${items.map((it) => it.slug).join('، ')}) و پچ آماده است. ` +
     `حلقه نقد در دور ${loopResult.finalRound} تمام شد. ` +
-    `نظر نهایی منتقد: ${loopResult.finalOpinion}. ${lastKnowledgeLog}`;
+    `نظر نهایی منتقد: ${loopResult.finalOpinion}. ` +
+    (taskNotes.length > 0 ? taskNotes.join(' ') + ' ' : '') +
+    lastKnowledgeLog;
 
   return {
     team: TEAM,
