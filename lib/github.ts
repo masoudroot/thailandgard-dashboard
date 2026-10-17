@@ -132,12 +132,22 @@ export async function fetchRecentCommits(count = 8): Promise<GithubCommit[]> {
 }
 
 /** خواندن محتوای یک فایل از ریپوی گیت‌هاب (شاخهٔ master). null یعنی فایل نیست. */
-export async function readRepoFile(path: string): Promise<string | null> {
-  const { token, repo } = await getGithubConfig();
+/**
+ * خواندن محتوای یک فایل از ریپوی گیت‌هاب.
+ * پیش‌فرض: ریپوی کانفیگ‌شده و شاخهٔ master (سازگاری با رفتار قبلی)؛
+ * تیم dev باید صریحاً ریپوی سایت و شاخهٔ dev را بدهد، چون پل از dev منشعب می‌شود.
+ */
+export async function readRepoFile(
+  path: string,
+  opts?: { repo?: string; ref?: string },
+): Promise<string | null> {
+  const { token, repo: configRepo } = await getGithubConfig();
   if (!token) throw new Error(NOT_CONNECTED_MESSAGE);
+  const targetRepo = opts?.repo ?? configRepo;
+  const ref = opts?.ref ?? 'master';
   const clean = path.replace(/^\/+/, '');
   const res = await fetch(
-    `https://api.github.com/repos/${repo}/contents/${clean}?ref=master`,
+    `https://api.github.com/repos/${targetRepo}/contents/${clean}?ref=${encodeURIComponent(ref)}`,
     { headers: headers(token), signal: AbortSignal.timeout(20_000) },
   );
   if (res.status === 404) return null;
