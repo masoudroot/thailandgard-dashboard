@@ -5,10 +5,10 @@
  * را مدیریت می‌کند. در هر چرخه:
  *
  *   ورودی: intel_feed (تازه‌ترین‌ها)، gsc_queries، page_analytics
- *   خروجی: سقف هوشمند — فقط وقتی دادهٔ تازه و واقعی است، تسک تازه برای
+ *   خروجی: سقف هوشمند؛ فقط وقتی دادهٔ تازه و واقعی است، تسک تازه برای
  *           ۴ تیم سازنده (content، seo، design، dev) ساخته می‌شود؛ صفر تسک
  *           هم اگر دادهٔ تازه‌ای نیست، تصمیم درست است. سقف اضطراری ۲۰ تسک
- *           در روز فقط برای جلوگیری از انفجار در صورت باگ.
+ *           در روز به دستور مسعود (۱۴۰۵/۰۷/۲۵) برداشته شد و برنمی‌گردد.
  *
  * هر تسک: عنوان، توضیح مشخص، معیار قبولی (acceptance)، برآورد تلاش
  * (estimate: ۱=کم‌ریسک، ۲=متوسط، ۳=سنگین).
@@ -22,8 +22,9 @@
  * مجاز است ولی باید در بریف مشخص شود.
  * سقف هوشمند (دستور مسعود ۱۴۰۵/۰۷/۲۴): سقف عددی ثابت حذف شده؛ رهبر فقط
  * وقتی تسک می‌سازد که دادهٔ تازه و واقعی در فیدرها باشد، تکراری نباشد، و
- * واقعاً ارزش اجرا داشته باشد. سقف اضطراری ۲۰ تسک در روز فقط برای
- * جلوگیری از انفجار در صورت باگ است.
+ * واقعاً ارزش اجرا داشته باشد. (سقف اضطراری ۲۰ تسک/روز که قبلاً برای
+ * جلوگیری از انفجار در صورت باگ بود، به دستور مسعود در ۱۴۰۵/۰۷/۲۵
+ * برداشته شد.)
  *
  * قانون همیشگی: هیچ دادهٔ نمایشی؛ اگر فیدر داده‌ای خالی بود، رهبر از
  * همان دادهٔ موجود کار می‌کند و صادقانه گزارش می‌دهد.
@@ -49,9 +50,6 @@ export const MISSION =
 
 /** تیم‌هایی که رهبر برایشان تسک می‌سازد. */
 const BUILDER_TEAMS: TeamName[] = ['content', 'seo', 'design', 'dev'];
-
-/** سقف اضطراری رهبر: فقط برای جلوگیری از انفجار در صورت باگ. */
-const EMERGENCY_TASK_CEILING = 20;
 
 export interface TeamInput {
   /** گزارش زنده‌ی پیشرفت به ارکستر؛ ارکستر همیشه آن را می‌دهد. */
@@ -120,7 +118,18 @@ async function loadIntelFeed(limit = 20): Promise<IntelItem[]> {
   }
 }
 
-/** خواندن کوئری‌های ۷ روز اخیر سرچ کنسول، مرتب بر اساس ایمپرشن (fail-soft). */
+/** عدد امن از دیتابیس: هر چه غیرعددی بود، صفر. */
+function safeNum(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
+/** عدد امنِ تهی‌پذیر از دیتابیس: هر چه غیرعددی بود، null. */
+function safeNumOrNull(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+/** خواندن کوئری‌های ۷ روز اخیر سرچ کنسول، مرتب بر اساس ایمپرشن (fail-soft).
+ * ردیف‌های دیتابیس ضدّتهی‌سازی می‌شوند تا null سر جایشان ننشیند. */
 async function loadGscQueries(limit = 30): Promise<GscRow[]> {
   try {
     const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
@@ -131,13 +140,22 @@ async function loadGscQueries(limit = 30): Promise<GscRow[]> {
       .order('impressions', { ascending: false })
       .limit(limit);
     if (error) return [];
-    return (data ?? []) as GscRow[];
+    return ((data ?? []) as Array<Record<string, unknown>>)
+      .map((r) => ({
+        query: String(r.query ?? '').trim(),
+        clicks: safeNum(r.clicks),
+        impressions: safeNum(r.impressions),
+        ctr: safeNumOrNull(r.ctr),
+        avg_position: safeNumOrNull(r.avg_position),
+      }))
+      .filter((r) => r.query.length > 0);
   } catch {
     return [];
   }
 }
 
-/** خواندن آنالیتیکس ۷ روز اخیر صفحات (fail-soft). */
+/** خواندن آنالیتیکس ۷ روز اخیر صفحات (fail-soft).
+ * ردیف‌های دیتابیس ضدّتهی‌سازی می‌شوند تا null سر جایشان ننشیند. */
 async function loadPageAnalytics(limit = 30): Promise<PageRow[]> {
   try {
     const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
@@ -148,25 +166,17 @@ async function loadPageAnalytics(limit = 30): Promise<PageRow[]> {
       .order('impressions', { ascending: false })
       .limit(limit);
     if (error) return [];
-    return (data ?? []) as PageRow[];
+    return ((data ?? []) as Array<Record<string, unknown>>)
+      .map((r) => ({
+        page_path: String(r.page_path ?? '').trim(),
+        views: safeNum(r.views),
+        clicks: safeNum(r.clicks),
+        impressions: safeNum(r.impressions),
+        avg_position: safeNumOrNull(r.avg_position),
+      }))
+      .filter((r) => r.page_path.length > 0);
   } catch {
     return [];
-  }
-}
-
-/** تعداد تسک‌های leader امروز (سقف روزانه). */
-async function countTodayLeaderTasks(): Promise<number> {
-  try {
-    const dayStart = new Date().toISOString().slice(0, 10) + 'T00:00:00Z';
-    const { count, error } = await getSupabase()
-      .from('build_queue')
-      .select('id', { count: 'exact', head: true })
-      .eq('source', 'leader')
-      .gte('created_at', dayStart);
-    if (error) return 0;
-    return count ?? 0;
-  } catch {
-    return 0;
   }
 }
 
@@ -459,22 +469,17 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const queued: QueuedTask[] = [];
 
   await reportLive?.('خواندن فیدرهای داده', 10);
-  const [intel, gsc, pages, todayCount, openTasks, existingGuides] = await Promise.all([
+  const [intel, gsc, pages, openTasks, existingGuides] = await Promise.all([
     loadIntelFeed(),
     loadGscQueries(),
     loadPageAnalytics(),
-    countTodayLeaderTasks(),
     loadOpenTasks(),
     loadExistingGuides(),
   ]);
 
-  // سقف اضطراری برداشته شد به دستور مسعود (۱۴۰۵/۰۷/۲۵) تا مشکل حل شود
-  // if (todayCount >= EMERGENCY_TASK_CEILING) {
-  //   const summary = `سقف اضطراری رهبر (${EMERGENCY_TASK_CEILING} تسک در روز) فعال شد؛ برای جلوگیری از رفتار غیرعادی، تسک تازه‌ای ساخته نشد.`;
-  //   return { team: TEAM, summary, blockers, tasks: [], approved: true };
-  // }
   // سقف هوشمند: اگر هیچ دادهٔ تازه‌ای نیست، تسکی ساخته نمی‌شود؛
   // این تصمیم درست است، نه خرابی.
+  // (سقف اضطراری ۲۰ تسک/روز به دستور مسعود در ۱۴۰۵/۰۷/۲۵ برداشته شد و برنمی‌گردد.)
   if (intel.length === 0 && gsc.length === 0 && pages.length === 0) {
     const summary =
       'دادهٔ تازه‌ای در فیدرها نیست (اینتل، سرچ کنسول و آنالیتیکس خالی‌اند)؛ ' +
@@ -492,7 +497,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   let planned: PlannedTask[] = [];
   try {
-    const res = await callLLMJson<{ tasks: PlannedTask[] }>(
+    const res = await callLLMJson<{ tasks: unknown }>(
       [
         'تو رهبر تیم‌های تایلندگرد هستی. از روی این داده‌های واقعی، برای ۴ تیم سازنده تسک می‌سازی:',
         '',
@@ -519,7 +524,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         summarizeExistingGuides(existingGuides),
         '',
         directive ? `دستور اصلاح رهبر (حتماً رعایت کن):\n${directive}\n` : '',
-        `فقط برای داده‌ای که واقعاً تازه و ارزش اجرا دارد تسک بساز؛ حداکثر ${budget} تسک. صفر تسک هم اشکالی ندارد — برای پر کردن سهمیه تسک نساز.`,
+        `فقط برای داده‌ای که واقعاً تازه و ارزش اجرا دارد تسک بساز؛ حداکثر ${budget} تسک. صفر تسک هم اشکالی ندارد؛ برای پر کردن سهمیه تسک نساز.`,
         'قواعد:',
         '- هر تسک فقط برای یکی از ۴ تیم سازنده باشد (content/seo/design/dev)',
         '- عنوان کوتاه و مشخص؛ توضیح: دقیقاً چه کاری، چرا (کدام داده)، و خروجی مورد انتظار چیست',
@@ -547,7 +552,13 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       ].join('\n'),
       { system: 'تو رهبر عمل‌گرای تیم‌های تایلندگرد هستی؛ از داده تسک مشخص می‌سازی، نه حرف کلی.' },
     );
-    planned = Array.isArray(res.tasks) ? res.tasks : [];
+    // خروجی خراب (null یا بدون آرایهٔ tasks) با «صفر تسکِ واقعی» فرق دارد؛
+    // صفرِ واقعی {"tasks": []} است و تصمیم درست محسوب می‌شود، ولی پاسخِ
+    // بی‌ساختار یعنی طراحی تسک شکست خورده و باید بلاکر ثبت شود.
+    if (!res || typeof res !== 'object' || !Array.isArray((res as { tasks?: unknown }).tasks)) {
+      throw new Error('ساختار خروجی LLM معتبر نبود (فیلد tasks آرایه نیست)');
+    }
+    planned = (res as { tasks: PlannedTask[] }).tasks;
   } catch (err) {
     const msg = formatError(err);
     blockers.push(`طراحی تسک با LLM ناموفق بود: ${msg}`);
@@ -560,6 +571,12 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   let skippedInvalid = 0;
   let convertedSemantic = 0;
   for (const p of planned.slice(0, budget)) {
+    // آیتم خراب (null یا غیرآبجکت) نباید کل حلقه را با TypeError بکشد؛
+    // این حلقه بیرون try/catch است و خطایش به ارکستر می‌رسد.
+    if (!p || typeof p !== 'object') {
+      skippedInvalid++;
+      continue;
+    }
     const team = String(p.team ?? '').trim();
     let title = String(p.title ?? '').trim();
     let description = String(p.description ?? '').trim();
