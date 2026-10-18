@@ -20,6 +20,7 @@
 
 import { getSupabase } from '../api';
 import { sweepNeedsReviewPatches } from './needs-review-sweep';
+import { processDeployQueue } from './deploy-queue';
 
 /** سقف پردازش پچ‌های یتیم در هر اجرا، تا بودجه‌ی زمانی جاب خورده نشود. */
 export const ORPHAN_SWEEP_LIMIT = 3;
@@ -33,6 +34,19 @@ export async function sweepOrphanedBridgePatches(): Promise<void> {
   } catch (err) {
     console.error(
       '[bridge-sweep] جاروی needs_review خطا داد:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+  // صف دیپلوی: آیتم‌های due (اسلات رسیده) را پردازش می‌کند.
+  // دستور مسعود ۱۴۰۵/۰۷/۲۷: ۷۰ اسلات ثابت در روز؛ best-effort.
+  try {
+    const dq = await processDeployQueue();
+    if (dq.processed > 0 || dq.deployed > 0 || dq.failed > 0) {
+      console.log(`[bridge-sweep] صف دیپلوی: ${dq.message}`);
+    }
+  } catch (err) {
+    console.error(
+      '[bridge-sweep] پردازشگر صف دیپلوی خطا داد:',
       err instanceof Error ? err.message : err,
     );
   }

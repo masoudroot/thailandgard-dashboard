@@ -17,6 +17,7 @@ import {
   LogOut,
   Plane,
   Activity,
+  Rocket,
   ChevronDown,
   type LucideIcon,
 } from "lucide-react";
@@ -39,6 +40,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/memory", label: "حافظه", icon: Brain },
   { href: "/dashboard/queue", label: "صف ساخت", icon: ListChecks },
   { href: "/dashboard/bridge", label: "پل اجرا", icon: GitPullRequest },
+  { href: "/dashboard/deploy-queue", label: "صف دیپلوی", icon: Rocket },
   { href: "/dashboard/reports", label: "گزارش‌ها", icon: FileText },
   { href: "/dashboard/changes", label: "تغییرات سایت", icon: GitCommitHorizontal },
   { href: "/dashboard/rates", label: "نرخ ارز", icon: TrendingUp },

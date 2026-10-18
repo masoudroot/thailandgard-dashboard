@@ -20,7 +20,8 @@
 import { validatePatch } from './gate';
 import { commitToBridgeBranch, createBridgePR } from './commit';
 import { claimBridgePatch, getBridgePatch, updateBridgePatch } from '../bridge';
-import { mergeBranchIntoDev, mergeDevIntoMainBestEffort, PreMergeGateError, isMergeConflictError } from './merge';
+import { mergeBranchIntoDev, PreMergeGateError, isMergeConflictError } from './merge';
+import { enqueueDeploy } from './deploy-queue';
 import type { PatchFile } from '../types';
 
 export interface ProposeResult {
@@ -106,11 +107,20 @@ export async function processProposedPatch(patchId: string): Promise<ProposeResu
     });
     console.log(`[bridge] پچ ${patchId} به‌صورت خودکار به dev مرج شد (sha=${merge.sha ?? 'already'}).`);
 
-    // مرج خودکار dev به main (دستور مسعود: خط لوله کاملاً خودکار تا سایت زنده).
-    // بهترین تلاش است: اگر ناموفق بود، پچ همچنان merged می‌ماند و چرخه نمی‌میرد.
-    const devMain = await mergeDevIntoMainBestEffort();
-    if (devMain.conflict) {
-      console.error(`[bridge] توجه: dev←main تداخل دارد؛ نیاز به بررسی دستی (پچ ${patchId}).`);
+    // صف دیپلوی (دستور مسعود ۱۴۰۵/۰۷/۲۷): به‌جای مرج فوری dev به main،
+    // پچ وارد صف ۷۰ اسلاته می‌شود؛ پردازشگر در اسلات ثابت دیپلوی می‌کند.
+    // این سقف ۱۰۰ دیپلوی روزانه ورسل را هیچ‌وقت پر نمی‌کند.
+    try {
+      const teamOfPatch = (await getBridgePatch(patchId))?.team ?? undefined;
+      const queued = await enqueueDeploy(patchId, teamOfPatch ?? undefined);
+      console.log(
+        `[bridge] پچ ${patchId} در صف دیپلوی قرار گرفت (اسلات ${queued.slot_time}).`,
+      );
+    } catch (queueErr) {
+      console.error(
+        `[bridge] خطای صف دیپلوی برای پچ ${patchId} (پچ merged ماند):`,
+        queueErr instanceof Error ? queueErr.message : queueErr,
+      );
     }
 
     return {
