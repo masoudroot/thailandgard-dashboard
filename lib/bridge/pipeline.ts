@@ -17,7 +17,7 @@
  * می‌گذرند تا در تست mock شوند؛ هیچ تماس واقعی در تست گرفته نمی‌شود.
  */
 
-import { runQualityGate } from '../quality-gate';
+import { validatePatch } from './gate';
 import { commitToBridgeBranch, SITE_REPO } from './commit';
 import { getGithubConfig } from '../github';
 import { preMergeTypeCheck } from './pre-merge-check';
@@ -125,11 +125,12 @@ export async function gateAndCommit(
   if (patch.status !== 'proposed') {
     throw new Error(`فقط پچ proposed از دروازه رد می‌شود (وضعیت فعلی: ${patch.status}).`);
   }
-  const gate = runQualityGate(patch.files);
-  if (!gate.passed) {
-    patch.gate_errors = gate.checks
-      .filter((c) => !c.passed)
-      .map((c) => `[${c.name}] ${c.message}`);
+  // قیف یکپارچه (ممیزی مسیرهای دورزن C4): همان دروازهٔ کیفیت حلقهٔ زندهٔ
+  // پل (processProposedPatch)، نه دروازهٔ ضعیف‌تر quality-gate. همهٔ مسیرها
+  // باید از یک قیف رد شوند.
+  const gate = validatePatch(patch.files);
+  if (!gate.ok) {
+    patch.gate_errors = gate.errors;
     patch.updated_at = nowIso();
     store.save(patch);
     return { patch, gatePassed: false };

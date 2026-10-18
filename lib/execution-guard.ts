@@ -365,6 +365,24 @@ export async function applyTeamPatch(opts: ApplyOptions): Promise<ApplyResult> {
     );
   }
 
+  // قیف یکپارچهٔ اعتبارسنجی (ممیزی مسیرهای دورزن C4): این مسیرِ اعمال
+  // مستقیم روی dev باید دقیقاً از همان دروازهٔ کیفیتی رد شود که حلقهٔ
+  // خودکار پل (processProposedPatch) پیش از هر کامیت اجرا می‌کند
+  // (سینتکس TS، پسوند مجاز، خط تیرهٔ ممنوعه، الگوی مخرب، نگهبان امنیتی).
+  // بدون این چک، پچی که این‌جا سیم‌کشی شود می‌تواند همهٔ آن چک‌ها را دور
+  // بزند و مستقیم روی dev بنشیند. ایمپورت پویاست تا چرخهٔ ایمپورت با
+  // lib/bridge/gate.ts (که از این فایل می‌خواند) ساخته نشود.
+  const { validatePatch } = await import('./bridge/gate');
+  const bridgeGate = validatePatch(
+    opts.files.map((f) => ({ path: f.path, content: f.content })),
+  );
+  if (!bridgeGate.ok) {
+    throw new GuardError(
+      `دروازهٔ کیفیت پل پچ تیم «${opts.team}» را رد کرد (${bridgeGate.errors.length} خطا).`,
+      bridgeGate.errors.map((e) => ({ file: '(gate)', reason: e })),
+    );
+  }
+
   const { token, repo } = await getSiteGithubConfig();
   if (!token) {
     throw new GuardError('توکن گیت‌هاب سایت متصل نیست (site_github_token).', [
