@@ -75,6 +75,110 @@ function utf8Bytes(s: string): number {
   return new TextEncoder().encode(s).length;
 }
 
+/**
+ * نگهبان مسیر فایل (اعمال کدی، نه فقط پرامپت).
+ * یافته‌های ممیزی: ممنوعیت نام placeholder و فایل test فقط در پرامپت بود و
+ * مجری می‌توانست path را اورراید کند؛ فایل health-check.js در پروژهٔ TS دیده شد؛
+ * هیچ اعتبارسنجی‌ای برای site/ یا فرار با .. نبود.
+ * خروجی: null یعنی مسیر سالم؛ رشته یعنی دلیل رد.
+ */
+function pathRejectionReason(rawPath: string): string | null {
+  const p = String(rawPath ?? '').trim().replace(/^\/+/, '');
+  if (!p) return 'مسیر خالی است.';
+  if (p.includes('..')) return 'مسیر شامل «..» است (فرار از ریپو ممنوع).';
+  if (p.includes('\\')) return 'مسیر شامل بک‌اسلش است.';
+  if (!p.startsWith('site/')) return 'مسیر باید زیر site/ باشد.';
+  const lower = p.toLowerCase();
+  // فایل‌های حساس و قفل پکیج — هرگز از طریق پچ
+  const base = lower.split('/').pop() ?? '';
+  if (!base || !base.includes('.')) return 'نام فایل نامعتبر است (باید فایل واقعی با پسوند باشد).';
+  if (base.startsWith('.env')) return 'فایل .env ممنوع است.';
+  if (
+    base === 'package-lock.json' ||
+    base === 'pnpm-lock.yaml' ||
+    base === 'yarn.lock'
+  ) {
+    return 'فایل قفل پکیج ممنوع است.';
+  }
+  // ممنوعیت .js/.jsx در پروژهٔ TS (به‌جز کانفیگ‌های ریشهٔ site و فایل‌های استاتیک public)
+  if (lower.endsWith('.js') || lower.endsWith('.jsx')) {
+    const rel = lower.slice('site/'.length);
+    const atRoot = !rel.includes('/');
+    const isConfig =
+      atRoot &&
+      (/^[a-z0-9-]+\.config\.(js|jsx)$/.test(rel) ||
+        /^instrumentation\.(js|jsx)$/.test(rel));
+    const isPublicAsset = rel.startsWith('public/');
+    if (!isConfig && !isPublicAsset)
+      return 'فایل .js/.jsx در پروژهٔ TS ممنوع است (فقط کانفیگ ریشهٔ site یا فایل استاتیک public).';
+  }
+  // توکن‌های placeholder / test / debug / mock — هم در نام فایل، هم در سگمنت مسیر
+  const segments = lower.split('/');
+  const placeholderTokens = new Set([
+    'someapi',
+    'some-api',
+    'test',
+    'tests',
+    '__tests__',
+    'spec',
+    'specs',
+    '__specs__',
+    'debug',
+    'mock',
+    'mocks',
+    '__mocks__',
+    '__snapshots__',
+    'temp',
+    'tmp',
+    'example',
+    'examples',
+    'sample',
+    'samples',
+    'demo',
+    'demos',
+    'placeholder',
+    'foo',
+    'bar',
+  ]);
+  for (const seg of segments) {
+    if (placeholderTokens.has(seg)) {
+      return `سگمنت مسیر «${seg}» ممنوع است (test/spec/debug/mock/placeholder).`;
+    }
+  }
+  const nameNoExt = base.replace(/\.[a-z0-9]+$/, '');
+  const nameTokens = nameNoExt.split(/[^a-z0-9]+/).filter(Boolean);
+  if (nameTokens.some((t) => placeholderTokens.has(t))) {
+    return `نام فایل «${base}» شامل توکن ممنوعه است (test/spec/debug/mock/placeholder).`;
+  }
+  if (nameNoExt.includes('someapi') || nameNoExt.includes('some-api')) {
+    return `نام فایل «${base}» placeholder است.`;
+  }
+  return null;
+}
+
+/**
+ * نگهبان کامل‌بودن کد (اعمال کدی، نه فقط پرامپت).
+ * قبلاً فقط «حداقل ۲۰ نویسه» چک می‌شد؛ اسکلت ناقص هم رد می‌شد.
+ * خروجی: null یعنی محتوا قابل‌قبول؛ رشته یعنی دلیل رد.
+ */
+function contentRejectionReason(content: string, path: string): string | null {
+  const t = String(content ?? '').trim();
+  if (t.length < 20) return 'محتوا خالی یا کوتاه‌تر از ۲۰ نویسه است.';
+  if (/\b(TODO|FIXME|XXX|HACK)\b/i.test(t)) {
+    return 'محتوا شامل TODO/FIXME است (کد ناقص).';
+  }
+  // خط placeholder از جنس «...» تنها در یک خط
+  if (/^\s*(\/\/\s*|\/\*\s*|\{\/\*\s*)?\.\.\.(\s*\*\/|\s*\*\/\})?\s*$/m.test(t)) {
+    return 'محتوا شامل placeholder «...» است (کد ناقص).';
+  }
+  // فایل ماژول TS/JS باید چیزی export کند؛ وگرنه یا خالی است یا اسکلت
+  const lower = String(path ?? '').toLowerCase();
+  if (/\.(tsx?|mjs|cjs)$/.test(lower) && !/\bexport\b/.test(t)) {
+    return 'فایل ماژول بدون هیچ export است (اسکلت/ناقص).';
+  }
+  return null;
+}
+
 /** یک تسک فایلی که سرپرست تعریف می‌کند. */
 interface FileTask {
   /** مسیر نسبی فایل در ریپو، مثل site/components/Header.tsx */
@@ -149,6 +253,8 @@ function normalizePlan(raw: string): SupervisorPlan | null {
           action: t.action === 'create' ? ('create' as const) : ('modify' as const),
           instruction: t.instruction.trim(),
         }))
+        // نگهبان کدی مسیر (انتخاب سرپرست): مسیر نامعتبر = تسک حذف می‌شود
+        .filter((t) => pathRejectionReason(t.path) === null)
         .slice(0, 3);
       if (tasks.length > 0) return { goal: parsed.goal.trim(), tasks };
     }
@@ -168,12 +274,16 @@ function normalizePatch(raw: string, expectedPath: string): WorkerPatch | null {
   try {
     const parsed = JSON.parse(text) as WorkerPatch;
     const content = String(parsed.content ?? '');
-    // محتوا باید کد واقعی باشد، نه چند خط توضیح
-    if (content.trim().length < 20) return null;
-    return {
-      path: String(parsed.path ?? expectedPath).trim().replace(/^\/+/, '') || expectedPath,
-      content,
-    };
+    const chosenPath =
+      String(parsed.path ?? expectedPath).trim().replace(/^\/+/, '') ||
+      expectedPath;
+    // نگهبان کدی مسیر (اورراید مجری): مسیر نامعتبر = پچ رد می‌شود.
+    // عمداً به expectedPath برنمی‌گردیم؛ محتوای نوشته‌شده برای مسیر نامعتبر
+    // (مثلاً کد تست) نباید زیر نام دیگری تحویل داده شود.
+    if (pathRejectionReason(chosenPath) !== null) return null;
+    // نگهبان کدی کامل‌بودن کد: اسکلت، TODO و placeholder رد می‌شود
+    if (contentRejectionReason(content, chosenPath) !== null) return null;
+    return { path: chosenPath, content };
   } catch {
     return null;
   }
@@ -181,24 +291,36 @@ function normalizePatch(raw: string, expectedPath: string): WorkerPatch | null {
 
 /**
  * مرحلهٔ نهایی بعد از منتقد: تبدیل خروجی تأییدشده به PatchFileهای واقعی.
+ * دروازهٔ دفاع-در-عمق: هر فایل یک بار دیگر از نگهبان مسیر و نگهبان کامل‌بودن
+ * کد رد می‌شود (اگر سرپرست یا مجری از فیلترهای قبلی رد شده باشند).
  * سقف‌ها: حداکثر ۳ فایل، هر فایل حداکثر ۲۰ کیلوبایت.
- * فایل بزرگ‌تر از سقف حذف می‌شود (کد برش‌خورده بدتر از نبودنش است) و در
- * آرایهٔ dropped گزارش می‌شود.
+ * فایل ردشده/بزرگ‌تر از سقف حذف می‌شود (کد برش‌خورده بدتر از نبودنش است) و در
+ * آرایهٔ dropped گزارش می‌شود؛ droppedPaths مسیرهای خالص حذف‌شده است برای
+ * راستی‌آزمایی تحویل.
  */
 function finalizePatches(
   approved: WorkerPatch[],
   dropped: string[],
-): PatchFile[] {
+): { files: PatchFile[]; droppedPaths: string[] } {
   const out: PatchFile[] = [];
+  const droppedPaths: string[] = [];
   for (const p of approved.slice(0, MAX_PATCH_FILES)) {
+    const gateReason =
+      pathRejectionReason(p.path) ?? contentRejectionReason(p.content, p.path);
+    if (gateReason !== null) {
+      dropped.push(`${p.path} (رد نگهبان: ${gateReason})`);
+      droppedPaths.push(p.path);
+      continue;
+    }
     const size = utf8Bytes(p.content);
     if (size > MAX_PATCH_BYTES) {
       dropped.push(`${p.path} (${Math.round(size / 1024)}KB، سقف ۲۰KB)`);
+      droppedPaths.push(p.path);
       continue;
     }
     out.push({ path: p.path, content: p.content });
   }
-  return out;
+  return { files: out, droppedPaths };
 }
 
 /**
@@ -209,13 +331,13 @@ function finalizePatches(
 function verifyPatchDelivery(
   criticApproved: WorkerPatch[],
   finalPatch: PatchFile[],
-  dropped: string[],
+  droppedPaths: string[],
 ): { ok: boolean; missing: string[] } {
   const delivered = new Set(finalPatch.map((p) => p.path));
-  const droppedPaths = new Set(dropped.map((d) => d.split(' (')[0].trim()));
+  const droppedSet = new Set(droppedPaths.map((d) => d.trim()));
   const missing = criticApproved
     .map((p) => p.path)
-    .filter((p) => !delivered.has(p) && !droppedPaths.has(p));
+    .filter((p) => !delivered.has(p) && !droppedSet.has(p));
   return { ok: missing.length === 0, missing };
 }
 
@@ -311,6 +433,8 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
           '- حداکثر ۲۰ کیلوبایت برای هر فایل؛ فایل بزرگ‌تر حذف می‌شود، پس کد را جمع‌وجور و کامل بنویس.\n' +
           '- کد باید کامل و قابل اجرا باشد؛ تکه‌کد ناقص یا placeholder مثل // ... ممنوع.\n' +
           '- فایل‌های test، spec، debug یا mock هرگز تولید نکن. فقط کد پروداکشن واقعی.\n' +
+          '- مسیر (path) حتماً با site/ شروع شود، بدون .. ؛ فایل .js/.jsx ممنوع است (پروژه TS است)؛ ' +
+          'محتوا باید بدون TODO/FIXME و بدون خط «...» و با حداقل یک export باشد، وگرنه پچ خودکار رد می‌شود.\n' +
           '- نام فایل (path) باید معنادار و مرتبط با کار باشد؛ نام‌های placeholder مثل someApi، some-api، test، temp، example، sample، demo ممنوع است؛ ' +
           'اگر path داده‌شده placeholder است، آن را با نام معنادار اصلاح کن.\n' +
           '- برای رابط فارسی: فقط logical CSS (ms- me- ps- pe- start- end-)، هرگز ml- pl- text-left.\n' +
@@ -346,7 +470,7 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
         'بر اساس زمینه، تصمیم بگیر این چرخه دقیقاً چه کدی باید نوشته یا اصلاح شود. ' +
         'فقط JSON معتبر بده با این ساختار:\n' +
         '{"goal": "هدف یک‌خطی", "tasks": [{"path": "مسیر نسبی فایل", "action": "create یا modify", "instruction": "دستور دقیق فنی به مجری"}]}\n' +
-        'قواعد: حداکثر ۳ فایل؛ مسیرها نسبی و دقیق؛ هرگز فایل .env یا package-lock را انتخاب نکن؛ ' +
+        'قواعد: حداکثر ۳ فایل؛ مسیرها نسبی و دقیق و حتماً با site/ شروع شوند (بدون .. و بدون بک‌اسلش)؛ هرگز فایل .env یا package-lock را انتخاب نکن؛ ' +
         'نام فایل باید معنادار و مرتبط با کار باشد؛ نام‌های placeholder مثل someApi، some-api، test، temp، example، sample، demo ممنوع است؛ ' +
         'اگر اسم دقیق نمی‌دانی، از روی هدف تسک الهام بگیر؛ ' +
         'instruction باید آن‌قدر دقیق باشد که مجری بدون سؤال کد را بنویسد.';
@@ -559,16 +683,16 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
     return lastRawApproved;
   });
 
-  // مرحلهٔ نهایی: تبدیل به PatchFileهای واقعی با سقف ۳ فایل / ۲۰KB
+  // مرحلهٔ نهایی: تبدیل به PatchFileهای واقعی با سقف ۳ فایل / ۲۰KB + نگهبان مسیر و کامل‌بودن کد
   const dropped: string[] = [];
-  const finalPatch = finalizePatches(criticApproved, dropped);
+  const { files: finalPatch, droppedPaths } = finalizePatches(criticApproved, dropped);
 
   // راستی‌آزمایی تحویل: هیچ فایل تأییدشده‌ای نباید بی‌صدا گم شود
-  const deliveryCheck = verifyPatchDelivery(criticApproved, finalPatch, dropped);
+  const deliveryCheck = verifyPatchDelivery(criticApproved, finalPatch, droppedPaths);
   const approved = lastRawApproved && finalPatch.length > 0 && deliveryCheck.ok;
   const reason = lastRawReason;
   const droppedNote =
-    dropped.length > 0 ? ` — حذف‌شده (سقف ۲۰KB): ${dropped.join('، ')}` : '';
+    dropped.length > 0 ? ` — حذف‌شده: ${dropped.join('، ')}` : '';
   const deliveryNote = !deliveryCheck.ok
     ? ` — تحویل ناقص: این فایل‌ها در پچ نهایی نیستند: ${deliveryCheck.missing.join('، ')}`
     : '';
