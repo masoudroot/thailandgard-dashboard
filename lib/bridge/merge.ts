@@ -16,7 +16,7 @@
 
 import { getGithubConfig } from '../github';
 import { GithubError } from '../github-changes';
-import { BRIDGE_BASE_BRANCH, SITE_REPO } from './commit';
+import { BRIDGE_BASE_BRANCH, BRIDGE_BRANCH_PREFIX, SITE_REPO } from './commit';
 import { preMergeTypeCheck } from './pre-merge-check';
 import {
   GITHUB_NOT_CONNECTED,
@@ -173,7 +173,34 @@ export async function mergeBranchIntoDev(
       status: conflictStatus,
     });
   }
+  // پاکسازی: شاخهٔ پل پس از مرج موفق حذف می‌شود.
+  await deleteBridgeBranch(api, h, branch);
   return { sha: mBody.sha ?? null, already_merged: false, pr_number: null };
+}
+
+/**
+ * حذف شاخهٔ پل از ریپوی سایت پس از مرج موفق.
+ * شکست حذف، مرج را باطل نمی‌کند (فقط لاگ می‌شود) تا چرخه نمیرد؛
+ * جاروی دوره‌ای شاخه‌های رهاشده را هم پوشش می‌دهد.
+ */
+async function deleteBridgeBranch(
+  api: string,
+  h: Record<string, string>,
+  branch: string,
+): Promise<void> {
+  if (!branch.startsWith(BRIDGE_BRANCH_PREFIX)) return;
+  try {
+    const delRes = await fetch(`${api}/git/refs/heads/${encodeURIComponent(branch)}`, {
+      method: 'DELETE',
+      headers: h,
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!delRes.ok && delRes.status !== 422) {
+      console.warn(`[bridge] حذف شاخهٔ ${branch} ناموفق بود (وضعیت ${delRes.status})؛ رد شد.`);
+    }
+  } catch (err) {
+    console.warn(`[bridge] خطا در حذف شاخهٔ ${branch}:`, (err as Error)?.message ?? err);
+  }
 }
 
 /**
