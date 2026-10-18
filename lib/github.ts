@@ -157,18 +157,70 @@ export async function readRepoFile(
   return Buffer.from(body.content, 'base64').toString('utf-8');
 }
 
-function validateFiles(files: PatchFile[]): void {
+/**
+ * نرمال‌سازی مسیر فایل پچ: بک‌اسلش به اسلش (تا «..» پشت بک‌اسلش پنهان نماند)،
+ * حذف اسلش‌های اول. بقیهٔ مسیر دست‌نخورده می‌ماند.
+ */
+function normalizePatchPath(raw: string): string {
+  return String(raw ?? '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+}
+
+/**
+ * اعتبارسنجی مسیر یک فایل پچ (آخرین دروازه پیش از فراخوانی API گیت‌هاب).
+ *
+ * نکتهٔ ظریف (درس 832d186): «..» فقط به‌عنوان سگمنت مستقل مسیر ممنوع است،
+ * نه به‌عنوان زیررشته؛ وگرنه مسیرهای معتبر نکست مثل [...slug] و [[...slug]]
+ * هم رد می‌شدند. هیچ مسیری با این منطق نمی‌تواند از ریشهٔ ریپو خارج شود.
+ * مسیر نرمال‌شده برمی‌گردد تا همهٔ مصرف‌کننده‌ها (بلاب، idempotency) دقیقاً
+ * همان را بنویسند/مقایسه کنند.
+ */
+function validatePatchPath(rawPath: string): string {
+  const p = normalizePatchPath(rawPath);
+  if (!p) throw new Error('مسیر یک فایل خالی است.');
+  if (p.includes('\0')) throw new Error(`مسیر «${rawPath}» کاراکتر نامعتبر دارد.`);
+  if (/^[a-zA-Z]:/.test(p)) {
+    throw new Error(`مسیر «${rawPath}» مطلق است؛ فقط مسیر نسبی مجاز است.`);
+  }
+  const segments = p.split('/').filter((s) => s.length > 0);
+  if (segments.length === 0) throw new Error(`مسیر «${rawPath}» معتبر نیست.`);
+  if (segments.includes('..')) {
+    throw new Error(`مسیر «${rawPath}» شامل «..» است و مجاز نیست.`);
+  }
+  if (segments.some((s) => s === '.git' || s === '.github')) {
+    throw new Error(`مسیر «${rawPath}» شامل پوشهٔ «${segments.find((s) => s === '.git' || s === '.github')}» است و مجاز نیست.`);
+  }
+  if (
+    segments.some((s) => {
+      const lower = s.toLowerCase();
+      return lower === '.env' || lower.startsWith('.env.');
+    })
+  ) {
+    throw new Error(`فایل «.env» در مسیر «${rawPath}» مجاز نیست.`);
+  }
+  return p;
+}
+
+/**
+ * اعتبارسنجی فهرست فایل‌های پچ پیش از هر فراخوانی گیت‌هاب.
+ * export است تا تست واحد مستقیم ممکن باشد.
+ */
+export function validateFiles(files: PatchFile[]): void {
   if (!Array.isArray(files) || files.length === 0) {
     throw new Error('لیست فایل‌های پچ خالی است؛ چیزی برای اعمال نیست.');
   }
   if (files.length > 10) throw new Error('حداکثر ۱۰ فایل در هر اعمال پشتیبانی می‌شود.');
+  const seen = new Set<string>();
   for (const f of files) {
     if (typeof f.path !== 'string' || !f.path.trim()) throw new Error('مسیر یک فایل نامعتبر است.');
-    const p = f.path.trim().replace(/^\/+/, '');
-    if (p.includes('..') || p.startsWith('.git') || p.includes('.env')) {
-      throw new Error(`مسیر غیرمجاز در پچ: ${p}`);
+    const p = validatePatchPath(f.path);
+    if (seen.has(p)) {
+      throw new Error(`فایل «${p}» دو بار در پچ آمده است؛ مسیرها باید یکتا باشند.`);
     }
+    seen.add(p);
     if (typeof f.content !== 'string') throw new Error(`محتوای فایل «${p}» نامعتبر است.`);
+    if (!f.content.trim()) {
+      throw new Error(`محتوای فایل «${p}» خالی است؛ حذف فایل از این مسیر پشتیبانی نمی‌شود.`);
+    }
     if (f.content.length > 200_000) throw new Error(`فایل «${p}» بیش از حد بزرگ است.`);
   }
 }
@@ -240,7 +292,7 @@ async function reuseExistingBridgeBranch(
     // ساخت بلاب‌های ما و درخت موردنظر روی همان مبنای کامیت رأس
     const blobs: Array<{ path: string; sha: string }> = [];
     for (const f of files) {
-      const p = f.path.trim().replace(/^\/+/, '');
+      const p = normalizePatchPath(f.path);
       const blobRes = await fetch(`${api}/git/blobs`, {
         method: 'POST',
         headers: { ...h, 'Content-Type': 'application/json' },
@@ -272,7 +324,14 @@ async function reuseExistingBridgeBranch(
       commitSha: headSha.slice(0, 7),
       compareUrl: `https://github.com/${repo}/compare/${baseBranch}...${branch}`,
     };
-  } catch {
+  } catch (err) {
+    // بررسی idempotency بهترین تلاش است؛ شکستش بی‌صدا قورت داده نمی‌شود تا
+    // در لاگ دیده شود، ولی خطای ۴۲۲ اصلیِ صداکننده همچنان بالا می‌آید.
+    console.warn(
+      `[github] بررسی استفادهٔ مجدد از شاخهٔ «${branch}» ناموفق بود: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
     return null;
   }
 }
@@ -340,7 +399,7 @@ export async function applyPatchViaGithub(
   // ۳) بلاب برای هر فایل
   const blobs: Array<{ path: string; sha: string }> = [];
   for (const f of files) {
-    const p = f.path.trim().replace(/^\/+/, '');
+    const p = normalizePatchPath(f.path);
     const blobRes = await fetch(`${api}/git/blobs`, {
       method: 'POST',
       headers: { ...h, 'Content-Type': 'application/json' },
@@ -431,6 +490,18 @@ export async function commitTeamChanges(
 ): Promise<ApplyResult> {
   const { token } = await getGithubConfig();
   if (!token) throw new Error(NOT_CONNECTED_MESSAGE);
+  // قیف یکپارچهٔ اعتبارسنجی (ممیزی مسیرهای دورزن C4): این مسیر هم اگر روزی
+  // سیم‌کشی شد، باید از همان دروازهٔ کیفیت حلقهٔ پل رد شود؛ وگرنه پچ بدون
+  // چک‌های پل (سینتکس، پسوند، ام-دش، کد مخرب) روی گیت‌هاب می‌نشیند.
+  // ایمپورت پویاست تا gate.ts (با وابستگی سنگین typescript) استاتیک وارد
+  // باندل نشود.
+  const { validatePatch } = await import('./bridge/gate');
+  const gate = validatePatch(files);
+  if (!gate.ok) {
+    throw new Error(
+      `دروازهٔ کیفیت پل پچ را رد کرد (${gate.errors.length} خطا): ${gate.errors.slice(0, 3).join(' | ')}`,
+    );
+  }
   const baseBranch = await getDefaultBranch(SITE_REPO_FULL, token);
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const makeBranch = () => `team/${team}-${stamp}-${randomSuffix()}`;
