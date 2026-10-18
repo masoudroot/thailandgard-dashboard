@@ -34,8 +34,9 @@ process.on('uncaughtException', (err) => {
   );
 });
 
+import { sweepOrphanedBridgePatches } from '../lib/bridge/sweep';
+
 /** سقف پردازش پچ‌های یتیم در هر تیک، تا بودجه‌ی زمانی جاب خورده نشود. */
-const ORPHAN_SWEEP_LIMIT = 3;
 /** کلید تنظیمات شروع خودکار چرخه‌ی بعدی (مقادیر: true/false؛ پیش‌فرض روشن). */
 const AUTO_START_SETTING_KEY = 'auto_start_next_cycle';
 /**
@@ -46,41 +47,10 @@ const AUTO_START_SETTING_KEY = 'auto_start_next_cycle';
 const MAX_CONSECUTIVE_CYCLE_FAILURES = 3;
 
 /**
- * جاروی پچ‌های یتیم پل اجرا.
- * هر پچ با وضعیت proposed را از طریق جریان خودکار
- * (دروازه ← کامیت ← مرج به dev) پردازش می‌کند.
- * دستور مسعود: بدون تأیید دستی. کاملاً best-effort.
- * حداکثر ۳ پچ در هر تیک؛ فراخوانی‌اش در main بعد از تصمیم‌گیری تیم اصلی است، نه قبلش.
+ * جاروی پچ‌های یتیم پل به ماژول مشترک lib/bridge/sweep.ts منتقل شد تا
+ * ورک‌فلو اختصاصی bridge-sweep هم از همان منطق استفاده کند.
+ * صدا زدن: await sweepOrphanedBridgePatches();
  */
-async function sweepOrphanedBridgePatches(): Promise<void> {
-  try {
-    const sb = getSupabase();
-    const { data, error } = await sb
-      .from('bridge_patches')
-      .select('id, team')
-      .eq('status', 'proposed')
-      .order('created_at', { ascending: true })
-      .limit(ORPHAN_SWEEP_LIMIT);
-    if (error || !data || data.length === 0) return;
-    const { processProposedPatch } = await import('../lib/bridge/propose');
-    for (const row of data as Array<{ id: string; team: string }>) {
-      try {
-        const res = await processProposedPatch(row.id);
-        console.log(
-          `[bridge-sweep] patch ${row.id} (team ${row.team}): ` +
-            (res.merged ? `merged به dev` : res.gated ? `committed ولی مرج نشد` : `needs_review`),
-        );
-      } catch (err) {
-        console.error(
-          `[bridge-sweep] patch ${row.id} خطا داد:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
-    }
-  } catch (err) {
-    console.error('[bridge-sweep] خطای غیرمنتظره:', err instanceof Error ? err.message : err);
-  }
-}
 
 /**
  * شروع خودکار چرخه‌ی بعدی، وقتی چرخه‌ی فعالی نیست.
@@ -296,6 +266,13 @@ async function main(): Promise<void> {
           const reason = String(rd.reason ?? '').trim();
           if (directive) {
             return { directive: directive.slice(0, 2000), reason: reason.slice(0, 500) || undefined };
+          }
+          // C2 فیکس: اگر directive نبود ولی reason بود، از reason دستور بساز تا تلاش بعدی کور نباشد
+          if (reason) {
+            return {
+              reason: reason.slice(0, 500),
+              directive: `دور قبلی‌ات در همین چرخه رد شد. دلیل: ${reason.slice(0, 800)}. دقیقاً همین ایراد را برطرف کن و خروجی کامل و درست را از نو تولید کن.`,
+            };
           }
         }
       }
