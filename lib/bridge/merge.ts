@@ -132,8 +132,13 @@ export async function mergeBranchIntoDev(
       message?: string;
     };
     if (!mRes.ok || !mBody.merged) {
+      // گیت‌هاب برای تداخل واقعی 405 («Pull Request is not mergeable») یا
+      // 409 («Head branch was modified») برمی‌گرداند؛ این وضعیت را لو نده
+      // تا صداکننده بتواند تداخل دائمی را از خطای گذرا جدا کند (ممیزی D1:
+      // قبلاً همه‌چیز 502 می‌شد و پچ‌های متداخل برای همیشه در حلقه می‌چرخیدند).
+      const conflictStatus = mRes.status === 405 || mRes.status === 409 ? mRes.status : 502;
       throw new GithubError(`مرج PR ناموفق بود: ${mBody.message ?? `وضعیت ${mRes.status}`}`, {
-        status: 502,
+        status: conflictStatus,
       });
     }
     return { sha: mBody.sha ?? null, already_merged: false, pr_number: openPr.number };
@@ -162,11 +167,24 @@ export async function mergeBranchIntoDev(
   }
   const mBody = (await mRes.json().catch(() => ({}))) as { sha?: string; message?: string };
   if (!mRes.ok) {
+    // مرج مستقیم روی تداخل 409 («Conflict») می‌دهد؛ مثل مسیر PR لو نده.
+    const conflictStatus = mRes.status === 409 ? 409 : 502;
     throw new GithubError(`مرج مستقیم ناموفق بود: ${mBody.message ?? `وضعیت ${mRes.status}`}`, {
-      status: 502,
+      status: conflictStatus,
     });
   }
   return { sha: mBody.sha ?? null, already_merged: false, pr_number: null };
+}
+
+/**
+ * آیا این خطا «تداخل مرج» دائمی است؟ تداخل با تلاش مجدد درست نمی‌شود
+ * (فایل تکراری قبلاً مرج شده یا dev جلوتر است)؛ پس پچ نباید در حلقهٔ
+ * committed ← proposed بچرخد و باید به needs_review برود.
+ */
+export function isMergeConflictError(err: unknown): boolean {
+  if (err instanceof GithubError && (err.status === 405 || err.status === 409)) return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /not mergeable|merge conflict|تداخل مرج|Conflict$/.test(msg);
 }
 
 /** حذف شاخهٔ پل (پس از رد)؛ بهترین تلاش، خطا را قورت می‌دهد. */

@@ -20,7 +20,7 @@
 import { validatePatch } from './gate';
 import { commitToBridgeBranch, createBridgePR } from './commit';
 import { claimBridgePatch, getBridgePatch, updateBridgePatch } from '../bridge';
-import { mergeBranchIntoDev, mergeDevIntoMainBestEffort, PreMergeGateError } from './merge';
+import { mergeBranchIntoDev, mergeDevIntoMainBestEffort, PreMergeGateError, isMergeConflictError } from './merge';
 import type { PatchFile } from '../types';
 
 export interface ProposeResult {
@@ -146,8 +146,51 @@ export async function processProposedPatch(patchId: string): Promise<ProposeResu
         gateErrors: [gateMessage],
       };
     }
-    // مرج ناموفق (گذرا): پچ در committed می‌ماند تا بعداً دوباره تلاش شود؛ چرخه نمی‌میرد
+    // تداخل مرج دائمی است (با تلاش مجدد درست نمی‌شود): پچ به needs_review
+    // می‌رود تا برای همیشه در حلقهٔ committed ← proposed نچرخد.
+    // (یافتهٔ ممیزی D1: ۶ پچ تکراری با تداخل add/add ساعت‌ها در این حلقه بودند
+    // چون خطای مرج هیچ‌جا ثبت نمی‌شد و هر ۳۰ دقیقه بازیابی می‌شدند.)
     const message = err instanceof Error ? err.message : String(err);
+    if (isMergeConflictError(err)) {
+      const conflictMessage =
+        `تداخل مرج با dev (دائمی): ${message} ` +
+        `(شاخهٔ ${branch}؛ احتمالاً همین فایل قبلاً با پچ دیگری مرج شده)`;
+      try {
+        await updateBridgePatch(patchId, {
+          status: 'needs_review',
+          gate_errors: JSON.stringify([conflictMessage]),
+        });
+      } catch (dbErr) {
+        console.error(
+          `[bridge] ثبت needs_review برای پچ متداخل ${patchId} ناموفق بود:`,
+          dbErr instanceof Error ? dbErr.message : dbErr,
+        );
+      }
+      console.error(`[bridge] پچ ${patchId} تداخل مرج دائمی دارد؛ به needs_review رفت.`);
+      return {
+        patchId,
+        gated: true,
+        committed: true,
+        merged: false,
+        branch,
+        sha,
+        prUrl,
+        gateErrors: [conflictMessage],
+      };
+    }
+    // مرج ناموفق (گذرا): پچ در committed می‌ماند تا بعداً دوباره تلاش شود؛ چرخه نمی‌میرد.
+    // خطا روی سطر پچ هم ثبت می‌شود تا در پنل دیده شود (قبلاً فقط در لاگ بود
+    // و علت گیرکردن پچ‌ها از دیتابیس پیدا نبود).
+    try {
+      await updateBridgePatch(patchId, {
+        gate_errors: JSON.stringify([`[مرج گذرا] ${message}`]),
+      });
+    } catch (dbErr) {
+      console.error(
+        `[bridge] ثبت خطای مرج گذرای پچ ${patchId} ناموفق بود:`,
+        dbErr instanceof Error ? dbErr.message : dbErr,
+      );
+    }
     console.error(`[bridge] مرج خودکار پچ ${patchId} به dev ناموفق بود:`, message);
     return {
       patchId,
