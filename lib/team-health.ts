@@ -238,11 +238,16 @@ export async function sweepHungTeams(
         : DEAD_ERROR(t.minutesWithoutHeartbeat);
 
     try {
+      // فقط ردیف‌هایی که «هنوز» running هستند ناموفق می‌شوند؛ بین خواندن
+      // (findUnhealthyTeams) و این UPDATE ممکن است تیم کارش را تمام و
+      // موفق ثبت کرده باشد — آن موفقیت نباید با failed بازنویسی شود.
+      // (رفع race: قبلاً فیلتر status نبود و همه‌ی ردیف‌های تیم failed می‌شد.)
       const { error: updErr } = await sb
         .from('team_runs')
         .update({ status: 'failed', error, finished_at: new Date(now).toISOString() })
         .eq('cycle_id', cycleId)
-        .eq('team', t.team);
+        .eq('team', t.team)
+        .eq('status', 'running');
       if (updErr) {
         console.error(`[team-health] ثبت ناموفق برای تیم ${t.team} خطا داد:`, updErr.message);
         continue;
@@ -280,4 +285,124 @@ export async function sweepHungTeams(
     });
   }
   return results;
+}
+
+/**
+ * «موفقیت توخالی»: تیمی که وضعیت success گرفته ولی عملاً چیزی تحویل نداده.
+ *
+ * خطرناک‌ترین خرابیِ بی‌صداست: گیت ساختاری ارکستراتور (validateWorkerOutput)
+ * خروجیِ «کاملاً خالی» را پیش از ثبت success رد می‌کند، ولی تیمی که یک
+ * پاراگرافِ روانِ بی‌محتوا تحویل بدهد از آن گیت رد می‌شود و success می‌گیرد
+ * بی‌آن‌که حتی یک پچ در bridge_patches ثبت کرده باشد. این تابع همان شکافِ
+ * پسینی را می‌بندد.
+ *
+ * معیار پرچم (محافظه‌کارانه، برای جلوگیری از هشدار کاذب):
+ *   - هیچ پچی برای (تیم، چرخه) در bridge_patches ثبت نشده، و
+ *   - (خلاصه‌ی خروجی خالی است یا هیچ فراخوانی LLM ثبت نشده)
+ * تیم تحلیلی که گزارش واقعی نوشته (hasSummary=true) یا واقعاً کار کرده
+ * (llmCalls>0) پرچم نمی‌خورد؛ فقط ترکیب «نه پچ، نه خلاصه/نه کار» پرچم می‌خورد.
+ *
+ * فقط خواندن؛ هیچ دست‌کاری در دیتابیس نمی‌کند. هرگز throw نمی‌کند.
+ * واچ‌داگ می‌تواند خروجی را بگیرد و مثل هشدارهای هنگ/مرگ، به پنل و تلگرام
+ * اطلاع‌رسانی کند.
+ */
+export interface EmptySuccessTeam {
+  team: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** تعداد فراخوانی‌های LLM ثبت‌شده برای این اجرا. */
+  llmCalls: number;
+  /** تعداد پچ‌های ثبت‌شده‌ی تیم در این چرخه (هر وضعیتی؛ حتی ردشده یعنی «چیزی تولید شد»). */
+  patchCount: number;
+  /** آیا خلاصه‌ی خروجی غیرخالی ثبت شده؟ */
+  hasSummary: boolean;
+  /** زیرمجموعه‌ای از: 'no-patches' | 'no-summary' | 'no-llm-calls' */
+  reasons: string[];
+}
+
+interface SuccessRunRow {
+  team: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  llm_calls?: number | null;
+  output_summary?: string | null;
+}
+
+export async function findEmptySuccessTeams(
+  sb: SupabaseClient,
+  cycleId: string,
+): Promise<EmptySuccessTeam[]> {
+  const out: EmptySuccessTeam[] = [];
+  try {
+    const { data: runs, error } = await sb
+      .from('team_runs')
+      .select('team, status, started_at, finished_at, llm_calls, output_summary')
+      .eq('cycle_id', cycleId)
+      .eq('status', 'success')
+      .order('started_at', { ascending: false });
+    if (error) {
+      console.error('[team-health] خواندن اجراهای موفق ناموفق بود:', error.message);
+      return out;
+    }
+    // فقط آخرین اجرای هر تیم؛ سرنوشت تلاش‌های قدیمی‌تر مشخص است.
+    const latest = new Map<string, SuccessRunRow>();
+    for (const r of (runs ?? []) as SuccessRunRow[]) {
+      if (!latest.has(r.team)) latest.set(r.team, r);
+    }
+    if (latest.size === 0) return out;
+
+    // شمارش پچ‌های هر تیم در این چرخه (هر وضعیتی).
+    const patchCounts = new Map<string, number>();
+    try {
+      const { data: patches, error: pErr } = await sb
+        .from('bridge_patches')
+        .select('team')
+        .eq('cycle_id', cycleId);
+      if (pErr) {
+        console.error('[team-health] خواندن bridge_patches ناموفق بود:', pErr.message);
+      } else {
+        for (const p of (patches ?? []) as Array<{ team?: string | null }>) {
+          const t = p.team ?? '';
+          if (t) patchCounts.set(t, (patchCounts.get(t) ?? 0) + 1);
+        }
+      }
+    } catch (err) {
+      console.error(
+        '[team-health] خطا در خواندن bridge_patches:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    for (const [team, r] of Array.from(latest.entries())) {
+      const patchCount = patchCounts.get(team) ?? 0;
+      const llmCalls = typeof r.llm_calls === 'number' ? r.llm_calls : 0;
+      const hasSummary =
+        typeof r.output_summary === 'string' && r.output_summary.trim().length > 0;
+      if (patchCount === 0 && (!hasSummary || llmCalls === 0)) {
+        const reasons: string[] = ['no-patches'];
+        if (!hasSummary) reasons.push('no-summary');
+        if (llmCalls === 0) reasons.push('no-llm-calls');
+        out.push({
+          team,
+          startedAt: r.started_at,
+          finishedAt: r.finished_at,
+          llmCalls,
+          patchCount,
+          hasSummary,
+          reasons,
+        });
+        console.log(
+          `[team-health] «موفقیت توخالی» مشکوک برای تیم ${team} ` +
+            `(پچ: ۰، خلاصه: ${hasSummary ? 'دارد' : 'ندارد'}، فراخوان LLM: ${llmCalls}).`,
+        );
+      }
+    }
+  } catch (err) {
+    console.error(
+      '[team-health] خطا در بررسی موفقیت‌های توخالی:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+  return out;
 }
