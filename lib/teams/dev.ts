@@ -332,13 +332,17 @@ function verifyPatchDelivery(
   criticApproved: WorkerPatch[],
   finalPatch: PatchFile[],
   droppedPaths: string[],
-): { ok: boolean; missing: string[] } {
+): { ok: boolean; missing: string[]; forbiddenDash: string[] } {
   const delivered = new Set(finalPatch.map((p) => p.path));
   const droppedSet = new Set(droppedPaths.map((d) => d.trim()));
   const missing = criticApproved
     .map((p) => p.path)
     .filter((p) => !delivered.has(p) && !droppedSet.has(p));
-  return { ok: missing.length === 0, missing };
+  // C3 فیکس: U+2014 مطلقاً ممنوع - چک کدی در تحویل پچ dev
+  const forbiddenDash = finalPatch
+    .filter((p) => p.content.includes('—') || p.content.includes('–'))
+    .map((p) => p.path);
+  return { ok: missing.length === 0 && forbiddenDash.length === 0, missing, forbiddenDash };
 }
 
 /**
@@ -696,7 +700,8 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
   const droppedNote =
     dropped.length > 0 ? ` — حذف‌شده: ${dropped.join('، ')}` : '';
   const deliveryNote = !deliveryCheck.ok
-    ? ` — تحویل ناقص: این فایل‌ها در پچ نهایی نیستند: ${deliveryCheck.missing.join('، ')}`
+    ? ` — تحویل ناقص: این فایل‌ها در پچ نهایی نیستند: ${deliveryCheck.missing.join('، ')}` +
+      (deliveryCheck.forbiddenDash.length > 0 ? `؛ U+2014 ممنوعه در: ${deliveryCheck.forbiddenDash.join('، ')}` : '')
     : '';
 
   const summary = approved
