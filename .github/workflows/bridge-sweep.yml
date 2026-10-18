@@ -1,0 +1,29 @@
+name: bridge-sweep
+
+# جاروی اختصاصی صف پل (bridge_patches): تخلیه proposed و تلاش مجدد مرج
+# پچ‌های committed. جدا از ورکر چرخه اجراست چون جاروی تهِ تیکِ ورکر چرخه
+# با بودجه باقی‌مانده جاب کار می‌کند و معمولاً وسط تایپ‌چک پیش‌مرج
+# (کلون تازه + npm install روی رانر موقت) با تایم‌اوت ۳۰دقیقه‌ای kill
+# می‌شود؛ این جاب بودجه کامل ۳۰ دقیقه را به تخلیه صف می‌دهد.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install --legacy-peer-deps
+      - name: sweep bridge patch queue
+        run: npx tsx worker/bridge-sweep.ts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

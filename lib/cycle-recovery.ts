@@ -219,10 +219,26 @@ async function reapDeadCycle(cycle: CycleRow, report: CycleRecoveryReport): Prom
     }
   }
 
-  // ۶. پچ‌های پل یتیم در gated/committed (ریشه «پچ‌های gated برای همیشه گیر می‌کنند»).
-  // claimBridgePatch فقط از proposed ادعا می‌کند و جاروی یتیم‌ها فقط proposed
-  // را پردازش می‌کند؛ پس پچِ killشده در میانه راه برای همیشه گیر می‌کرد.
-  // برگشت به proposed تا جاروی بعدی دوباره کامل پردازشش کند (کامیت idempotent است).
+  // ۶. پچ‌های پل یتیم در gated/committed: به تابع مشترک سپرده شد تا در
+  // شروع هر تیک (نه فقط هنگام reap چرخه مرده) هم اجرا شود؛
+  // ر.ک requeueStuckBridgePatches.
+  await requeueStuckBridgePatches(sb, report);
+}
+
+/**
+ * بازگرداندن پچ‌های پل یتیم (gated/committed کهنه‌تر از STUCK_PATCH_MS)
+ * به proposed تا جاروی بعدی دوباره کامل پردازششان کند (کامیت idempotent است).
+ *
+ * ریشه: claimBridgePatch فقط از proposed ادعا می‌کند و جاروی پچ‌های یتیم
+ * فقط proposed را پردازش می‌کند؛ پس پچِ killشده در میانه راه (مثلاً تایم‌اوت
+ * جاب وسط تایپ‌چک پیش‌مرج) برای همیشه گیر می‌کرد.
+ * در شروع هر تیک از recoverDeadCycles صدا زده می‌شود؛ آستانه ۳۰ دقیقه‌ای
+ * جلوی برگرداندن پچی را می‌گیرد که همین حالا دارد پردازش می‌شود.
+ */
+async function requeueStuckBridgePatches(
+  sb: ReturnType<typeof getSupabase>,
+  report: CycleRecoveryReport,
+): Promise<void> {
   const patchBefore = new Date(Date.now() - STUCK_PATCH_MS).toISOString();
   const { data: stuckPatches, error: pErr } = await sb
     .from('bridge_patches')
@@ -231,19 +247,19 @@ async function reapDeadCycle(cycle: CycleRow, report: CycleRecoveryReport): Prom
     .lt('updated_at', patchBefore);
   if (pErr) {
     console.error('[cycle-recovery] failed to list stuck bridge patches:', pErr.message);
-  } else {
-    for (const p of (stuckPatches ?? []) as Array<{ id: string; status: string }>) {
-      const { error: rpErr } = await sb
-        .from('bridge_patches')
-        .update({ status: 'proposed', updated_at: nowIso })
-        .eq('id', p.id)
-        .in('status', ['gated', 'committed']);
-      if (rpErr) {
-        console.error(`[cycle-recovery] failed to requeue patch ${p.id}:`, rpErr.message);
-      } else {
-        report.reproposedPatches += 1;
-        console.log(`[cycle-recovery] پچ یتیم ${p.id} (${p.status}) به proposed برگشت.`);
-      }
+    return;
+  }
+  for (const p of (stuckPatches ?? []) as Array<{ id: string; status: string }>) {
+    const { error: rpErr } = await sb
+      .from('bridge_patches')
+      .update({ status: 'proposed', updated_at: new Date().toISOString() })
+      .eq('id', p.id)
+      .in('status', ['gated', 'committed']);
+    if (rpErr) {
+      console.error(`[cycle-recovery] failed to requeue patch ${p.id}:`, rpErr.message);
+    } else {
+      report.reproposedPatches += 1;
+      console.log(`[cycle-recovery] پچ یتیم ${p.id} (${p.status}) به proposed برگشت.`);
     }
   }
 }
@@ -275,6 +291,15 @@ export async function recoverDeadCycles(): Promise<CycleRecoveryReport> {
       } catch (err) {
         console.error(`[cycle-recovery] failed to reap cycle ${cycle.id}:`, err instanceof Error ? err.message : err);
       }
+    }
+    // پچ‌های پل یتیم (gated/committed کهنه) در هر تیک برمی‌گردند، نه فقط
+    // وقتی چرخه مرده‌ای reap می‌شود؛ وگرنه پچِ killشده وسط تایپ‌چک پیش‌مرج
+    // (تایم‌اوت ۳۰دقیقه‌ای جاب) ساعت‌ها در committed می‌ماند.
+    // آستانه STUCK_PATCH_MS جلوی دست‌کاری پچِ در حال پردازش را می‌گیرد.
+    try {
+      await requeueStuckBridgePatches(sb, report);
+    } catch (err) {
+      console.error('[cycle-recovery] requeue stuck patches failed:', err instanceof Error ? err.message : err);
     }
     if (report.reapedCycles.length > 0) {
       console.log(
