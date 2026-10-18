@@ -165,7 +165,9 @@ export interface ApplyResult {
 function normalizePath(raw: string): string | null {
   const p = raw.trim().replace(/^\/+/, '').replace(/\\/g, '/');
   if (!p) return null;
-  if (p.includes('..')) return null;
+  // «..» فقط به‌عنوان سگمنت مسیر ممنوع است، نه به‌عنوان زیررشته؛
+  // مثلاً [...next] (کتچ‌آل نکست) معتبر است ولی a/../b نیست.
+  if (p.split('/').includes('..')) return null;
   if (p.startsWith('.git/') || p === '.git') return null;
   return p;
 }

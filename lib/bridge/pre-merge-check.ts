@@ -11,11 +11,16 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { mkdtemp, rm, writeFile, mkdir } from 'fs/promises';
-import { tmpdir } from 'os';
+import { writeFile, mkdir, access } from 'fs/promises';
+import { homedir } from 'os';
 import { join } from 'path';
 
 const execFileAsync = promisify(execFile);
+
+/** دایرکتوری دائمی برای پیش‌مرج: node_modules بین اجراها کش می‌شود.
+ * /tmp فقط ۵۱۲MB دارد و برای npm install تنگ است؛ این مسیر روی دیسک اصلی است. */
+const PREMERGE_WORKDIR = join(homedir(), 'workspace', 'thailandgard-dashboard', 'hidden_files', 'premerge');
+const PREMERGE_CLONE_DIR = join(PREMERGE_WORKDIR, 'site-clone');
 
 export interface PreMergeCheckResult {
   passed: boolean;
@@ -41,24 +46,36 @@ export async function preMergeTypeCheck(
   siteRepoUrl: string,
   baseBranch: string = 'dev',
 ): Promise<PreMergeCheckResult> {
-  const workdir = await mkdtemp(join(tmpdir(), 'premerge-'));
+  // دایرکتوری دائمی: بین اجراها نگه داشته می‌شود تا node_modules کش شود.
+  await mkdir(PREMERGE_WORKDIR, { recursive: true });
+  const cloneDir = PREMERGE_CLONE_DIR;
   try {
-    // ۱. کلون سبک از شاخه مبنا: فقط تاریخچهٔ یک‌کامتی، بدون بلاب‌ها،
-    //    و فقط پوشهٔ site (جایی که کد تایپ‌اسکریپت و package.json است).
-    //    کلون کامل در عمل از سقف زمانی رد می‌شد و گیتِ fail-closed همهٔ
-    //    مرج‌ها را بلاک می‌کرد.
-    const cloneDir = workdir + '/site';
-    await execFileAsync(
-      'git',
-      ['clone', '--depth', '1', '--filter=blob:none', '--sparse', '--branch', baseBranch, siteRepoUrl, cloneDir],
-      { timeout: TIMEOUT_MS },
-    );
-    await execFileAsync('git', ['sparse-checkout', 'set', 'site'], {
-      cwd: cloneDir,
-      timeout: TIMEOUT_MS,
-    });
+    // ۱. کلون یا به‌روزرسانی: اگر کلون هست، فقط fetch + checkout؛
+    //    اگر نیست، کلون سبک.
+    const cloneExists = await access(join(cloneDir, '.git')).then(() => true).catch(() => false);
+    if (cloneExists) {
+      await execFileAsync('git', ['fetch', 'origin', baseBranch, '--depth', '1'], {
+        cwd: cloneDir, timeout: TIMEOUT_MS,
+      });
+      await execFileAsync('git', ['checkout', '-f', `origin/${baseBranch}`], {
+        cwd: cloneDir, timeout: TIMEOUT_MS,
+      });
+      await execFileAsync('git', ['clean', '-fd', 'site/'], {
+        cwd: cloneDir, timeout: TIMEOUT_MS,
+      });
+    } else {
+      await execFileAsync(
+        'git',
+        ['clone', '--depth', '1', '--filter=blob:none', '--sparse', '--branch', baseBranch, siteRepoUrl, cloneDir],
+        { timeout: TIMEOUT_MS },
+      );
+      await execFileAsync('git', ['sparse-checkout', 'set', 'site'], {
+        cwd: cloneDir,
+        timeout: TIMEOUT_MS,
+      });
+    }
 
-    const siteDir = workdir + '/site/site'; // ریپو thailandgard، پوشه site/
+    const siteDir = join(cloneDir, 'site'); // ریپو thailandgard، پوشه site/
 
     // ۲. اعمال فایل‌های پچ
     for (const f of patchFiles) {
@@ -69,14 +86,34 @@ export async function preMergeTypeCheck(
       await writeFile(fullPath, f.content, 'utf-8');
     }
 
-    // ۳. نصب وابستگی‌ها (اگر node_modules نبود)
-    try {
-      await execFileAsync('bash', ['-c', 'test -d node_modules || npm install --legacy-peer-deps --no-audit --no-fund 2>&1 | tail -3'], {
-        cwd: siteDir,
-        timeout: TIMEOUT_MS,
-      });
-    } catch {
-      // اگر نصب شکست خورد، ادامه می‌دهیم؛ tsc شاید با خطای ماژول مواجه شود
+    // ۳. نصب وابستگی‌ها (فقط اگر node_modules نیست؛ بین اجراها کش می‌شود).
+    // خطا دیگر بلعیده نمی‌شود: اگر نصب شکست بخورد، علت در نتیجه برمی‌گردد.
+    const nmExists = await access(join(siteDir, 'node_modules')).then(() => true).catch(() => false);
+    if (!nmExists) {
+      try {
+        const { stdout } = await execFileAsync('npm', ['install', '--legacy-peer-deps', '--no-audit', '--no-fund'], {
+          cwd: siteDir,
+          timeout: TIMEOUT_MS,
+        });
+        console.log(`[pre-merge] npm install انجام شد: ${String(stdout).split('\n').slice(-2).join(' ').slice(0, 200)}`);
+      } catch (err: any) {
+        const out = String(err.stdout || '') + String(err.stderr || '');
+        const tail = out.split('\n').filter((l) => l.trim()).slice(-5).join(' | ').slice(0, 500);
+        return {
+          passed: false,
+          errors: [tail || 'npm install شکست خورد'],
+          message: `نصب وابستگی‌ها ناموفق بود؛ پیش‌مرج انجام نشد: ${tail || 'خطای npm'}`,
+        };
+      }
+      // راستی‌آزمایی: tsc واقعاً نصب شده؟
+      const tscExists = await access(join(siteDir, 'node_modules', '.bin', 'tsc')).then(() => true).catch(() => false);
+      if (!tscExists) {
+        return {
+          passed: false,
+          errors: ['node_modules/.bin/tsc پیدا نشد'],
+          message: 'نصب وابستگی‌ها کامل نشد (tsc پیدا نشد)؛ پیش‌مرج انجام نشد.',
+        };
+      }
     }
 
     // ۴. اجرای tsc
@@ -110,7 +147,6 @@ export async function preMergeTypeCheck(
       errors: [msg],
       message: `بررسی پیش‌مرج انجام نشد: ${msg}`,
     };
-  } finally {
-    await rm(workdir, { recursive: true, force: true });
   }
+  // توجه: دایرکتوری دائمی پاک نمی‌شود تا node_modules کش بماند.
 }
