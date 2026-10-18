@@ -373,6 +373,30 @@ export function buildAutoRejection(detail: string): CriticVerdictV2 {
 }
 
 /**
+ * ساخت دستور تلاش مجدد مجری وقتی تلاش قبلی با خطا مرد.
+ *
+ * سازوکار یادگیری (درس هدررفت توکن تیم design): دلیل «دقیق» رد به پرامپت
+ * تلاش بعدی برمی‌گردد تا مجری همان اشتباه را تکرار نکند؛ قبلاً فقط یک تذکر
+ * کلی («خروجی قبلی‌ات ناقص بود») می‌آمد و هر سه تلاش همان خروجی را می‌ساختند.
+ * اگر دلیل دقیقاً مثل دفعهٔ قبل باشد، پیام «تشدید» می‌شود.
+ */
+export function buildWorkerRetryInstruction(
+  prevInstruction: string | undefined,
+  errText: string,
+  attempt: number,
+  isRepeat: boolean,
+): string {
+  const short = errText.length > 600 ? `${errText.slice(0, 600)}…` : errText;
+  const head = isRepeat
+    ? `اخطار جدی (تلاش ${attempt}): دقیقاً به همان دلیل قبلی رد شدی و چیزی را اصلاح نکردی.`
+    : `تذکر تلاش ${attempt}: خروجی قبلی‌ات رد شد.`;
+  const body = isRepeat
+    ? `دلیل تکراری رد: «${short}» دیگر این کار را نکن؛ دقیقاً همان‌طور که در دلیل گفته شد عمل کن و بعد تحویل بده.`
+    : `دلیل رد: «${short}» این بار دقیقاً همین ایراد را برطرف کن؛ همان اشتباه را تکرار نکن.`;
+  return [prevInstruction, '', head, body].filter(Boolean).join('\n');
+}
+
+/**
  * اجرای حلقه نقد ۳ دوره‌ای.
  */
 export async function runCriticLoop<WorkerOutput>(
@@ -408,32 +432,36 @@ export async function runCriticLoop<WorkerOutput>(
   /**
    * اجرای مجری با تلاش مجدد در همین چرخه (دستور مسعود: رد باید در همان چرخه حل شود).
    * هر دور تا ۳ تلاش؛ هیچ‌چیز به چرخهٔ بعد موکول نمی‌شود.
+   *
+   * نکتهٔ یادگیری: متن خطای هر تلاش در دستور تلاش بعدی تزریق می‌شود تا مجری
+   * «دلیل» رد را ببیند، نه فقط یک تذکر کلی؛ ردِ تکراریِ هم‌متن تشدید می‌شود.
    */
   const runWorkersWithRetry = async (
     round: number,
     instruction: string | undefined,
   ): Promise<WorkerOutput> => {
     let lastErr: unknown;
+    let lastErrText = '';
+    let currentInstruction = instruction;
     for (let attempt = 1; attempt <= MAX_WORKER_ATTEMPTS_PER_ROUND; attempt++) {
       try {
-        const attemptInstruction =
-          attempt === 1
-            ? instruction
-            : [
-                instruction,
-                '',
-                `تذکر تلاش ${attempt}: خروجی قبلی‌ات ناقص/نامعتبر بود. این بار خروجی را کامل و بدون نقص بده؛`,
-                'کم‌کاری یا خروجی خالی پذیرفته نیست.',
-              ]
-              .filter(Boolean)
-              .join('\n');
-        return await runWorkers(round, attemptInstruction);
+        return await runWorkers(round, currentInstruction);
       } catch (err) {
         lastErr = err;
+        const errText = err instanceof Error ? err.message : String(err);
         if (attempt < MAX_WORKER_ATTEMPTS_PER_ROUND) {
           workerRetries++;
+          // یادگیری: دلیل دقیق رد در دستور تلاش بعدی؛ تکرارِ هم‌متن تشدید می‌شود.
+          const isRepeat = lastErrText !== '' && errText === lastErrText;
+          currentInstruction = buildWorkerRetryInstruction(
+            instruction,
+            errText,
+            attempt + 1,
+            isRepeat,
+          );
+          lastErrText = errText;
           await onProgress?.(
-            `دور ${round}: خطای مجری (تلاش ${attempt} از ${MAX_WORKER_ATTEMPTS_PER_ROUND})؛ تلاش مجدد در همین چرخه.`,
+            `دور ${round}: خطای مجری (تلاش ${attempt} از ${MAX_WORKER_ATTEMPTS_PER_ROUND}): ${errText.slice(0, 120)}؛ تلاش مجدد با دلیل اصلاحی در همین چرخه.`,
           );
         }
       }

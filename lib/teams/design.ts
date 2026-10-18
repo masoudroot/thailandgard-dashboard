@@ -12,9 +12,12 @@
  * (قانون B5: «انجام‌شده» یعنی کامپوننت در همین پچ جایی رندر شود؛ فایل تنها = کد مرده)
  * که تیم dev یا مرحلهٔ اعمال، آن را با applyPatchViaGithub روی شاخهٔ dev ریپوی سایت کامیت می‌کند.
  *
- * ضدتکراری برنامه‌ای (نه ذهنی): سرپرست فهرست واقعی site/components را از GitHub API
- * می‌گیرد و nameStem (ریشهٔ نام، بی‌توجه به حروف بزرگ و خط‌تیره) را مقایسه می‌کند؛
- * ریشهٔ تکراری یعنی همان فایل موجود با action برابر modify بهبود می‌یابد.
+ * ضدتکراری سفت در سطح کد (lib/teams/design-dup-guard.ts)، نه فقط پرامپت:
+ * سرپرست فهرست واقعی site/components را می‌گیرد (API گیت‌هاب؛ اگر نبود ریپوی
+ * محلی) و نگهبان سه‌لایه چک می‌کند: مسیر دقیق، بود/نبود در ریپوی محلی، و
+ * توکن‌های نام (thailand-tour-card هم همان tour-card است). ردِ تکراری با دلیل
+ * دستوری به پرامپت تلاش بعدی برمی‌گردد تا تیم یاد بگیرد.
+ * کلید قطع اضطراری: DESIGN_ALLOW_CREATE=false یعنی فقط modify.
  *
  * قوانین سفت (دستور مسعود):
  * - فقط آیتم‌های رجیستری وایب‌فارسی؛ استایل من‌درآوردی ممنوع.
@@ -27,6 +30,14 @@
 import { callLLM, callLLMJson } from '../llm';
 import { buildKnowledgePromptSection } from '../rag';
 import { SITE_REPO_FULL, getGithubConfig } from '../github';
+import {
+  ALLOW_DESIGN_CREATE,
+  findDuplicate,
+  isLocalSiteAvailable,
+  listLocalSiteComponents,
+  localSiteFileExists,
+  normalizeSitePath,
+} from './design-dup-guard';
 import {
   extractCriticKnowledge,
   criticKnowledgeLog,
@@ -135,13 +146,21 @@ function safeComponent(plan: unknown): SafeComponent | null {
 
 /**
  * فهرست واقعی فایل‌های site/components از ریپوی سایت (شاخهٔ dev) از GitHub API.
- * اگر توکن/شبکه در دسترس نبود، آرایهٔ تهی برمی‌گردد و سرپرست به حافظه تکیه می‌کند.
+ *
+ * تغییر مهم (درس هدررفت توکن): در هر خطا (بی‌توکنی، شبکه، ۴۰۴) به‌جای آرایهٔ
+ * تهیِ بی‌صدا، null برمی‌گردد تا صداکننده بداند «فهرستی نداریم» و به ریپوی
+ * محلی یا پرس‌وجوی مستقیم تکیه کند؛ فهرست تهیِ بی‌صدا یعنی نگهبان ضدتکراری
+ * عملاً خاموش.
  */
-async function listSiteComponents(): Promise<string[]> {
+async function listSiteComponents(): Promise<string[] | null> {
   try {
     const { token } = await getGithubConfig();
-    if (!token) return [];
+    if (!token) {
+      console.warn('[design] توکن گیت‌هاب نیست؛ فهرست کامپوننت‌ها از API گرفته نشد (null).');
+      return null;
+    }
     const out: string[] = [];
+    let listed = false;
     const walk = async (dir: string): Promise<void> => {
       const res = await fetch(
         `https://api.github.com/repos/${SITE_REPO_FULL}/contents/${dir}?ref=dev`,
@@ -154,6 +173,7 @@ async function listSiteComponents(): Promise<string[]> {
         },
       );
       if (!res.ok) return;
+      listed = true;
       const items = (await res.json()) as Array<{ type: string; path: string }>;
       if (!Array.isArray(items)) return;
       for (const it of items) {
@@ -162,32 +182,45 @@ async function listSiteComponents(): Promise<string[]> {
       }
     };
     await walk('site/components');
+    if (!listed) {
+      console.warn('[design] گیت‌هاب فهرست site/components را نداد (شاخهٔ dev؟)؛ null برمی‌گردد.');
+      return null;
+    }
     return out;
-  } catch {
-    return [];
+  } catch (err) {
+    console.warn(
+      '[design] خطا در گرفتن فهرست کامپوننت‌ها از گیت‌هاب:',
+      err instanceof Error ? err.message : String(err),
+    );
+    return null;
   }
-}
-
-/** ریشهٔ نام فایل برای تشخیص تکراری: tour-card و TourCard هر دو می‌شوند tourcard. */
-function nameStem(path: string): string {
-  const base = (path.split('/').pop() ?? '').replace(/\.tsx?$/, '');
-  return base.toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]/g, '');
 }
 
 /**
- * بررسی تکراری‌بودن برنامه‌ای (نه ذهنی): اگر action برابر create است ولی
- * فایلی با همان مسیر یا همان ریشهٔ نام در site/components هست، تکراری است.
+ * پرس‌وجوی مستقیم بود/نبود یک مسیر دقیق از گیت‌هاب (شاخهٔ dev).
+ * وقتی فهرست کامل در دسترس نیست، آخرین سنگر نگهبانِ «فایل از قبل هست؟» است.
+ * برمی‌گرداند: true (هست)، false (نیست)، null (نامشخص).
  */
-function findDuplicate(component: SafeComponent, siteFiles: string[]): string | null {
-  const fp = component.filePath.trim().replace(/^\/+/, '');
-  const stem = nameStem(fp);
-  for (const f of siteFiles) {
-    if (f === fp)
-      return `فایل ${fp} از قبل وجود دارد؛ باید action برابر modify باشد نه create`;
-    if (nameStem(f) === stem)
-      return `کامپوننت مشابه از قبل وجود دارد: ${f} (ریشهٔ نام «${stem}» تکراری است)؛ همان را بهبود بده`;
+async function githubFileExists(sitePath: string): Promise<boolean | null> {
+  try {
+    const { token } = await getGithubConfig();
+    if (!token) return null;
+    const res = await fetch(
+      `https://api.github.com/repos/${SITE_REPO_FULL}/contents/${sitePath}?ref=dev`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+        },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (res.status === 200) return true;
+    if (res.status === 404) return false;
+    return null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /** خروجی مجری: فایل‌های واقعی. */
@@ -227,8 +260,15 @@ const CODE_RULES = [
   '۱۲. «انجام‌شده» یعنی رندرشده: پچ این چرخه حتماً باید فایل استفاده‌کننده (usageFile) را هم داشته باشد که کامپوننت را import و در JSX رندر می‌کند. کامپونتی که هیچ صفحه‌ای آن را رندر نکند، کد مرده است و «انجام‌شده» حساب نمی‌شود.',
 ].join('\n');
 
-/** سرپرست: از بریف artdir و خروجی branding دقیقاً یک کامپوننت انتخاب می‌کند. */
-async function makeSupervisorPlan(input: TeamInput): Promise<SupervisorPlan> {
+/** سرپرست: از بریف artdir و خروجی branding دقیقاً یک کامپوننت انتخاب می‌کند.
+ * correctiveFeedback: اگر انتخاب قبلی همین چرخه به دلیل تکراری رد شد، دلیل
+ * دقیقش این‌جا می‌آید تا سرپرست همان اشتباه را تکرار نکند (یادگیری درون‌چرخه‌ای). */
+async function makeSupervisorPlan(
+  input: TeamInput,
+  siteFiles: string[],
+  siteListSource: string,
+  correctiveFeedback?: string,
+): Promise<SupervisorPlan> {
   let knowledgeSection = '';
   try {
     knowledgeSection = await buildKnowledgePromptSection(TEAM, MISSION);
@@ -240,11 +280,9 @@ async function makeSupervisorPlan(input: TeamInput): Promise<SupervisorPlan> {
   const brandingResult = input.previousWavesOutput['branding'];
   const artdirBrief = artdirResult?.summary ?? '(بریف artdir نیست)';
   const brandingOutput = brandingResult?.summary ?? '(خروجی branding نیست)';
-  // فهرست واقعی کامپوننت‌های موجود؛ سند ضدتکراری، نه حافظهٔ ذهنی
-  const siteFiles = await listSiteComponents();
   const siteListLine = siteFiles.length
-    ? `فهرست واقعی فایل‌های site/components (شاخهٔ dev، همین حالا):\n${siteFiles.join('\n')}`
-    : '(فهرست واقعی در دسترس نبود؛ با احتیاط و از روی یادگیری‌های قبلی انتخاب کن)';
+    ? `فهرست واقعی فایل‌های site/components (منبع: ${siteListSource}):\n${siteFiles.join('\n')}`
+    : '(فهرست واقعی در دسترس نبود؛ با احتیاط و از روی یادگیری‌های قبلی انتخاب کن. اگر action برابر create گذاشتی، حتماً نامی کاملاً تازه و بی‌سابقه انتخاب کن)';
   const prompt = [
     'زمینه:',
     ...(knowledgeSection ? [knowledgeSection, ''] : []),
@@ -262,6 +300,20 @@ async function makeSupervisorPlan(input: TeamInput): Promise<SupervisorPlan> {
     '',
     siteListLine,
     '',
+    ...(correctiveFeedback
+      ? [
+          'اخطار اصلاحی: انتخاب قبلی‌ات در همین چرخه رد شد و نباید تکرار شود:',
+          correctiveFeedback,
+          'یک کامپوننت دیگر انتخاب کن، یا همان فایل موجودِ نام‌برده را با action برابر modify برای بهبود بردار.',
+          '',
+        ]
+      : []),
+    ...(ALLOW_DESIGN_CREATE
+      ? []
+      : [
+          'ممنوعیت فعلی: ساخت کامپوننت تازه (action برابر create) در این دوره غیرفعال است؛ فقط action برابر modify برای بهبود کامپوننت موجود مجاز است.',
+          '',
+        ]),
     'دقیقاً یک کامپوننت انتخاب کن که این چرخه ساخته شود: کوچک، مشخص و قابل‌مشاهده روی سایت (مثل کارت تور، بنر، بخش نظرات، دکمهٔ تماس). از تکرار کامپوننت‌های یادگیری‌های قبلی پرهیز کن.',
     'ضدتکراری با فهرست واقعی بالا: ریشهٔ نام فایل (حروف کوچک، بدون خط‌تیره) را با همهٔ فایل‌های فهرست مقایسه کن. اگر ریشهٔ نام تکراری است (مثلاً tour-card در برابر TourCard)، همان فایل موجود را برای «بهبود» انتخاب کن و action را modify بگذار؛ ساخت فایل تازهٔ تکراری ممنوع و مساوی رد قطعی است.',
     '«انجام‌شده» یعنی رندرشده: همراه کامپوننت، فایل استفاده‌کننده (usageFile) را هم مشخص کن؛ صفحه‌ای واقعی زیر site/app/... یا یک بلوک مونتاژکننده در site/components که این کامپوننت را رندر می‌کند. action برابر modify برای صفحهٔ موجود، و create برای صفحه/بخش تازه.',
@@ -389,13 +441,20 @@ async function remember(runId: string, lesson: string): Promise<void> {
 
 /**
  * اعتبارسنجی سبک PatchFile پیش از تحویل.
- * دو قانون سفت B5: (۱) ضدتکراری برنامه‌ای با فهرست واقعی؛ (۲) «انجام‌شده» یعنی
- * پچ شامل فایل استفاده‌کننده‌ای است که کامپوننت را واقعاً رندر می‌کند.
+ * سه قانون سفت B5/۱۱/۱۲: (۱) نگهبان سفت ضدتکراری با فهرست واقعی + ریپوی محلی
+ * (سطح کد، نه پرامپت)؛ (۲) نگهبان معکوس: modify روی فایل ناموجود یعنی توهم و
+ * باید create باشد؛ (۳) «انجام‌شده» یعنی پچ شامل فایل استفاده‌کننده‌ای است که
+ * کامپوننت را واقعاً رندر می‌کند.
+ *
+ * sourcesReliable یعنی دست‌کم یک منبع بود/نبود (API یا ریپوی محلی) در دسترس
+ * است؛ وقتی هیچ منبعی نیست، نگهبان‌ها «باز» می‌مانند (fail-open) تا چرخه
+ * بیهوده نمیرد، ولی هشدارش در لاگ می‌ماند.
  */
 function validatePatches(
   files: PatchFile[],
   component: SafeComponent,
   siteFiles: string[],
+  sourcesReliable: boolean,
 ): string | null {
   if (!Array.isArray(files) || files.length === 0) return 'فایل تولید نشد';
   if (files.length > 5) return 'بیش از ۵ فایل در یک چرخه مجاز نیست';
@@ -412,9 +471,21 @@ function validatePatches(
       return `محتوای فایل ${p} خیلی کوتاه است`;
     if (f.content.includes('\u2014')) return `U+2014 در فایل ${p} دیده شد`;
   }
-  // قانون ۱۱: ضدتکراری برنامه‌ای
+  // قانون ۱۱: نگهبان سفت ضدتکراری (کد، نه پرامپت)؛ دلیل ردش دستوری است تا
+  // در چرخهٔ اصلاح (buildWorkerRetryInstruction) به مجری برگردد.
   const dup = findDuplicate(component, siteFiles);
   if (dup) return dup;
+  // نگهبان معکوس: modify روی فایل ناموجود
+  const compNormPath = normalizeSitePath(component.filePath);
+  if (component.action === 'modify' && sourcesReliable) {
+    const known = siteFiles.includes(compNormPath) || localSiteFileExists(compNormPath);
+    if (!known) {
+      return (
+        `action برابر modify است ولی فایل ${compNormPath} در سایت پیدا نشد؛ ` +
+        `برای فایل تازه action باید create باشد، نه modify.`
+      );
+    }
+  }
   // قانون ۱۲: فایل استفاده‌کننده باید در همین پچ باشد و کامپوننت را رندر کند
   const usagePath = component.usageFile.trim().replace(/^\/+/, '');
   const compPath = component.filePath.trim().replace(/^\/+/, '');
@@ -457,28 +528,74 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const tasks: QueuedTask[] = [];
   const blockers: string[] = [];
 
-  // ۰. سرپرست: انتخاب دقیقاً یک کامپوننت (پیش‌نیاز حلقه؛ منطقش عین قبل)
+  // فهرست واقعی کامپوننت‌ها برای نگهبان برنامه‌ای تکراری (قانون ۱۱)؛ پیش از
+  // سرپرست خوانده می‌شود تا هم در پرامپتش باشد هم در اعتبارسنجی. اگر API
+  // گیت‌هاب در دسترس نبود، ریپوی محلی سایت جایگزین می‌شود (نه آرایهٔ تهیِ بی‌صدا).
+  await reportLive?.('فهرست کامپوننت‌های موجود سایت', 10);
+  const apiFiles = await listSiteComponents();
+  const localFiles = listLocalSiteComponents();
+  const siteFiles = apiFiles ?? localFiles;
+  const siteListSource =
+    apiFiles !== null
+      ? 'گیت‌هاب، شاخهٔ dev'
+      : isLocalSiteAvailable()
+        ? 'ریپوی محلی سایت'
+        : 'نامشخص (نه API نه محلی)';
+  if (apiFiles === null) {
+    console.warn(
+      `[design] فهرست API در دسترس نبود؛ ${localFiles.length} فایل از ریپوی محلی خوانده شد.`,
+    );
+  }
+  // دست‌کم یک منبع بود/نبود (API یا ریپوی محلی) در دسترس است؟
+  const sourcesReliable = apiFiles !== null || isLocalSiteAvailable();
+
+  // ۰. سرپرست: انتخاب دقیقاً یک کامپوننت، با خوداصلاحی درون‌چرخه‌ای.
   // دستور مسعود: سرپرست باید در همین چرخه کامپوننت معتبر بدهد؛ تا ۳ تلاش، بدون موکول به چرخه بعد.
+  // اعتبارسنجی هر تلاش: شکل JSON درست + نگهبان سفت ضدتکراری + کلید قطع create.
+  // اگر انتخابی رد شد، «دلیل دقیق» رد به پرامپت تلاش بعدی برمی‌گردد تا سرپرست
+  // یاد بگیرد، نه اینکه کورکورانه همان را تکرار کند.
   await reportLive?.('سرپرست: انتخاب کامپوننت این چرخه', 15);
+  let supervisorFeedback: string | undefined;
   const plan = await retryInCycle(
-    () => makeSupervisorPlan(input),
-    (p) => !!safeComponent(p),
+    () => makeSupervisorPlan(input, siteFiles, siteListSource, supervisorFeedback),
+    (p) => {
+      const c = safeComponent(p);
+      if (!c) return false;
+      if (!ALLOW_DESIGN_CREATE && c.action === 'create') {
+        supervisorFeedback =
+          'ساخت کامپوننت تازه (action برابر create) در این دوره غیرفعال است؛ فقط action برابر modify برای بهبود کامپوننت موجود مجاز است.';
+        return false;
+      }
+      const dup = findDuplicate(c, siteFiles);
+      if (dup) {
+        supervisorFeedback = dup;
+        return false;
+      }
+      return true;
+    },
     { label: 'سرپرست design', onProgress: (msg) => reportLive?.(msg, 15) },
   );
   const component = plan ? safeComponent(plan) : undefined;
   if (!component) {
-    const msg = 'سرپرست پس از ۳ تلاش در همین چرخه کامپوننت معتبری انتخاب نکرد (خروجی JSON ناقص)؛ بلوکر در همین چرخه ثبت شد.';
+    const msg =
+      'سرپرست پس از ۳ تلاش در همین چرخه کامپوننت معتبری انتخاب نکرد (خروجی JSON ناقص یا انتخاب تکراری پیاپی)؛ بلوکر در همین چرخه ثبت شد.';
     blockers.push(msg);
     return { team: TEAM, summary: msg, blockers, tasks, approved: false };
   }
 
-  // فهرست واقعی کامپوننت‌ها برای بررسی برنامه‌ای تکراری (قانون ۱۱)
-  const siteFiles = await listSiteComponents();
-  const dupError = findDuplicate(component, siteFiles);
-  if (dupError) {
-    const msg = `سرپرست کامپوننت تکراری انتخاب کرد: ${dupError}؛ بلوکر در همین چرخه ثبت شد.`;
-    blockers.push(msg);
-    return { team: TEAM, summary: msg, blockers, tasks, approved: false };
+  // دروازهٔ نهایی ناهمگام برای create: اگر فهرست API در دسترس نبود، بود/نبود
+  // دقیق مسیر را مستقیم از گیت‌هاب بپرس (یک فراخوانی، فقط وقتی لازم است).
+  if (component.action === 'create' && apiFiles === null) {
+    const fp = normalizeSitePath(component.filePath);
+    const exists = await githubFileExists(fp);
+    if (exists === true) {
+      const msg = `فایل ${fp} در شاخهٔ dev گیت‌هاب از قبل وجود دارد. File already exists. Use modify action, not create. بلوکر در همین چرخه ثبت شد.`;
+      blockers.push(msg);
+      return { team: TEAM, summary: msg, blockers, tasks, approved: false };
+    }
+    if (exists === null) {
+      console.warn(`[design] بود/نبود ${fp} در گیت‌هاب نامشخص ماند؛ با احتیاط ادامه می‌دهیم.`);
+    }
   }
 
   // ---------- توابع حلقه نقد ----------
@@ -503,7 +620,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     // با همان قرارداد مشترک همه تیم‌ها (combineReviewDirectives).
     const combinedInstruction = combineReviewDirectives(input.reviewDirective, prevInstruction);
     const workerOut = await executeWorker(component, combinedInstruction);
-    const localError = validatePatches(workerOut.files, component, siteFiles);
+    const localError = validatePatches(workerOut.files, component, siteFiles, sourcesReliable);
     if (localError) {
       throw new Error(`خروجی مجری نامعتبر است: ${localError}`);
     }
@@ -624,7 +741,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   if (!lastRawApproved) {
     blockers.push(`منتقد design کد را تأیید نکرد: ${lastRawReason}`);
   } else {
-    const patchError = validatePatches(lastCriticFiles, component, siteFiles);
+    const patchError = validatePatches(lastCriticFiles, component, siteFiles, sourcesReliable);
     if (patchError) {
       blockers.push(`خروجی نهایی منتقد نامعتبر است: ${patchError}`);
     } else {
