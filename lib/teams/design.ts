@@ -8,8 +8,13 @@
  *   دور ۱: سرپرست (انتخاب دقیقاً یک کامپوننت) ← مجری (تولید کد)
  *   دور ۲: رد ← دستور دقیق منتقد ← مجری کد را اصلاح می‌کند
  *   دور ۳: فقط نظارت و نظر نهایی (حق رد ندارد)
- * خروجی نهایی: PatchFile[] با مسیر site/components/... که تیم dev یا مرحلهٔ
- * اعمال، آن را با applyPatchViaGithub روی شاخهٔ dev ریپوی سایت کامیت می‌کند.
+ * خروجی نهایی: PatchFile[] با مسیر site/components/... و دست‌کم یک فایل استفاده‌کننده
+ * (قانون B5: «انجام‌شده» یعنی کامپوننت در همین پچ جایی رندر شود؛ فایل تنها = کد مرده)
+ * که تیم dev یا مرحلهٔ اعمال، آن را با applyPatchViaGithub روی شاخهٔ dev ریپوی سایت کامیت می‌کند.
+ *
+ * ضدتکراری برنامه‌ای (نه ذهنی): سرپرست فهرست واقعی site/components را از GitHub API
+ * می‌گیرد و nameStem (ریشهٔ نام، بی‌توجه به حروف بزرگ و خط‌تیره) را مقایسه می‌کند؛
+ * ریشهٔ تکراری یعنی همان فایل موجود با action برابر modify بهبود می‌یابد.
  *
  * قوانین سفت (دستور مسعود):
  * - فقط آیتم‌های رجیستری وایب‌فارسی؛ استایل من‌درآوردی ممنوع.
@@ -21,6 +26,7 @@
 
 import { callLLM, callLLMJson } from '../llm';
 import { buildKnowledgePromptSection } from '../rag';
+import { SITE_REPO_FULL, getGithubConfig } from '../github';
 import {
   extractCriticKnowledge,
   criticKnowledgeLog,
@@ -72,6 +78,16 @@ interface SupervisorPlan {
     filePath: string;
     /** نام تابع exportشده، مثل TourCard */
     exportName: string;
+    /** 'create' برای فایل تازه، 'modify' برای بهبود کامپوننت موجود */
+    action: 'create' | 'modify';
+    /**
+     * مسیر فایل استفاده‌کننده: صفحه‌ای که این کامپوننت را رندر می‌کند
+     * (مثل site/app/(site)/page.tsx یا یک بلوک مونتاژکننده در site/components).
+     * «انجام‌شده» یعنی کامپوننت در همین چرخه جایی رندر شود؛ فایل تنها پذیرفته نیست.
+     */
+    usageFile: string;
+    /** 'modify' برای صفحهٔ موجود، 'create' برای صفحه/بخش تازه */
+    usageAction: 'modify' | 'create';
     /** یک جمله: این کامپوننت کجای سایت می‌نشیند و چه کاری می‌کند. */
     purpose: string;
     /** slug آیتم‌های رجیستری وایب‌فارسی که الگو هستند، مثل ["card", "badge"]. */
@@ -97,6 +113,10 @@ function safeComponent(plan: unknown): SafeComponent | null {
   const filePath = str(o.filePath);
   const exportName = str(o.exportName);
   if (!name || !filePath || !exportName) return null;
+  const action = o.action === 'modify' ? 'modify' : 'create';
+  const usageFile = str(o.usageFile);
+  const usageAction = o.usageAction === 'create' ? 'create' : 'modify';
+  if (!usageFile) return null;
   const registryRefs = Array.isArray(o.registryRefs)
     ? o.registryRefs.map((r) => (typeof r === 'string' ? r.trim() : '')).filter(Boolean)
     : [];
@@ -104,10 +124,70 @@ function safeComponent(plan: unknown): SafeComponent | null {
     name,
     filePath,
     exportName,
+    action,
+    usageFile,
+    usageAction,
     purpose: str(o.purpose),
     registryRefs,
     props: str(o.props),
   };
+}
+
+/**
+ * فهرست واقعی فایل‌های site/components از ریپوی سایت (شاخهٔ dev) از GitHub API.
+ * اگر توکن/شبکه در دسترس نبود، آرایهٔ تهی برمی‌گردد و سرپرست به حافظه تکیه می‌کند.
+ */
+async function listSiteComponents(): Promise<string[]> {
+  try {
+    const { token } = await getGithubConfig();
+    if (!token) return [];
+    const out: string[] = [];
+    const walk = async (dir: string): Promise<void> => {
+      const res = await fetch(
+        `https://api.github.com/repos/${SITE_REPO_FULL}/contents/${dir}?ref=dev`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/vnd.github+json',
+          },
+          signal: AbortSignal.timeout(20_000),
+        },
+      );
+      if (!res.ok) return;
+      const items = (await res.json()) as Array<{ type: string; path: string }>;
+      if (!Array.isArray(items)) return;
+      for (const it of items) {
+        if (it.type === 'dir') await walk(it.path);
+        else if (typeof it.path === 'string' && /\.tsx?$/.test(it.path)) out.push(it.path);
+      }
+    };
+    await walk('site/components');
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/** ریشهٔ نام فایل برای تشخیص تکراری: tour-card و TourCard هر دو می‌شوند tourcard. */
+function nameStem(path: string): string {
+  const base = (path.split('/').pop() ?? '').replace(/\.tsx?$/, '');
+  return base.toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]/g, '');
+}
+
+/**
+ * بررسی تکراری‌بودن برنامه‌ای (نه ذهنی): اگر action برابر create است ولی
+ * فایلی با همان مسیر یا همان ریشهٔ نام در site/components هست، تکراری است.
+ */
+function findDuplicate(component: SafeComponent, siteFiles: string[]): string | null {
+  const fp = component.filePath.trim().replace(/^\/+/, '');
+  const stem = nameStem(fp);
+  for (const f of siteFiles) {
+    if (f === fp)
+      return `فایل ${fp} از قبل وجود دارد؛ باید action برابر modify باشد نه create`;
+    if (nameStem(f) === stem)
+      return `کامپوننت مشابه از قبل وجود دارد: ${f} (ریشهٔ نام «${stem}» تکراری است)؛ همان را بهبود بده`;
+  }
+  return null;
 }
 
 /** خروجی مجری: فایل‌های واقعی. */
@@ -143,7 +223,8 @@ const CODE_RULES = [
   '۸. آیکون فقط از lucide-react؛ در راست‌چین، آیکون «بعدی/جلو» ArrowLeft است نه ArrowRight.',
   '۹. کامپوننت باید export تابع نام‌دار با interface پراپ‌ها باشد؛ بدون ' + "'use client'" + ' مگر تعامل واقعی (useState/useEffect) لازم باشد.',
   '۱۰. TSX معتبر: تگ‌های متوازن، ایمپورت‌های استفاده‌شده، تایپ TypeScript درست. بدون کد نمایشی یا TODO.',
-  '۱۱. ضدتکراری اجباری: پیش از ساخت کامپوننت، دایرکتوری site/components را در ذهن مرور کن و حتماً بررسی کن کامپوننت مشابهی وجود نداشته باشد؛ اگر مشابهی هست (مثلاً کارت تور)، همان را بهبود بده، نه اینکه فایل تازه بسازی. ساخت کامپوننت تکراری = رد قطعی.',
+  '۱۱. ضدتکراری اجباری و برنامه‌ای: فهرست واقعی site/components که در پرامپت داده شده، سند نهایی است، نه حافظه. اگر ریشهٔ نام فایل تازه (مثل tour-card) با ریشهٔ نام هر فایل موجود (مثل TourCard) یکی باشد، تکراری است و قانون می‌گوید همان فایل موجود را با action برابر modify بهبود بده. ساخت فایل تازه با ریشهٔ نام تکراری = رد قطعی و خودکار.',
+  '۱۲. «انجام‌شده» یعنی رندرشده: پچ این چرخه حتماً باید فایل استفاده‌کننده (usageFile) را هم داشته باشد که کامپوننت را import و در JSX رندر می‌کند. کامپونتی که هیچ صفحه‌ای آن را رندر نکند، کد مرده است و «انجام‌شده» حساب نمی‌شود.',
 ].join('\n');
 
 /** سرپرست: از بریف artdir و خروجی branding دقیقاً یک کامپوننت انتخاب می‌کند. */
@@ -159,6 +240,11 @@ async function makeSupervisorPlan(input: TeamInput): Promise<SupervisorPlan> {
   const brandingResult = input.previousWavesOutput['branding'];
   const artdirBrief = artdirResult?.summary ?? '(بریف artdir نیست)';
   const brandingOutput = brandingResult?.summary ?? '(خروجی branding نیست)';
+  // فهرست واقعی کامپوننت‌های موجود؛ سند ضدتکراری، نه حافظهٔ ذهنی
+  const siteFiles = await listSiteComponents();
+  const siteListLine = siteFiles.length
+    ? `فهرست واقعی فایل‌های site/components (شاخهٔ dev، همین حالا):\n${siteFiles.join('\n')}`
+    : '(فهرست واقعی در دسترس نبود؛ با احتیاط و از روی یادگیری‌های قبلی انتخاب کن)';
   const prompt = [
     'زمینه:',
     ...(knowledgeSection ? [knowledgeSection, ''] : []),
@@ -174,9 +260,12 @@ async function makeSupervisorPlan(input: TeamInput): Promise<SupervisorPlan> {
     '',
     `مأموریت تیم design: ${MISSION}`,
     '',
+    siteListLine,
+    '',
     'دقیقاً یک کامپوننت انتخاب کن که این چرخه ساخته شود: کوچک، مشخص و قابل‌مشاهده روی سایت (مثل کارت تور، بنر، بخش نظرات، دکمهٔ تماس). از تکرار کامپوننت‌های یادگیری‌های قبلی پرهیز کن.',
-    'اگر در site/components کامپوننت مشابهی هست (مثلاً کارت تور در چند مسیر)، همان را برای «بهبود» انتخاب کن و action را modify بگذار؛ ساخت فایل تازهٔ تکراری ممنوع است.',
-    'فقط JSON معتبر بده با کلید component شامل: name (فارسی)، filePath (با الگوی site/components/<area>/<kebab-name>.tsx)، exportName (PascalCase)، purpose (یک جمله)، registryRefs (آرایهٔ slug آیتم‌های رجیستری وایب‌فارسی)، props (توصیف پراپ‌ها).',
+    'ضدتکراری با فهرست واقعی بالا: ریشهٔ نام فایل (حروف کوچک، بدون خط‌تیره) را با همهٔ فایل‌های فهرست مقایسه کن. اگر ریشهٔ نام تکراری است (مثلاً tour-card در برابر TourCard)، همان فایل موجود را برای «بهبود» انتخاب کن و action را modify بگذار؛ ساخت فایل تازهٔ تکراری ممنوع و مساوی رد قطعی است.',
+    '«انجام‌شده» یعنی رندرشده: همراه کامپوننت، فایل استفاده‌کننده (usageFile) را هم مشخص کن؛ صفحه‌ای واقعی زیر site/app/... یا یک بلوک مونتاژکننده در site/components که این کامپوننت را رندر می‌کند. action برابر modify برای صفحهٔ موجود، و create برای صفحه/بخش تازه.',
+    'فقط JSON معتبر بده با کلید component شامل: name (فارسی)، filePath (با الگوی site/components/<area>/<kebab-name>.tsx)، exportName (PascalCase)، action (رشتهٔ "create" یا "modify")، usageFile (مسیر فایل استفاده‌کننده با الگوی site/... )، usageAction (رشتهٔ "create" یا "modify")، purpose (یک جمله)، registryRefs (آرایهٔ slug آیتم‌های رجیستری وایب‌فارسی)، props (توصیف پراپ‌ها).',
   ]
     .filter((l) => l !== null)
     .join('\n');
@@ -214,6 +303,15 @@ async function executeWorker(c: SafeComponent, prevInstruction?: string): Promis
     `الگوهای رجیستری وایب‌فارسی: ${c.registryRefs.join('، ') || '(مشخص نشده)'}`,
     `پراپ‌ها: ${c.props || '(مشخص نشده)'}`,
     '',
+    c.action === 'modify'
+      ? `این یک «بهبود» است نه ساخت تازه: فایل موجود ${c.filePath} را بازنویسی/بهبود بده؛ فایل تازه با نام دیگر نساز.`
+      : `این یک ساخت تازه است: فایل ${c.filePath} را بساز.`,
+    '',
+    '«انجام‌شده» یعنی رندرشده: خروجی files حتماً باید شامل فایل استفاده‌کننده هم باشد:',
+    `- مسیر: ${c.usageFile} (${c.usageAction === 'create' ? 'فایل تازه' : 'فایل موجود؛ نسخهٔ کامل و نهایی‌اش را بده'})`,
+    `- این فایل باید کامپوننت را import کند و دست‌کم در یک جای JSX آن را با تگ <${c.exportName} ...> رندر کند؛`,
+    `- اگر صفحهٔ موجود است، فقط بخش لازم را اضافه کن و بقیهٔ فایل را دست‌نخورده و کامل نگه دار؛`,
+    `- خروجی بدون فایل استفاده‌کننده یا بدون رندر واقعی، نامعتبر است و کل پچ رد می‌شود.`,
     'قوانین سفت تولید کد:',
     CODE_RULES,
     '',
@@ -241,7 +339,10 @@ async function executeWorker(c: SafeComponent, prevInstruction?: string): Promis
  * منتقد: کد واقعی را می‌خواند و داوری می‌کند.
  * رد شدن یعنی کد مشکل دارد و نباید کامیت شود؛ نه اینکه تیم کار نکرده.
  */
-async function judgeWorker(files: PatchFile[]): Promise<CriticVerdict> {
+async function judgeWorker(
+  files: PatchFile[],
+  component: SafeComponent,
+): Promise<CriticVerdict> {
   const prompt = [
     'کدهای تولیدشده توسط مجری:',
     ...files.map((f) => `--- ${f.path} ---\n${f.content}`),
@@ -255,6 +356,12 @@ async function judgeWorker(files: PatchFile[]): Promise<CriticVerdict> {
     'پ) تایپوگرافی فارسی درست است؟ (فونت تیتر و بدنه، ارقام فارسی در متن نمایشی)',
     'ت) U+2014 در کد یا متن نیست؟',
     'ث) فقط توکن‌های تم وایب‌فارسی/گرافیت به کار رفته؟ (بدون hex من‌درآوردی، بدون سایه)',
+    'ج) ضدتکراری: ریشهٔ نام فایل تازه با هیچ کامپوننت موجودی یکی نیست؟ (در غیر این صورت باید همان موجود بهبود می‌یافت)',
+    'چ) «انجام‌شده» یعنی رندرشده: آیا در میان فایل‌ها، فایل استفاده‌کننده (' +
+      component.usageFile +
+      ') هست و کامپوننت ' +
+      component.exportName +
+      ' را واقعاً import و در JSX رندر می‌کند؟ کامپوننت بدون رندر = رد.',
     'اگر ایراد کوچکی هست، خودت در files اصلاحش کن و approved بده. فقط اگر ایراد ساختاری جدی است رد کن.',
     'فقط JSON معتبر بده با کلیدهای: approved (بولین)، score (عدد ۰ تا ۱۰۰)، reason (یک جملهٔ فارسی)، files (آرایهٔ {path، content} نهایی؛ در صورت رد می‌تواند تهی باشد).',
     CRITIC_SCORE_PROMPT_LINE,
@@ -280,10 +387,21 @@ async function remember(runId: string, lesson: string): Promise<void> {
   }
 }
 
-/** اعتبارسنجی سبک PatchFile پیش از تحویل. */
-function validatePatches(files: PatchFile[]): string | null {
+/**
+ * اعتبارسنجی سبک PatchFile پیش از تحویل.
+ * دو قانون سفت B5: (۱) ضدتکراری برنامه‌ای با فهرست واقعی؛ (۲) «انجام‌شده» یعنی
+ * پچ شامل فایل استفاده‌کننده‌ای است که کامپوننت را واقعاً رندر می‌کند.
+ */
+function validatePatches(
+  files: PatchFile[],
+  component: SafeComponent,
+  siteFiles: string[],
+): string | null {
   if (!Array.isArray(files) || files.length === 0) return 'فایل تولید نشد';
   if (files.length > 5) return 'بیش از ۵ فایل در یک چرخه مجاز نیست';
+  const paths = files.map((f) =>
+    typeof f.path === 'string' ? f.path.trim().replace(/^\/+/, '') : '',
+  );
   for (const f of files) {
     if (typeof f.path !== 'string' || !f.path.trim()) return 'مسیر یک فایل نامعتبر است';
     const p = f.path.trim().replace(/^\/+/, '');
@@ -294,6 +412,20 @@ function validatePatches(files: PatchFile[]): string | null {
       return `محتوای فایل ${p} خیلی کوتاه است`;
     if (f.content.includes('\u2014')) return `U+2014 در فایل ${p} دیده شد`;
   }
+  // قانون ۱۱: ضدتکراری برنامه‌ای
+  const dup = findDuplicate(component, siteFiles);
+  if (dup) return dup;
+  // قانون ۱۲: فایل استفاده‌کننده باید در همین پچ باشد و کامپوننت را رندر کند
+  const usagePath = component.usageFile.trim().replace(/^\/+/, '');
+  const compPath = component.filePath.trim().replace(/^\/+/, '');
+  if (!paths.includes(compPath)) return `فایل کامپوننت (${compPath}) در پچ نیست`;
+  if (!paths.includes(usagePath))
+    return `فایل استفاده‌کننده (${usagePath}) در پچ نیست؛ کامپوننت بدون رندر، کد مرده است`;
+  const usage = files.find(
+    (f) => f.path.trim().replace(/^\/+/, '') === usagePath,
+  );
+  if (usage && !usage.content.includes(component.exportName))
+    return `فایل استفاده‌کننده (${usagePath}) کامپوننت ${component.exportName} را رندر نمی‌کند`;
   return null;
 }
 
@@ -340,6 +472,15 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     return { team: TEAM, summary: msg, blockers, tasks, approved: false };
   }
 
+  // فهرست واقعی کامپوننت‌ها برای بررسی برنامه‌ای تکراری (قانون ۱۱)
+  const siteFiles = await listSiteComponents();
+  const dupError = findDuplicate(component, siteFiles);
+  if (dupError) {
+    const msg = `سرپرست کامپوننت تکراری انتخاب کرد: ${dupError}؛ بلوکر در همین چرخه ثبت شد.`;
+    blockers.push(msg);
+    return { team: TEAM, summary: msg, blockers, tasks, approved: false };
+  }
+
   // ---------- توابع حلقه نقد ----------
 
   // حکم خام آخرین داوری + فایل‌های نهایی منتقد (برای ساخت پچ بعد از حلقه)
@@ -362,7 +503,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     // با همان قرارداد مشترک همه تیم‌ها (combineReviewDirectives).
     const combinedInstruction = combineReviewDirectives(input.reviewDirective, prevInstruction);
     const workerOut = await executeWorker(component, combinedInstruction);
-    const localError = validatePatches(workerOut.files);
+    const localError = validatePatches(workerOut.files, component, siteFiles);
     if (localError) {
       throw new Error(`خروجی مجری نامعتبر است: ${localError}`);
     }
@@ -378,7 +519,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     round: number,
   ): Promise<CriticVerdictV2> => {
     await reportLive?.(`منتقد: داوری کد واقعی (دور ${round})`, 80);
-    const rawVerdict = await judgeWorker(output.files);
+    const rawVerdict = await judgeWorker(output.files, output.component);
     // حکم ناقص LLM نباید «undefined» چاپ کند
     const verdict: CriticVerdict = {
       approved: rawVerdict?.approved === true,
@@ -483,7 +624,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   if (!lastRawApproved) {
     blockers.push(`منتقد design کد را تأیید نکرد: ${lastRawReason}`);
   } else {
-    const patchError = validatePatches(lastCriticFiles);
+    const patchError = validatePatches(lastCriticFiles, component, siteFiles);
     if (patchError) {
       blockers.push(`خروجی نهایی منتقد نامعتبر است: ${patchError}`);
     } else {
@@ -494,7 +635,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       tasks.push(
         {
           title: `اعمال کامپوننت ${component.name} روی سایت`,
-          description: `کامپوننت ${component.exportName} در ${patches.map((p) => p.path).join('، ')} آمادهٔ کامیت روی شاخهٔ dev ریپوی سایت است (الگوهای رجیستری: ${component.registryRefs.join('، ') || 'ندارد'}).`,
+          description: `کامپوننت ${component.exportName} در ${patches.map((p) => p.path).join('، ')} آمادهٔ کامیت روی شاخهٔ dev ریپوی سایت است (الگوهای رجیستری: ${component.registryRefs.join('، ') || 'ندارد'})؛ فایل استفاده‌کننده ${component.usageFile} کامپوننت را رندر می‌کند (قانون «انجام‌شده = رندرشده»).`,
           files_hint: patches.map((p) => p.path).join(', '),
           priority: 'high',
         },
@@ -515,7 +656,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   await remember(input.runId, lesson);
 
   const summary = approved
-    ? `تیم design این چرخه کامپوننت «${component.name}» را به‌صورت کد واقعی TSX تولید کرد (${patches!.map((p) => p.path).join('، ')})؛ منتقد کد را از نظر راست‌چین، تایپوگرافی فارسی و توکن‌های وایب‌فارسی تأیید کرد. ${lastKnowledgeLog}`
+    ? `تیم design این چرخه کامپوننت «${component.name}» را به‌صورت کد واقعی TSX تولید کرد (${patches!.map((p) => p.path).join('، ')})؛ منتقد کد را از نظر راست‌چین، تایپوگرافی فارسی و توکن‌های وایب‌فارسی تأیید کرد و کامپوننت در ${component.usageFile} رندر می‌شود. ${lastKnowledgeLog}`
     : `تیم design این چرخه کد تولید کرد؛ منتقد در ${loopResult.finalRound} دور همین چرخه تأیید نکرد و نظر نهایی داد. دلیل: ${lastRawReason} دانش به‌روز شد و بلوکر در گزارش همین چرخه درج شد. ${lastKnowledgeLog}`;
 
   return {
