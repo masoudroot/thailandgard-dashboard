@@ -277,6 +277,15 @@ function fixKnownTypos(s: string): string {
 }
 
 /**
+ * تمیزکاری کامل یک رشتهٔ فارسی: sanitize + اصلاح غلط‌های شناخته‌شده.
+ * در همهٔ مسیرها (main و refresh) روی خروجی LLM اعمال می‌شود تا منتقد
+ * هم متن اصلاح‌شده را ببیند و هم خروجی نهایی تمیز باشد.
+ */
+function cleanFa(s: string): string {
+  return fixKnownTypos(sanitizePersian(s));
+}
+
+/**
  * نگهبان ضدجعل مکان (دستور مسعود ۱۴۰۵/۰۷/۲۶ — تنبیه تیم content).
  * قانون مسعود: «هیچ دادهٔ ساختگی یا نمایشی وارد نشود».
  *
@@ -305,6 +314,68 @@ function detectFabricatedPlaces(text: string): string[] {
     }
   }
   return found;
+}
+
+/* ==========================================================================
+ * نگهبان ضدکلیشه (دستور مسعود ۱۴۰۵/۰۷/۲۶ — بازبینی اساسی تیم content).
+ * قانون مسعود: «لحن کلیشه‌ای مطلقاً ممنوع».
+ *
+ * ریشهٔ مشکل: منتقد LLM در برابر کلیشه‌ها سهل‌گیر بود و دور ۳ حق رد
+ * نداشت؛ پس متن‌های ماشینی به پچ می‌رسیدند. این فهرست، کلیشه‌های
+ * دیده‌شده در بازخورد منتقد را قطعی می‌گیرد.
+ * اگر کلیشهٔ تازه‌ای دیده شد، همین‌جا اضافه کن (با دستور مسعود).
+ * ========================================================================== */
+const CLICHE_PHRASES: string[] = [
+  'تجربه فرهنگی جذابی',
+  'تجربهٔ فرهنگی جذابی',
+  'برای بک‌پکرها',
+  'برای بک پکرها',
+  'بک‌پکرها',
+  'سفری بی‌نقص',
+  'سفری فراموش‌نشدنی',
+  'خاطره‌ای فراموش‌نشدنی',
+  'بهشتی روی زمین',
+  'گوشه‌ای از بهشت',
+  'در دنیای امروز',
+  'شایان ذکر است',
+];
+
+/**
+ * اسکن متن برای عبارت کلیشه‌ای شناخته‌شده.
+ * خروجی: آرایه‌ای از کلیشه‌های پیدا شده (خالی = تمیز).
+ */
+function detectCliches(text: string): string[] {
+  const found: string[] = [];
+  for (const cliche of CLICHE_PHRASES) {
+    if (text.includes(cliche) && !found.includes(cliche)) {
+      found.push(cliche);
+    }
+  }
+  return found;
+}
+
+/* ==========================================================================
+ * گیت نهایی یکپارچه (دستور مسعود ۱۴۰۵/۰۷/۲۶ — بازبینی اساسی).
+ * همهٔ قوانین قطعی مسعود در یک تابع کدی، پیش از ساخت هر پچ.
+ * خروجی: null = تمیز؛ رشته = دلیل بلاک.
+ * ========================================================================== */
+function finalContentGate(draftJson: string): string | null {
+  if (hasForbiddenDash(draftJson)) {
+    return 'متن نهایی خط تیرهٔ ممنوعه (U+2014/U+2013) دارد؛ پچ ساخته نشد.';
+  }
+  const fabricated = detectFabricatedPlaces(draftJson);
+  if (fabricated.length > 0) {
+    return `متن نهایی اسم مکان جعلی دارد (${fabricated.join('، ')})؛ پچ ساخته نشد. قانون مسعود: هیچ دادهٔ ساختگی.`;
+  }
+  const cliches = detectCliches(draftJson);
+  if (cliches.length > 0) {
+    return `متن نهایی عبارت کلیشه‌ای دارد (${cliches.join('، ')})؛ پچ ساخته نشد. قانون مسعود: لحن کلیشه‌ای ممنوع.`;
+  }
+  // غلط املایی شناخته‌شده نباید به این مرحله برسد (fixKnownTypos باید زودتر اعمال شده باشد)
+  if (draftJson.includes('کائو سوک')) {
+    return 'متن نهایی هجی غلط «کائو سوک» دارد؛ پچ ساخته نشد.';
+  }
+  return null;
 }
 
 /**
@@ -504,33 +575,28 @@ async function runRefreshFlow(
     return { team: TEAM, summary: blockers[0], blockers, tasks: [], approved: false };
   }
 
-  // تمیزکاری فارسی
+  // تمیزکاری فارسی (شامل اصلاح غلط‌های شناخته‌شده)
   const cleanDraft: GuideDraft = {
-    title: sanitizePersian(draft.title),
-    h1: sanitizePersian(draft.h1),
-    excerpt: sanitizePersian(draft.excerpt),
-    category: sanitizePersian(draft.category),
+    title: cleanFa(draft.title),
+    h1: cleanFa(draft.h1),
+    excerpt: cleanFa(draft.excerpt),
+    category: cleanFa(draft.category),
     readingMinutes: draft.readingMinutes,
     sections: draft.sections.map((s) => ({
-      heading: sanitizePersian(s.heading),
-      paragraphs: s.paragraphs.map((p) => sanitizePersian(p)),
+      heading: cleanFa(s.heading),
+      paragraphs: s.paragraphs.map((p) => cleanFa(p)),
     })),
     faqs: draft.faqs.map((f) => ({
-      question: sanitizePersian(f.question),
-      answer: sanitizePersian(f.answer),
+      question: cleanFa(f.question),
+      answer: cleanFa(f.answer),
     })),
   };
 
-  if (hasForbiddenDash(JSON.stringify(cleanDraft))) {
-    blockers.push('متن نهایی هنوز خط تیرهٔ ممنوعه دارد؛ پچ ساخته نشد.');
-    return { team: TEAM, summary: blockers[0], blockers, tasks: [], approved: false };
-  }
-  // کمربند ضدجعل (دستور مسعود ۱۴۰۵/۰۷/۲۶): اسم مکان جعلی شناخته‌شده = بلاک قطعی.
-  const fabricatedRefresh = detectFabricatedPlaces(JSON.stringify(cleanDraft));
-  if (fabricatedRefresh.length > 0) {
-    const msg = `متن نهایی اسم مکان جعلی دارد (${fabricatedRefresh.join('، ')})؛ پچ ساخته نشد. قانون مسعود: هیچ دادهٔ ساختگی.`;
-    blockers.push(msg);
-    return { team: TEAM, summary: msg, blockers, tasks: [], approved: false };
+  // گیت نهایی یکپارچه: همهٔ قوانین قطعی مسعود در کد
+  const gateError = finalContentGate(JSON.stringify(cleanDraft));
+  if (gateError) {
+    blockers.push(gateError);
+    return { team: TEAM, summary: gateError, blockers, tasks: [], approved: false };
   }
 
   // داوری سریع منتقد روی نسخهٔ تازه (تک‌دور؛ رد = بلاکر، نه حلقه)
@@ -796,18 +862,18 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
     // تمیزکاری نهایی فارسی روی همهٔ رشته‌ها (منطق فعلی)
     const cleanDraft: GuideDraft = {
-      title: sanitizePersian(draft.title),
-      h1: sanitizePersian(draft.h1),
-      excerpt: sanitizePersian(draft.excerpt),
-      category: sanitizePersian(draft.category || pick.category),
+      title: cleanFa(draft.title),
+      h1: cleanFa(draft.h1),
+      excerpt: cleanFa(draft.excerpt),
+      category: cleanFa(draft.category || pick.category),
       readingMinutes: draft.readingMinutes,
       sections: draft.sections.map((s) => ({
-        heading: sanitizePersian(s.heading),
-        paragraphs: s.paragraphs.map((p) => sanitizePersian(p)),
+        heading: cleanFa(s.heading),
+        paragraphs: s.paragraphs.map((p) => cleanFa(p)),
       })),
       faqs: draft.faqs.map((f) => ({
-        question: sanitizePersian(f.question),
-        answer: sanitizePersian(f.answer),
+        question: cleanFa(f.question),
+        answer: cleanFa(f.answer),
       })),
     };
 
@@ -942,18 +1008,11 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const { draft: cleanDraft, pick } = loopResult.output;
   const slug = cachedSlug;
 
-  // کمربند نهایی: خط تیرهٔ ممنوعه (منطق فعلی)
-  if (hasForbiddenDash(JSON.stringify(cleanDraft))) {
-    blockers.push('متن نهایی هنوز خط تیرهٔ ممنوعه دارد؛ پچ ساخته نشد.');
-    return { team: TEAM, summary: blockers[0], blockers, tasks: [], approved: false };
-  }
-  // کمربند ضدجعل (دستور مسعود ۱۴۰۵/۰۷/۲۶): هیچ اسم مکان جعلی شناخته‌شده‌ای
-  // نباید به پچ برسد؛ اگر منتقد جا انداخت، این گیت قطعی جلویش را می‌گیرد.
-  const fabricated = detectFabricatedPlaces(JSON.stringify(cleanDraft));
-  if (fabricated.length > 0) {
-    const msg = `متن نهایی اسم مکان جعلی دارد (${fabricated.join('، ')})؛ پچ ساخته نشد. قانون مسعود: هیچ دادهٔ ساختگی.`;
-    blockers.push(msg);
-    return { team: TEAM, summary: msg, blockers, tasks: [], approved: false };
+  // گیت نهایی یکپارچه: همهٔ قوانین قطعی مسعود در کد (نه فقط پرامپت)
+  const gateError = finalContentGate(JSON.stringify(cleanDraft));
+  if (gateError) {
+    blockers.push(gateError);
+    return { team: TEAM, summary: gateError, blockers, tasks: [], approved: false };
   }
 
   // ۵. کدژن قطعی: ساخت آبجکت TS و درج در فایل (منطق فعلی)

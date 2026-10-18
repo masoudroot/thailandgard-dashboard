@@ -25,9 +25,12 @@ export function sanitizePersian(text: string): string {
   return out.trim();
 }
 
-/** بررسی سریع: آیا متن خط تیرهٔ ممنوعه دارد؟ */
+/** بررسی سریع: آیا متن خط تیرهٔ ممنوعه دارد؟
+ * نکتهٔ فنی: از رگ‌اکس جدا بدون پرچم g استفاده می‌شود؛ رگ‌اکس سراسری
+ * مشترک با test حالت‌مند است (lastIndex) و یک‌درمیان جواب اشتباه می‌داد —
+ * همین باگ باعث رد شدن U+2014 از گیت نهایی تیم content شده بود. */
 export function hasForbiddenDash(text: string): boolean {
-  return FORBIDDEN_DASHES.test(String(text ?? ''));
+  return /\u2014|\u2013/.test(String(text ?? ''));
 }
 
 /**
