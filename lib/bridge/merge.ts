@@ -195,9 +195,9 @@ export interface DevToMainMergeResult {
   alreadyUpToDate: boolean;
   /** آیا تداخل مرج داشت؟ (در این صورت هیچ کاری نشده) */
   conflict: boolean;
-  /** dev دقیقاً عقب‌تر از main است (نشانهٔ کامیت مستقیم روی main)؛ مرج انجام نشد. */
+  /** روی main کامیت غیرپل هست و dev چیز تازه‌ای ندارد؛ مرج انجام نشد. */
   devBehindMain?: boolean;
-  /** تاریخچهٔ dev و main واگرا شده؛ مرج خودکار انجام نشد. */
+  /** روی main کامیت غیرپل هست و dev هم جلوتر است؛ مرج خودکار انجام نشد. */
   diverged?: boolean;
   /** تایپ‌چک dev رد شد؛ مرج به main بلاک شد (fail-closed). */
   blockedByTypeGate?: boolean;
@@ -205,6 +205,53 @@ export interface DevToMainMergeResult {
   compareStatus?: string;
   sha?: string | null;
   message?: string;
+}
+
+/** آیا این کامیتِ فقط-main از مرج خودکار پل است (نه پوش مستقیم)؟ */
+function isBridgeMergeCommit(c: {
+  parents?: Array<{ sha?: string }>;
+  commit?: { message?: string };
+}): boolean {
+  const parents = Array.isArray(c.parents) ? c.parents : [];
+  const message = c.commit?.message ?? '';
+  return parents.length >= 2 && message.startsWith('[bridge] مرج خودکار');
+}
+
+export interface MainExclusiveCheck {
+  /** آیا راستی انجام شد؟ (false یعنی API خطا داد) */
+  verified: boolean;
+  /** خلاصهٔ کامیت‌های فقط-main که از جنس مرج خودکار پل نیستند. */
+  foreign: string[];
+}
+
+/**
+ * فهرست کامیت‌هایی که فقط روی main هستند و از مرج خودکار پل نیامده‌اند.
+ * بهترین تلاش است: اگر API خطا بدهد، verified=false برمی‌گردد و صداکننده
+ * باید fail-closed عمل کند.
+ */
+async function getMainExclusiveCommits(
+  api: string,
+  h: Record<string, string>,
+): Promise<MainExclusiveCheck> {
+  const res = await fetch(`${api}/compare/dev...main`, {
+    headers: h,
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) {
+    return { verified: false, foreign: [] };
+  }
+  const body = (await res.json().catch(() => ({}))) as {
+    commits?: Array<{
+      sha?: string;
+      parents?: Array<{ sha?: string }>;
+      commit?: { message?: string };
+    }>;
+  };
+  const commits = Array.isArray(body.commits) ? body.commits : [];
+  const foreign = commits
+    .filter((c) => !isBridgeMergeCommit(c))
+    .map((c) => `${(c.sha ?? '?').slice(0, 7)} ${(c.commit?.message ?? '').split('\n')[0].slice(0, 80)}`);
+  return { verified: true, foreign };
 }
 
 /** نتیجهٔ مقایسهٔ main با dev از API گیت‌هاب. */
@@ -221,15 +268,20 @@ function alertDevMain(stage: string, detail: string): void {
 }
 
 /**
- * نگهبان ۱: مقایسهٔ main...dev.
+ * نگهبان ۱: مقایسهٔ main...dev + راستیِ ماهیت کامیت‌های فقط-main.
  *
- * - identical: چیزی برای مرج نیست.
- * - behind: dev عقب‌تر از main است؛ یعنی کسی مستقیم روی main کامیت زده و
- *   ناوردای خط لوله (main = مرج dev) شکسته شده. مرج خودکار انجام نمی‌شود.
- * - diverged: تاریخچه واگرا شده؛ ساخت مرج‌کامیت خودکار روی تاریخچهٔ واگرا
- *   ترکیبِ تست‌نشده را به پروداکشن (ورسل) می‌برد. مرج انجام نمی‌شود.
- * - ahead: مسیر سالم؛ ادامه.
- * - unknown (خطای API): بدون نگهبان ادامه می‌دهیم؛ خودِ فراخوانی مرج
+ * نکتهٔ ظریف: خودِ مرج خودکار روی main مرج‌کامیت می‌سازد؛ پس در حالت سالم هم
+ * main همیشه چند کامیتِ فقط-main دارد و API مقایسه وضعیت را behind یا
+ * diverged گزارش می‌کند. پس ملاک «چیزی برای مرج هست» فقط ahead_by است، نه
+ * status. کامیت‌های فقط-main هم باید تک‌تک راستی شوند که همه از جنس
+ * «[bridge] مرج خودکار» باشند؛ هر کامیت دیگری یعنی پوش مستقیم روی main و
+ * ناوردای خط لوله شکسته شده.
+ *
+ * - ahead_by == 0 و behind_by == 0: identical؛ چیزی برای مرج نیست.
+ * - ahead_by == 0 و فقط مرج‌کامیت پل روی main: حالت سالمِ بیکار.
+ * - کامیت غیرپل روی main (در هر حالتی): بلند هشدار و توقف؛ مرج خودکار
+ *   روی تغییرِ بیرونِ خط لوله انجام نمی‌شود (fail-closed).
+ * - خطای API در مقایسه: بدون نگهبان ادامه می‌دهیم؛ خودِ فراخوانی مرج
  *   منبع حقیقت است و اگر API خراب باشد آنجا بلند خطا می‌دهد.
  */
 async function compareDevToMain(
@@ -333,8 +385,10 @@ async function recordDevMainFailure(
  * برمی‌گرداند. چرخهٔ بعدی دوباره تلاش می‌کند (خودترمیم).
  *
  * نگهبان‌ها (به ترتیب):
- * ۱. مقایسهٔ main...dev: فقط وقتی dev دقیقاً جلوتر است ادامه می‌دهد؛
- *    عقب‌ماندگی یا واگرایی، بلند لاگ و ثبت می‌شود و مرج انجام نمی‌شود.
+ * ۱. مقایسهٔ main...dev: فقط وقتی dev کامیت تازه دارد (ahead_by>0) ادامه
+ *    می‌دهد؛ کامیت‌های فقط-main تک‌تک راستی می‌شوند که همه از جنس مرج
+ *    خودکار پل باشند؛ هر کامیت غیرپل یعنی پوش مستقیم روی main: بلند
+ *    هشدار و توقف (fail-closed).
  * ۲. تایپ‌چک dev (fail-closed): کد تایپ‌خراب هرگز به main (ورسل) نمی‌رسد.
  *
  * امنیت:
@@ -364,27 +418,44 @@ export async function mergeDevIntoMainBestEffort(
     const h = githubHeaders(token);
     const api = `https://api.github.com/repos/${SITE_REPO}`;
 
-    // نگهبان ۱: مقایسهٔ main...dev
+    // نگهبان ۱: مقایسهٔ main...dev + راستی ماهیت کامیت‌های فقط-main.
+    // ملاک «چیزی برای مرج هست» فقط ahead_by است؛ خودِ مرج خودکار روی main
+    // مرج‌کامیت می‌سازد پس behind_by>0 در حالت سالم هم طبیعی است.
     const cmp = await compareDevToMain(api, h);
-    if (cmp.status === 'identical') {
-      console.log('[bridge] مرج خودکار dev←main: main از قبل به‌روز است.');
-      return { merged: false, alreadyUpToDate: true, conflict: false, compareStatus: cmp.status };
+    if (cmp.status !== 'unknown') {
+      if (cmp.behindBy > 0) {
+        const exclusive = await getMainExclusiveCommits(api, h);
+        if (!exclusive.verified) {
+          return fail(
+            'compare',
+            'راستی ماهیت کامیت‌های فقط-main ناموفق بود (خطای API)؛ برای احتیاط مرج خودکار انجام نشد.',
+            { compareStatus: cmp.status },
+          );
+        }
+        if (exclusive.foreign.length > 0) {
+          const sample = exclusive.foreign.slice(0, 3).join(' | ');
+          if (cmp.aheadBy === 0) {
+            return fail(
+              'foreign-main',
+              `روی main تعداد ${exclusive.foreign.length} کامیتِ غیرپل هست (${sample})؛ احتمالاً پوش مستقیم روی main و ناوردای خط لوله شکسته شده. چیز تازه‌ای روی dev نیست؛ مرج انجام نشد؛ نیاز به بررسی دستی.`,
+              { devBehindMain: true, compareStatus: cmp.status },
+            );
+          }
+          return fail(
+            'foreign-main',
+            `روی main تعداد ${exclusive.foreign.length} کامیتِ غیرپل هست (${sample})؛ مرج خودکار روی تغییرِ بیرونِ خط لوله انجام نمی‌شود؛ نیاز به بررسی دستی.`,
+            { diverged: true, compareStatus: cmp.status },
+          );
+        }
+      }
+      if (cmp.aheadBy === 0) {
+        console.log('[bridge] مرج خودکار dev←main: main از قبل به‌روز است.');
+        return { merged: false, alreadyUpToDate: true, conflict: false, compareStatus: cmp.status };
+      }
+    } else {
+      alertDevMain('compare', 'وضعیت مقایسه نامشخص است؛ بدون نگهبان تاریخچه ادامه می‌دهیم.');
     }
-    if (cmp.status === 'behind') {
-      return fail(
-        'diverged-history',
-        `dev دقیقاً ${cmp.behindBy} کامیت عقب‌تر از main است؛ احتمالاً کامیت مستقیم روی main زده شده و ناوردای خط لوله شکسته شده. مرج خودکار انجام نشد؛ نیاز به بررسی دستی.`,
-        { devBehindMain: true, compareStatus: cmp.status },
-      );
-    }
-    if (cmp.status === 'diverged') {
-      return fail(
-        'diverged-history',
-        `تاریخچهٔ dev و main واگرا شده (dev ${cmp.aheadBy} جلو و ${cmp.behindBy} عقب). ساخت خودکار مرج‌کامیت روی تاریخچهٔ واگرا ترکیب تست‌نشده را به پروداکشن می‌برد؛ مرج انجام نشد؛ نیاز به بررسی دستی.`,
-        { diverged: true, compareStatus: cmp.status },
-      );
-    }
-    // ahead یا unknown: ادامه
+    // ahead_by > 0 (یا مقایسه نامشخص): ادامه به تایپ‌چک و مرج
 
     // نگهبان ۲: تایپ‌چک dev (fail-closed)
     try {
