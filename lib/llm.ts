@@ -176,7 +176,7 @@ const DEFAULT_TIMEOUT_MS = 180_000; // 3 minutes
 const DEFAULT_MAX_TOKENS = 2000;
 const DEFAULT_TEMPERATURE = 0.7;
 const DEFAULT_API_BASE = "https://api.reformboss.com/v1";
-const DEFAULT_MODEL = "glm-5.3-flash";
+const DEFAULT_MODEL = "deepseek-v4-flash";
 
 /** خواندن عدد از env با مقدار پیش‌فرض (برای تست‌پذیری هم لازم است). */
 function numEnv(name: string, def: number): number {
