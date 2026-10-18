@@ -26,7 +26,7 @@ import type {
   PatchFile,
 } from '../types';
 import { callLLM, callLLMJson } from '../llm';
-import { writeMemory } from '../memory';
+import { writeMemory, readMemory } from '../memory';
 import { buildKnowledgePromptSection } from '../rag';
 import {
   extractCriticKnowledge,
@@ -483,23 +483,70 @@ function removeMetaEntries(fileContent: string, slugs: Set<string>): string {
 }
 
 /** اعتبارسنجی قلم سئو پیش از داوری. */
-/** الگوهای لحن دستوری/امری ممنوع در متا دیسکریپشن (یافتهٔ ممیزی: رد تکراری منتقد). */
+/** الگوهای لحن دستوری/امری ممنوع (یافتهٔ ممیزی: رد تکراری منتقد؛ خروجی‌های
+ * زنده «برای اطلاعات بیشتر کلیک کنید» و «همین حالا بخوانید» از تور رد شده بودند). */
 const IMPERATIVE_PATTERNS = [
   /همین حالا/,
+  /همین الان/,
   /از دست ندهید/,
   /از دست نده/,
+  /فرصت را از دست/,
+  /عجله کنید/,
   /کلیک کنید/,
   /رزرو کنید/,
-  /بخوانید و /,
+  /بخوانید/,
+  /تماس بگیرید/,
+  /درخواست کنید/,
+  /سفارش (بدهید|دهید)/,
+  /ثبت‌?نام کنید/,
+  /بخرید/,
+  /سفر کنید/,
   /همین امروز/,
 ];
 
-/** سال در متا تایتل: فقط با به‌روزرسانی واقعی مجاز است (یافتهٔ ممیزی: رد تکراری). */
+/** سال در متا تایتل: رد قطعی (یافتهٔ ممیزی: سالِ بدون به‌روزرسانی واقعی گمراه‌کننده است).
+ * مدل از این مسیر نمی‌تواند «به‌روزرسانی واقعی صفحه» را راستی کند؛ پس هر سالی
+ * در تایتل مردود است و قلم از چرخه کنار گذاشته می‌شود (نه «هشدار»). */
 const YEAR_PATTERN = /۱۴۰[۴۵۶]|140[456]|20[23][0-9]/;
+
+/**
+ * نرمال‌سازی متن برای مقایسهٔ h1 با تایتل: حذف نیم‌فاصله‌ها و علائم،
+ * یکدست‌سازی فاصله‌ها.
+ */
+function normalizeForCompare(s: string): string {
+  return s
+    .replace(/[‌‍‎‏]/g, '')
+    .replace(/[«»""''()[\]{}،؛:؟!.…|/\\-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * آیا h1 بیش از حد شبیه تایتل است؟ (یافتهٔ ممیزی: «h1 خیلی شبیه تایتل».)
+ * برابریِ لفظیِ قدیمی (`h1 === title`) فقط کپیِ عین‌به‌عین را می‌گرفت؛
+ * این تابع زیرمجموعه‌بودن (کپی با پسوند/پیشوند) و هم‌پوشانیِ بالای
+ * توکن‌ها را هم مردود می‌کند تا h1 «واقعاً جدا» اجباری شود.
+ */
+function h1TooSimilarToTitle(h1: string, title: string): boolean {
+  const a = normalizeForCompare(h1);
+  const b = normalizeForCompare(title);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+  const tokensA = new Set(a.split(' '));
+  const tokensB = b.split(' ');
+  const overlap = tokensB.filter((t) => tokensA.has(t)).length / tokensB.length;
+  return overlap >= 0.8 && Math.abs(a.length - b.length) <= Math.max(a.length, b.length) * 0.4;
+}
 
 function validateItem(it: SeoItem, title: string): string | null {
   if (!it.slug) return 'اسلاگ خالی است.';
-  if (!it.h1 || it.h1 === title) return `h1 برای ${it.slug} با تایتل یکی است یا خالی است.`;
+  if (!it.h1) return `h1 برای ${it.slug} خالی است.`;
+  // جدایی h1 از تایتل، اجباری در کد (یافتهٔ ممیزی: برابریِ لفظیِ قدیمی فقط
+  // کپیِ عین‌به‌عین را می‌گرفت). h1TooSimilarToTitle زیرمجموعه‌بودن
+  // (کپی با پسوند/پیشوند) و هم‌پوشانی بالای توکن‌ها را هم مردود می‌کند.
+  if (h1TooSimilarToTitle(it.h1, title))
+    return `h1 برای ${it.slug} بیش از حد شبیه تایتل است؛ باید واقعاً جدا و متفاوت باشد.`;
   if (it.h1.length > 60) return `h1 برای ${it.slug} بیش از ۶۰ نویسه است.`;
   if (!it.metaTitle || it.metaTitle.length < 30 || it.metaTitle.length > 70)
     return `متا تایتل ${it.slug} باید ۳۰ تا ۷۰ نویسه باشد.`;
@@ -507,14 +554,24 @@ function validateItem(it: SeoItem, title: string): string | null {
     return `متا دیسکریپشن ${it.slug} باید ۱۰۰ تا ۱۷۰ نویسه باشد.`;
   if (hasForbiddenDash(it.h1 + it.metaTitle + it.metaDescription))
     return `خروجی ${it.slug} خط تیرهٔ ممنوعه دارد.`;
-  // لحن دستوری در دیسکریپشن = رد قطعی منتقد
-  for (const rx of IMPERATIVE_PATTERNS) {
-    if (rx.test(it.metaDescription))
-      return `متا دیسکریپشن ${it.slug} لحن دستوری/امری دارد («${rx.source}»)؛ باید توصیفی باشد.`;
+  // لحن دستوری/امری در هر سه فیلد = رد قطعی منتقد (یافتهٔ ممیزی: پیش‌تر فقط
+  // دیسکریپشن چک می‌شد و h1 یا تایتلِ امری از تور اعتبارسنجی رد می‌شد).
+  const fields: Array<[string, string]> = [
+    ['h1', it.h1],
+    ['متا تایتل', it.metaTitle],
+    ['متا دیسکریپشن', it.metaDescription],
+  ];
+  for (const [label, text] of fields) {
+    for (const rx of IMPERATIVE_PATTERNS) {
+      if (rx.test(text))
+        return `${label} ${it.slug} لحن دستوری/امری دارد («${rx.source}»)؛ باید توصیفی باشد.`;
+    }
   }
-  // سال در تایتل: هشدار (منتقد زمینه را داوری می‌کند، ولی الگوی مشکوک را زود بگیریم)
+  // سال در تایتل: رد قطعی. مدل از این مسیر نمی‌تواند «به‌روزرسانی واقعی صفحه»
+  // را راستی کند؛ پس هر سالی در تایتل گمراه‌کننده است و قلم از چرخه کنار
+  // گذاشته می‌شود (نه «هشدار»).
   if (YEAR_PATTERN.test(it.metaTitle))
-    return `متا تایتل ${it.slug} سال دارد؛ فقط وقتی مجاز است که صفحه واقعاً برای همان سال به‌روز شده باشد.`;
+    return `متا تایتل ${it.slug} سال دارد؛ چون به‌روزرسانی واقعی صفحه قابل راستی‌آزمایی نیست، هر سالی در تایتل مردود است.`;
   return null;
 }
 
@@ -704,8 +761,20 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     ...approvedTasks.map((t) => `${t.title}\n${t.description}`),
   ];
   const targets = extractTargetSlugs(taskTexts, knownSlugs);
-  const forcedSlugs = targets.forced.slice(0, MAX_FORCED_SLUGS);
+  const rawForcedSlugs = targets.forced.slice(0, MAX_FORCED_SLUGS);
+
+  // ---------- رد «اخیراً بهینه‌شده» (یافتهٔ ممیزی B4: کار تکراری) ----------
+  // اسلاگ‌هایی که در RECENTLY_OPTIMIZED_TTL_DAYS روز گذشته تمیز و با تأیید
+  // بهینه شده‌اند، نه بازتولید اجباری می‌گیرند نه در مسیر خودکار انتخاب
+  // می‌شوند (پچ قبلی شاید هنوز در ریپوی سایت ننشسته باشد، ولی کارش انجام
+  // شده است). فقط کارِ تأییدشده رد می‌شود تا تسک اصلاحِ پس از ردِ منتقد
+  // قفل نشود.
+  const recentlyOptimized = await loadRecentlyOptimizedSlugs();
+  const skippedRecentForced = rawForcedSlugs.filter((s) => recentlyOptimized.has(s));
+  const forcedSlugs = rawForcedSlugs.filter((s) => !recentlyOptimized.has(s));
   const forcedSet = new Set(forcedSlugs);
+  const effectiveMissing = missing.filter((p) => !recentlyOptimized.has(p.slug));
+  const skippedRecentAuto = missing.length - effectiveMissing.length;
   const outerDirective =
     (input.reviewDirective ?? '').trim() ||
     parseDirectivePrefix(input.ragContext) ||
@@ -714,12 +783,22 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     await reportLive?.(`تسک صف دریافت شد: ${claimedTask.title}`, 8);
   }
 
-  if (missing.length === 0 && forcedSlugs.length === 0) {
+  if (effectiveMissing.length === 0 && forcedSlugs.length === 0) {
     // حتی در حالت «کاری نیست»، سرنوشت تسک صف باید صادقانه گزارش شود؛
     // وگرنه ارکستر آن را «موفق» می‌بندد در حالی که هیچ کاری نشده.
     const noopNotes: string[] = [];
     if (claimedTask) {
       noopNotes.push(`تسک صف «${claimedTask.title}» هیچ اسلاگ شناخته‌شده‌ای نداشت؛ کاری برای آن انجام نشد.`);
+    }
+    if (skippedRecentForced.length > 0) {
+      noopNotes.push(
+        `این اسلاگ‌های اجباری چون در ${RECENTLY_OPTIMIZED_TTL_DAYS} روز گذشته با تأیید بهینه شده بودند، دوباره کار نشدند: ${skippedRecentForced.join('، ')}.`,
+      );
+    }
+    if (skippedRecentAuto > 0) {
+      noopNotes.push(
+        `${skippedRecentAuto} اسلاگِ بدون متا چون اخیراً بهینه شده‌اند (پچ قبلی شاید هنوز در سایت ننشسته باشد) از انتخاب خودکار کنار گذاشته شدند.`,
+      );
     }
     if (targets.unknown.length > 0) {
       noopNotes.push(`اسلاگ‌های ناشناخته در تسک: ${targets.unknown.join('، ')}.`);
@@ -858,7 +937,7 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
         await reportLive?.('سرپرست: انتخاب اسلاگ‌ها', 20);
         const typeLabel = (t: SeoPageType) =>
           t === 'tour' ? 'تور' : t === 'category' ? 'دسته' : 'راهنما';
-        const candidates = missing
+        const candidates = effectiveMissing
           .slice(0, 12)
           .map((p) => `- ${p.slug} [${typeLabel(p.type)}]: ${p.title}`)
           .join('\n');
@@ -896,13 +975,13 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
           const parsed = JSON.parse(pickRaw.match(/\{[\s\S]*\}/)?.[0] ?? '{}') as { slugs?: string[] };
           slugs = (Array.isArray(parsed.slugs) ? parsed.slugs : [])
             .map((s) => String(s).trim())
-            .filter((s) => missing.some((m) => m.slug === s))
+            .filter((s) => effectiveMissing.some((m) => m.slug === s))
             .slice(0, MAX_SLUGS_PER_CYCLE);
         } catch {
           slugs = [];
         }
         if (slugs.length === 0) {
-          slugs = missing.slice(0, Math.min(2, missing.length)).map((m) => m.slug);
+          slugs = effectiveMissing.slice(0, Math.min(2, effectiveMissing.length)).map((m) => m.slug);
         }
         cachedSlugs = slugs;
       }
@@ -947,13 +1026,14 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
           '',
         ]),
         'داوری کن. معیارهای رد (هر کدام = رد):',
-        '۱. h1 واقعاً از تایتل جداست و حداکثر ۶۰ نویسه است؟',
+        '۱. h1 واقعاً از تایتل جداست و ارزش مستقل و مکمل دارد (نه فقط پیشوند/پسوند تایتل) و حداکثر ۶۰ نویسه است؟',
         '۲. h1 کلیک‌بیت، طولانی، اغراق‌آمیز یا پر از صفت توخالی («بهترین»، «فوق‌العاده»، «بی‌نظیر») نیست؟',
         '۳. متا تایتل ۵۰ تا ۶۰ نویسه است و کلمهٔ کلیدی در ابتداست؟',
-        '۴. اگر متا تایتل سال دارد (مثل ۱۴۰۴)، آیا صفحه واقعاً برای همان سال به‌روز است؟ سال بدون به‌روزرسانی = گمراه‌کننده = رد.',
+        '۴. اگر h1 یا متا تایتل سال دارد (مثل ۱۴۰۴)، آیا صفحه واقعاً برای همان سال به‌روز است و تاریخ در ساختار/URL هم پایه دارد؟ سال بدون پایه در ساختار = کلیک‌بیت گمراه‌کننده = رد قطعی.',
         '۵. متا دیسکریپشن ۱۲۰ تا ۱۶۰ نویسه، توصیفی و صادقانه است؟ لحن دستوری و امری («همین حالا رزرو کنید»، «از دست ندهید»، «کلیک کنید») = رد.',
         '۶. فارسی طبیعی است؟ نیم‌فاصله درست است؟ خط تیرهٔ بلند (U+2014) ندارد؟',
-        'فقط JSON معتبر بده: {"approved": true/false, "score": ۰ تا ۱۰۰, "reason": "یک جمله"}',
+        'قانون تأیید (یافتهٔ ممیزی C1: سهل‌گیری منتقد): approved=true فقط وقتی مجاز است که در reason این چک‌لیست را یک‌خطی تأیید کنی: «h1 مستقل از تایتل | سال مستند و پایه‌دار | نیم‌فاصله درست | U+2014 ندارد | لحن غیرامری». تأیید بدون این چک‌لیست نامعتبر است.',
+        'فقط JSON معتبر بده: {"approved": true/false, "score": ۰ تا ۱۰۰, "reason": "یک جمله؛ در صورت تأیید حتماً با چک‌لیست قانون تأیید"}',
         CRITIC_SCORE_PROMPT_LINE,
         'خروجی باید دقیقاً با { شروع و با } تمام شود. هیچ متن، توضیح یا کدفنس قبل و بعد از JSON ننویس.',
       ].join('\n'),
@@ -1092,6 +1172,17 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
     }),
   });
 
+  // ثبت رکورد «اخیراً بهینه‌شده» پس از اجرای تمیز (تأیید در دور ۱ بدون هیچ
+  // ردی): حلقهٔ گمشده‌ای که رد تکراری را در پروداکشن فعال می‌کند.
+  const cleanApproved = loopResult.approved && loopResult.finalRound === 1;
+  if (cleanApproved) {
+    await reportLive?.('ثبت سابقهٔ بهینه‌سازی اسلاگ‌ها', 96);
+    await recordOptimizedSlugs(
+      items.map((it) => it.slug),
+      runId,
+    );
+  }
+
   const tasks: QueuedTask[] = [];
   const hadRejection = loopResult.verdicts.some((v) => !v.approved);
   if (hadRejection) {
@@ -1122,6 +1213,11 @@ export async function runTeam(input: SeoTeamInput): Promise<TeamResult> {
         `تسک صف «${claimedTask.title}» هیچ اسلاگ شناخته‌شده‌ای نداشت؛ حالت خودکار اجرا شد.`,
       );
     }
+  }
+  if (skippedRecentForced.length > 0) {
+    taskNotes.push(
+      `این اسلاگ‌های اجباری چون در ${RECENTLY_OPTIMIZED_TTL_DAYS} روز گذشته با تأیید بهینه شده بودند، دوباره کار نشدند: ${skippedRecentForced.join('، ')}.`,
+    );
   }
   if (targets.unknown.length > 0) {
     taskNotes.push(
