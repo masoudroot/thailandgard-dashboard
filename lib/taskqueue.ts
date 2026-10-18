@@ -189,6 +189,44 @@ export function formatError(err: unknown): string {
 }
 
 /** Registers a task in `build_queue` with status=pending. Returns the new row id. */
+
+/**
+ * ستون‌های اختیاری build_queue که نبودشان در اسکیما مجاز به تنزل بی‌صداست
+ * (fail-soft: ثبت با فیلدهای کمتر به‌جای شکست کامل).
+ * درس ممیزی B2 (۱۴۰۵/۰۷/۲۶): تطبیق خام زیررشته‌ای روی پیام خطا («source»)
+ * باعث شد «violates check constraint "build_queue_source_check"» هم تنزل
+ * بخورد و هر ۳ تسک اول tour-manager بی‌صدا بدون acceptance/estimate ثبت
+ * شوند. از این به بعد فقط خطای واقعی «ستون وجود ندارد» تنزل می‌خورد.
+ */
+const FALLBACK_COLUMNS = new Set([
+  'llm_endpoint_id',
+  'llm_model',
+  'source',
+  'week_key',
+  'acceptance',
+  'estimate',
+  'depends_on',
+  'dedupe_key',
+]);
+
+/**
+ * آیا خطا واقعاً «ستون X در build_queue وجود ندارد» است؟
+ * پوشش: پستگرس (column "x" of relation ... does not exist / کد 42703) و
+ * PostgREST (Could not find the 'x' column ... in the schema cache).
+ * نقض check-constraint (مثل build_queue_source_check) عمداً false است تا
+ * بلند خطا بدهد، نه اینکه بی‌صدا فیلد بیندازد.
+ */
+function isMissingColumnError(err: unknown, msg: string): boolean {
+  const code = (err as { code?: unknown })?.code;
+  if (code === '42703') return true;
+  const m =
+    /(?:column\s+["']?([A-Za-z_][\w$]*)["']?\s+of relation|Could not find the\s+["']?([A-Za-z_][\w$]*)["']?\s+column)/i.exec(
+      msg,
+    );
+  const col = m?.[1] ?? m?.[2] ?? null;
+  return col !== null && FALLBACK_COLUMNS.has(col);
+}
+
 export async function enqueueTask(
   task: QueuedTask & {
     team: string;
@@ -202,6 +240,11 @@ export async function enqueueTask(
   }
   if (task.source != null && !['planner-weekly', 'critic', 'manual', 'leader', 'tour-manager'].includes(task.source)) {
     throw new InputError('منشأ تسک (source) نامعتبر است.');
+  }
+  // B2 فیکس: تسک برای تیم‌های سازنده حتماً باید معیار پذیرش داشته باشد
+  const BUILDER_TEAMS_Q = ['content', 'seo', 'design', 'dev'];
+  if (BUILDER_TEAMS_Q.includes(task.team) && !String(task.acceptance ?? '').trim()) {
+    throw new InputError(`تسک برای تیم ${task.team} باید معیار پذیرش (acceptance) داشته باشد.`);
   }
   const row: Record<string, unknown> = {
     team: task.team,
@@ -247,15 +290,14 @@ export async function enqueueTask(
     try {
       return await insertRow(attempts[attempt]);
     } catch (err) {
-      // ستون‌های llm یا بک‌لاگ هنوز migrate نشده‌اند (کد 42703): بدون آن‌ها
-      // ثبت کن تا جریان فعلی ثبت کار نشکند؛ فیلدهای حذف‌شده نادیده گرفته می‌شوند.
+      // ستون‌های llm یا بک‌لاگ هنوز migrate نشده‌اند: بدون آن‌ها ثبت کن تا
+      // جریان فعلی ثبت کار نشکند؛ فیلدهای حذف‌شده نادیده گرفته می‌شوند.
+      // فقط خطای واقعی «ستون نیست» تنزل می‌خورد (isMissingColumnError)؛ بقیهٔ
+      // خطاها بلند بالا می‌آیند تا بی‌صدا داده گم نشود (درس ممیزی B2).
       const msg = formatError(err);
-      const code = (err as { code?: string })?.code;
-      const isMissingColumn =
-        code === '42703' || /llm_endpoint_id|llm_model|source|week_key|acceptance|estimate|depends_on|dedupe_key/.test(msg);
-      if (isMissingColumn && attempt + 1 < attempts.length) {
+      if (isMissingColumnError(err, msg) && attempt + 1 < attempts.length) {
         console.warn(
-          `[taskqueue] build_queue misses some columns; enqueueing with fewer fields (attempt ${attempt + 2}).`,
+          `[taskqueue] build_queue misses a fallback column; enqueueing with fewer fields (attempt ${attempt + 2}). cause: ${msg}`,
         );
         attempt += 1;
         continue;
