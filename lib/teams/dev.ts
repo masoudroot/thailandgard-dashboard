@@ -202,6 +202,24 @@ function finalizePatches(
 }
 
 /**
+ * راستی‌آزمایی تحویل پچ (یافته: رد چک رهبر «فایل واقعی تولید شد ولی پچ تحویل داده نشد»).
+ * هر فایل تأییدشدهٔ منتقد باید یا در پچ نهایی باشد یا با دلیل روشن در dropped ثبت
+ * شده باشد؛ هیچ فایلی نباید بی‌صدا گم شود. اگر فایلی گم شد، تیم تأیید نمی‌گیرد.
+ */
+function verifyPatchDelivery(
+  criticApproved: WorkerPatch[],
+  finalPatch: PatchFile[],
+  dropped: string[],
+): { ok: boolean; missing: string[] } {
+  const delivered = new Set(finalPatch.map((p) => p.path));
+  const droppedPaths = new Set(dropped.map((d) => d.split(' (')[0].trim()));
+  const missing = criticApproved
+    .map((p) => p.path)
+    .filter((p) => !delivered.has(p) && !droppedPaths.has(p));
+  return { ok: missing.length === 0, missing };
+}
+
+/**
  * تبدیل دلیل ردِ منتقد قدیمی به دستور اجرایی (CriticVerdictV2.instruction).
  * امری و بلندتر از ۵۰ نویسه تا از اعتبارسنجی حلقه رد شود.
  */
@@ -293,6 +311,8 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
           '- حداکثر ۲۰ کیلوبایت برای هر فایل؛ فایل بزرگ‌تر حذف می‌شود، پس کد را جمع‌وجور و کامل بنویس.\n' +
           '- کد باید کامل و قابل اجرا باشد؛ تکه‌کد ناقص یا placeholder مثل // ... ممنوع.\n' +
           '- فایل‌های test، spec، debug یا mock هرگز تولید نکن. فقط کد پروداکشن واقعی.\n' +
+          '- نام فایل (path) باید معنادار و مرتبط با کار باشد؛ نام‌های placeholder مثل someApi، some-api، test، temp، example، sample، demo ممنوع است؛ ' +
+          'اگر path داده‌شده placeholder است، آن را با نام معنادار اصلاح کن.\n' +
           '- برای رابط فارسی: فقط logical CSS (ms- me- ps- pe- start- end-)، هرگز ml- pl- text-left.\n' +
           '- ایمپورت‌ها دقیق و نسبی باشند؛ هیچ‌چیز حدسی ایمپورت نکن. قبل از ایمپورت، مطمئن شو آن ماژول/کامپوننت واقعاً وجود دارد.\n' +
           '- اگر محتوای فعلی فایل داده شد (اصلاح فایل موجود): ساختار، قابلیت‌ها و استایل موجود را حفظ کن و فقط همان را عوض کن که دستور گفته؛ بازنویسی کوری که بخش‌های دیگر فایل را حذف یا خراب کند ممنوع.\n' +
@@ -327,6 +347,8 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
         'فقط JSON معتبر بده با این ساختار:\n' +
         '{"goal": "هدف یک‌خطی", "tasks": [{"path": "مسیر نسبی فایل", "action": "create یا modify", "instruction": "دستور دقیق فنی به مجری"}]}\n' +
         'قواعد: حداکثر ۳ فایل؛ مسیرها نسبی و دقیق؛ هرگز فایل .env یا package-lock را انتخاب نکن؛ ' +
+        'نام فایل باید معنادار و مرتبط با کار باشد؛ نام‌های placeholder مثل someApi، some-api، test، temp، example، sample، demo ممنوع است؛ ' +
+        'اگر اسم دقیق نمی‌دانی، از روی هدف تسک الهام بگیر؛ ' +
         'instruction باید آن‌قدر دقیق باشد که مجری بدون سؤال کد را بنویسد.';
       await reportLive?.('سرپرست: انتخاب فایل‌ها و هدف', 15);
       // تلاش مجدد در همین چرخه اگر سرپرست JSON معتبر برنگرداند (یافته: ۱۱ رد
@@ -541,14 +563,28 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
   const dropped: string[] = [];
   const finalPatch = finalizePatches(criticApproved, dropped);
 
-  const approved = lastRawApproved && finalPatch.length > 0;
+  // راستی‌آزمایی تحویل: هیچ فایل تأییدشده‌ای نباید بی‌صدا گم شود
+  const deliveryCheck = verifyPatchDelivery(criticApproved, finalPatch, dropped);
+  const approved = lastRawApproved && finalPatch.length > 0 && deliveryCheck.ok;
   const reason = lastRawReason;
   const droppedNote =
     dropped.length > 0 ? ` — حذف‌شده (سقف ۲۰KB): ${dropped.join('، ')}` : '';
+  const deliveryNote = !deliveryCheck.ok
+    ? ` — تحویل ناقص: این فایل‌ها در پچ نهایی نیستند: ${deliveryCheck.missing.join('، ')}`
+    : '';
 
   const summary = approved
     ? `تیم dev ${finalPatch.length} فایل واقعی تولید کرد و منتقد تأیید کرد: ${reason} — فایل‌ها: ${finalPatch.map((p) => p.path).join('، ')}`
-    : `تیم dev این چرخه پچ تأییدشده نداشت؛ دلیل: ${reason}`;
+    : `تیم dev این چرخه پچ تأییدشده نداشت؛ دلیل: ${!deliveryCheck.ok ? `تحویل پچ ناقص (${deliveryCheck.missing.join('، ')})` : reason}`;
+
+  const failBlockers: string[] = [];
+  if (!approved) {
+    failBlockers.push(
+      !deliveryCheck.ok
+        ? `تحویل پچ ناقص است؛ این فایل‌ها در پچ نهایی نیستند: ${deliveryCheck.missing.join('، ')}`
+        : reason,
+    );
+  }
 
   if (approved) {
     // ضربان زنده پیش از نوشتن حافظه (یافته: نقطهٔ کور بدون ضربان)
@@ -585,8 +621,8 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
 
   return {
     team: TEAM,
-    summary: `${summary}${droppedNote} ${lastKnowledgeLog}`,
-    blockers: approved ? [] : [reason],
+    summary: `${summary}${droppedNote}${deliveryNote} ${lastKnowledgeLog}`,
+    blockers: failBlockers,
     tasks,
     approved,
     patches: finalPatch.map((p) => ({ path: p.path, content: p.content })),
