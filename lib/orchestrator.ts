@@ -39,6 +39,7 @@ import {
 } from './taskqueue';
 import {
   ACTIVE_CYCLE_STATUSES,
+  MAX_SAME_CYCLE_FIX_ATTEMPTS,
   normalizeCycleStatus,
   WAVES,
   type CycleStatus,
@@ -589,6 +590,17 @@ function buildRagContext(previousWavesOutput: Record<string, TeamResult | null>)
 interface WaveCtx {
   runId: string;
   previousWavesOutput: Record<string, TeamResult | null>;
+  /**
+   * شمارهٔ تلاش اصلاح در همین چرخه (۱ = اجرای اول).
+   * وقتی تیمی در همین چرخه رد/ناموفق شده و دوباره اجرا می‌شود، > ۱ است
+   * (حلقهٔ اصلاح درون‌چرخه‌ای؛ دستور مسعود، ۱۴۰۵/۰۷/۲۶).
+   */
+  fixAttempt?: number;
+  /**
+   * دستور اصلاح به‌جامانده از رد/خطای قبلی همین چرخه؛ در دور اولِ تلاش
+   * اصلاح به‌عنوان دستور رهبر به زمینه تزریق می‌شود (بالاترین اولویت).
+   */
+  priorFixDirective?: string;
 }
 
 export interface RunWavesOptions {
@@ -1013,6 +1025,19 @@ export async function runSingleTeam(
       console.log(`[orchestrator] تیم ${team}: دانش ذخیره‌شده‌ای ندارد`);
     }
     const fullRagContext = baseRagContext + teamKnowledgeContext;
+    // حلقهٔ اصلاح درون‌چرخه‌ای (دستور مسعود، ۱۴۰۵/۰۷/۲۶): اگر این اجرا
+    // تلاش مجددِ همین چرخه است (تیم قبلاً رد/ناموفق شده)، شمارهٔ تلاش و
+    // دستور به‌جامانده از قبل را از ctx می‌خوانیم. لاگ شفاف تا در مانیتور
+    // معلوم باشد کدام تیم دارد در همین چرخه اصلاح می‌شود.
+    const fixAttempt = Math.max(1, ctx.fixAttempt ?? 1);
+    const priorFixDirective = (ctx.priorFixDirective ?? '').trim() || undefined;
+    if (fixAttempt > 1) {
+      console.log(
+        `[fix-loop] team ${team}: same-cycle fix attempt ${fixAttempt}/${MAX_SAME_CYCLE_FIX_ATTEMPTS}` +
+          (priorFixDirective ? ' (prior directive injected)' : ' (no prior directive)'),
+      );
+      await reportProgress(`تلاش اصلاح ${fixAttempt} در همین چرخه`, 6);
+    }
     // چرخهٔ جدید (دستور مسعود، ۱۴۰۵/۰۷/۲۴): اجرای یک‌باره + گیت خروجی +
     // چک سادهٔ رهبر («کار می‌کنه؟»)؛ در صورت رد، حداکثر ۱ دور اصلاح با
     // دستور مشخص. بدون حلقهٔ ۳دوره‌ای.
@@ -1025,8 +1050,14 @@ export async function runSingleTeam(
     }> = [];
 
     const runTeamOnce = async (fixRound: number, directive?: string): Promise<TeamResult> => {
-      const directivePrefix = directive
-        ? `\n\nدستور رهبر برای دور اصلاح (خروجی دور قبل رد شد):\n${directive}\n`
+      // حلقهٔ اصلاح درون‌چرخه‌ای (دستور مسعود، ۱۴۰۵/۰۷/۲۶): در تلاش‌های
+      // اصلاح (fixAttempt>1)، دستور به‌جامانده از رد/خطای قبلیِ همین چرخه
+      // بالاترین اولویت را دارد و به دور اول تزریق می‌شود تا تیم دقیقاً
+      // همان ایراد را برطرف کند، نه اینکه از صفر حدس بزند.
+      const effectiveDirective =
+        fixRound === 0 && priorFixDirective ? priorFixDirective : directive;
+      const directivePrefix = effectiveDirective
+        ? `\n\nدستور رهبر برای دور اصلاح (خروجی دور قبل رد شد):\n${effectiveDirective}\n`
         : '';
       const input: TeamInput = {
         cycleId,
@@ -1036,7 +1067,7 @@ export async function runSingleTeam(
         previousWavesOutput: { ...ctx.previousWavesOutput },
         reportProgress,
         round: fixRound + 1,
-        reviewDirective: directive,
+        reviewDirective: effectiveDirective,
       };
       if (fixRound > 0) {
         await reportProgress('دور اصلاح با دستور رهبر', 10);
@@ -1080,10 +1111,17 @@ export async function runSingleTeam(
     const llmCalls = getLLMStats().total;
     // چک سادهٔ رهبر تعیین‌کنندهٔ نهایی است: رد بعد از دور اصلاح → rejected
     if (!finalCheck.approved) {
+      // حلقهٔ اصلاح درون‌چرخه‌ای (دستور مسعود، ۱۴۰۵/۰۷/۲۶): اگر سقف تلاش
+      // در همین چرخه خورده، تیم «مسدود» ثبت می‌شود — نه بی‌صدا به چرخهٔ
+      // بعد موکول می‌شود، نه بی‌دلیل رها می‌شود. دلیلش مشخص و اجرایی است.
+      const fixLoopNote =
+        fixAttempt >= MAX_SAME_CYCLE_FIX_ATTEMPTS
+          ? ` پس از ${fixAttempt} تلاش اصلاح در همین چرخه همچنان مردود است و «مسدود» ثبت شد (به چرخهٔ بعد موکول نشد)؛ نیاز به بررسی جدی علت دارد.`
+          : ` (تلاش اصلاح ${fixAttempt} از ${MAX_SAME_CYCLE_FIX_ATTEMPTS} در همین چرخه؛ در ادامهٔ همین چرخه دوباره تلاش می‌شود).`;
       result = {
         ...result,
         approved: false,
-        summary: `${result.summary ?? ''}\n\nرد شد در چک رهبر: ${finalCheck.reason}`.trim(),
+        summary: `${result.summary ?? ''}\n\nرد شد در چک رهبر: ${finalCheck.reason}${fixLoopNote}`.trim(),
       };
     }
     // تفکیک «رد رهبر» از «خطای سیستمی» (دستور مسعود):
@@ -1265,15 +1303,34 @@ export async function finishCycle(
       .maybeSingle();
     const { data: runs } = await sb
       .from('team_runs')
-      .select('status, llm_calls')
+      .select('team, status, llm_calls, started_at')
       .eq('cycle_id', cycleId);
-    const rows = (runs ?? []) as { status: string; llm_calls: number }[];
-    const stats: Record<string, number | string | boolean> = {
-      total_teams: rows.length,
-      success: rows.filter((r) => r.status === 'success').length,
-      failed: rows.filter((r) => r.status === 'failed').length,
-      rejected: rows.filter((r) => r.status === 'rejected').length,
-      llm_calls: rows.reduce((sum, r) => sum + (r.llm_calls ?? 0), 0),
+    const rows = (runs ?? []) as { team: string; status: string; llm_calls: number; started_at: string }[];
+    // حلقهٔ اصلاح درون‌چرخه‌ای ممکن است برای یک تیم چند ردیف بسازد؛
+    // آمار چرخه فقط «آخرین» اجرای هر تیم را می‌شمارد، نه همهٔ تلاش‌ها را.
+    const latest = new Map<string, { status: string; llm_calls: number }>();
+    const attempts = new Map<string, number>();
+    for (const r of rows) {
+      latest.set(r.team, { status: r.status, llm_calls: r.llm_calls ?? 0 });
+      attempts.set(r.team, (attempts.get(r.team) ?? 0) + 1);
+    }
+    // خلاصهٔ حلقه‌های اصلاح این چرخه (دستور مسعود): کدام تیم‌ها در همین
+    // چرخه اصلاح شدند، چند تلاش کردند و وضعیت نهایی‌شان چه شد.
+    const fixLoops: Record<string, { attempts: number; final_status: string }> = {};
+    attempts.forEach((n, team) => {
+      if (n > 1) {
+        fixLoops[team] = { attempts: n, final_status: latest.get(team)?.status ?? 'unknown' };
+      }
+    });
+    const latestRows: Array<{ status: string; llm_calls: number }> = [];
+    latest.forEach((v) => latestRows.push(v));
+    const stats: Record<string, number | string | boolean | object> = {
+      total_teams: latest.size,
+      success: latestRows.filter((r) => r.status === 'success').length,
+      failed: latestRows.filter((r) => r.status === 'failed').length,
+      rejected: latestRows.filter((r) => r.status === 'rejected').length,
+      llm_calls: latestRows.reduce((sum, r) => sum + (r.llm_calls ?? 0), 0),
+      fix_loops: fixLoops,
     };
     if (cycle) {
       stats.duration_minutes = Math.round(

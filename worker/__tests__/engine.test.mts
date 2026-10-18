@@ -398,16 +398,59 @@ describe('تست ۶: ترتیب موج‌ها و عدم اجرای تکراری 
     assert.match(lines[0], /running team content \(wave 1\)/, 'نباید به موج ۲ بپرد');
   });
 
-  it('تیم ردشده دوباره انتخاب نمی‌شود', async () => {
+  it('حلقه اصلاح درون‌چرخه‌ای: تیم ردشده با تلاش کمتر از سقف، در همین چرخه دوباره انتخاب می‌شود', async () => {
+    // چرخه تازه (started_at نزدیک) تا recoverDeadCycles آن را «مرده» نداند
+    const freshCycle = { ...activeCycleSeed(), started_at: minAgoIso(5) };
     await seed({
-      cycles: [activeCycleSeed()],
-      team_runs: [teamRun('artdir', 'success'), teamRun('branding', 'rejected')],
+      cycles: [freshCycle],
+      team_runs: [
+        teamRun('leader', 'success'),
+        {
+          id: 'tr-tour-manager-1',
+          cycle_id: 'cycle-1',
+          team: 'tour-manager',
+          wave: 1,
+          status: 'rejected',
+          started_at: minAgoIso(5),
+          updated_at: minAgoIso(4),
+          finished_at: nowIso(),
+          review_rounds: [
+            { round: 2, approved: false, reason: 'دلیل تست رد', directive: 'دستور تست اصلاح' },
+          ],
+        },
+      ],
       agent_state: [],
     });
     const r = await runWorker([]);
-    // content انتخاب و اجرا شد؛ branding نباید ردیف تازه‌ای بگیرد
-    const brandingRows = r.tables.team_runs.filter((x: any) => x.team === 'branding');
-    assert.equal(brandingRows.length, 1, 'تیم ردشده نباید دوباره اجرا شود');
+    // tour-manager باید دوباره اجرا شود (ردیف دوم) و لاگ fix-loop دیده شود؛
+    // دستور مسعود ۱۴۰۵/۰۷/۲۶: ردشدن به چرخهٔ بعد موکول نمی‌شود.
+    const tmRows = r.tables.team_runs.filter((x: any) => x.team === 'tour-manager');
+    assert.equal(tmRows.length, 2, 'تیم ردشده باید در همین چرخه دوباره اجرا شود');
+    assert.match(r.stdout, /\[fix-loop\] team tour-manager: same-cycle fix attempt 2\/3/);
+  });
+
+  it('حلقه اصلاح درون‌چرخه‌ای: تیم ردشده پس از سقف تلاش، مسدود می‌شود و موج جلو می‌رود', async () => {
+    const freshCycle = { ...activeCycleSeed(), started_at: minAgoIso(5) };
+    const rejectedRow = (i: number) => ({
+      id: `tr-tour-manager-${i}`,
+      cycle_id: 'cycle-1',
+      team: 'tour-manager',
+      wave: 1,
+      status: 'rejected',
+      started_at: minAgoIso(25 - i * 5),
+      updated_at: minAgoIso(20 - i * 5),
+      finished_at: nowIso(),
+    });
+    await seed({
+      cycles: [freshCycle],
+      team_runs: [teamRun('leader', 'success'), rejectedRow(1), rejectedRow(2), rejectedRow(3)],
+      agent_state: [],
+    });
+    const r = await runWorker([]);
+    // tour-manager نباید ردیف تازه‌ای بگیرد (۳ تلاش تمام شده)؛ موج ۲ انتخاب می‌شود
+    const tmRows = r.tables.team_runs.filter((x: any) => x.team === 'tour-manager');
+    assert.equal(tmRows.length, 3, 'تیم مسدودشده نباید دوباره اجرا شود');
+    assert.match(r.stdout, /running team content \(wave 2\)/);
   });
 
   it('تیم running با ضربان تازه → تایم‌اوت نمی‌شود و ورکر دوم صبر می‌کند', async () => {

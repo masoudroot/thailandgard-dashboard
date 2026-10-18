@@ -8,7 +8,7 @@
  * نیازمند: SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY در env
  */
 import { getSupabase } from '../lib/api';
-import { WAVES, type TeamName } from '../lib/types';
+import { MAX_SAME_CYCLE_FIX_ATTEMPTS, WAVES, type TeamName } from '../lib/types';
 import { findActiveCycle, finishCycle, runSingleTeam, beginCycle } from '../lib/orchestrator';
 import { claimTeam, readLock, touchLock, type LockOwner } from '../lib/lock';
 import { getSetting } from '../lib/settings';
@@ -222,15 +222,29 @@ async function main(): Promise<void> {
     }
   }
 
-  // وضعیت تیم‌ها (مرتب‌سازی صعودی تا آخرین ردیف هر تیم، جدیدترین وضعیت باشد)
+  // وضعیت تیم‌ها (مرتب‌سازی صعودی تا آخرین ردیف هر تیم، جدیدترین وضعیت باشد).
+  // حلقهٔ اصلاح درون‌چرخه‌ای (دستور مسعود، ۱۴۰۵/۰۷/۲۶): برای هر تیم هم
+  // «آخرین وضعیت» و هم «تعداد تلاش‌ها در همین چرخه» را نگه می‌داریم؛ تیمِ
+  // ردشده/ناموفق تا سقف MAX_SAME_CYCLE_FIX_ATTEMPTS دوباره اجرا می‌شود و
+  // کارش به چرخهٔ بعد موکول نمی‌شود. review_rounds برای استخراج دستور
+  // اصلاحِ رد قبلی خوانده می‌شود.
   const { data: runs } = await sb
     .from('team_runs')
-    .select('team, status, started_at, updated_at, current_task')
+    .select('team, status, started_at, updated_at, current_task, review_rounds, error')
     .eq('cycle_id', cycleId)
     .order('started_at', { ascending: true });
   const teamStatus: Record<string, string> = {};
-  for (const r of (runs ?? []) as { team: string; status: string }[]) {
+  const teamAttempts: Record<string, number> = {};
+  const teamLastRun: Record<string, { review_rounds: unknown; error: string | null }> = {};
+  for (const r of (runs ?? []) as Array<{
+    team: string;
+    status: string;
+    review_rounds?: unknown;
+    error?: string | null;
+  }>) {
     teamStatus[r.team] = r.status;
+    teamAttempts[r.team] = (teamAttempts[r.team] ?? 0) + 1;
+    teamLastRun[r.team] = { review_rounds: r.review_rounds ?? null, error: r.error ?? null };
   }
 
   // جاروی تیم‌های گیرکرده (دو سیگنال جدا: ضربان در برابر پیشرفت).
@@ -242,13 +256,66 @@ async function main(): Promise<void> {
   const hung = await sweepHungTeams(sb, cycleId);
   for (const h of hung) {
     teamStatus[h.team] = 'failed';
+    // جارو ردیف موجود را به‌روز می‌کند (ردیف تازه نمی‌سازد)؛ پس شمارش
+    // تلاش‌ها همان می‌ماند و فقط وضعیت آخرین اجرا عوض می‌شود.
+    teamLastRun[h.team] = { review_rounds: teamLastRun[h.team]?.review_rounds ?? null, error: null };
   }
 
-  // تیم «ردشده توسط منتقد» موج را بلاک نمی‌کند؛ کارش را انجام داده و در چرخه بعد دوباره تلاش می‌کند
-  const isDone = (s: string) => ['success', 'failed', 'stopped', 'rejected'].includes(s);
+  /**
+   * حلقهٔ اصلاح درون‌چرخه‌ای (دستور مسعود، ۱۴۰۵/۰۷/۲۶):
+   * - success/stopped/skipped → تمام‌شده.
+   * - rejected/failed → فقط وقتی تمام‌شده که سقف تلاش اصلاح در همین چرخه
+   *   خورده باشد؛ در غیر این صورت تیم در تیک‌های بعدیِ همین چرخه دوباره
+   *   اجرا می‌شود (موج جلو نمی‌رود تا تیم یا موفق شود یا «مسدود» شود).
+   * - pending/running → تمام‌نشده.
+   */
+  const isDone = (t: string): boolean => {
+    const s = teamStatus[t] ?? 'pending';
+    if (s === 'success' || s === 'stopped' || s === 'skipped') return true;
+    if (s === 'rejected' || s === 'failed') {
+      return (teamAttempts[t] ?? 0) >= MAX_SAME_CYCLE_FIX_ATTEMPTS;
+    }
+    return false;
+  };
+
+  /**
+   * استخراج دستور اصلاح از آخرین اجرای ردشده/ناموفق تیم در همین چرخه:
+   * از review_rounds آخرین directive ردشده، و برای خطا (failed) از پیام
+   * خطا یک دستور ترمیمی سنتز می‌شود. خروجی در تلاش اصلاح بعدی به‌عنوان
+   * «دستور رهبر» تزریق می‌شود تا تیم همان ایراد را بگیرد.
+   */
+  const extractPriorFixDirective = (team: string): { directive?: string; reason?: string } => {
+    const last = teamLastRun[team];
+    if (!last) return {};
+    const rounds = last.review_rounds;
+    if (Array.isArray(rounds)) {
+      for (let i = rounds.length - 1; i >= 0; i--) {
+        const rd = rounds[i] as { approved?: boolean; reason?: unknown; directive?: unknown } | null;
+        if (rd && typeof rd === 'object' && rd.approved === false) {
+          const directive = String(rd.directive ?? '').trim();
+          const reason = String(rd.reason ?? '').trim();
+          if (directive) {
+            return { directive: directive.slice(0, 2000), reason: reason.slice(0, 500) || undefined };
+          }
+        }
+      }
+    }
+    if (last.error) {
+      const errText = String(last.error).trim().slice(0, 1000);
+      if (errText) {
+        return {
+          reason: errText.slice(0, 500),
+          directive:
+            `اجرای قبلی‌ات در همین چرخه با خطا متوقف شد: ${errText}. ` +
+            'علت را پیدا و برطرف کن و کارت را کامل انجام بده؛ خروجی ناقص یا نیمه‌کاره قابل قبول نیست.',
+        };
+      }
+    }
+    return {};
+  };
 
   // اگر همه موج‌ها تمام شدند، چرخه را ببند
-  const allDone = WAVES.every((w) => w.teams.every((t) => isDone(teamStatus[t] ?? 'pending')));
+  const allDone = WAVES.every((w) => w.teams.every((t) => isDone(t)));
   if (allDone) {
     const failed = Object.values(teamStatus).filter((s) => ['failed', 'stopped'].includes(s)).length;
     await finishCycle(cycleId, failed > 0 ? 'failed' : 'success');
@@ -257,7 +324,7 @@ async function main(): Promise<void> {
   }
 
   // موج جاری: اولین موج ناتمام
-  const currentWaveDef = WAVES.find((w) => !w.teams.every((t) => isDone(teamStatus[t] ?? 'pending')));
+  const currentWaveDef = WAVES.find((w) => !w.teams.every((t) => isDone(t)));
   if (!currentWaveDef) {
     console.log('no pending wave');
     return;
@@ -271,13 +338,22 @@ async function main(): Promise<void> {
   }
 
   // اولین تیم معلق موج جاری را اجرا کن
-  const nextTeam = currentWaveDef.teams.find((t) => !isDone(teamStatus[t] ?? 'pending')) as TeamName | undefined;
+  const nextTeam = currentWaveDef.teams.find((t) => !isDone(t)) as TeamName | undefined;
   if (!nextTeam) {
     console.log('no pending team in current wave');
     return;
   }
 
+  // حلقهٔ اصلاح درون‌چرخه‌ای: شمارهٔ تلاش و دستور به‌جامانده از رد قبلی
+  const fixAttempt = (teamAttempts[nextTeam] ?? 0) + 1;
+  const prior = fixAttempt > 1 ? extractPriorFixDirective(nextTeam) : {};
   console.log(`running team ${nextTeam} (wave ${currentWaveDef.wave})`);
+  if (fixAttempt > 1) {
+    console.log(
+      `[fix-loop] team ${nextTeam}: same-cycle fix attempt ${fixAttempt}/${MAX_SAME_CYCLE_FIX_ATTEMPTS}` +
+        (prior.reason ? ` (prev: ${prior.reason.slice(0, 200)})` : ''),
+    );
+  }
 
   // claim اتمیک تیم: اگر ورکر دیگری هم‌زمان همین تیم را برداشت، ما عقب می‌نشینیم
   const owner: LockOwner = {
@@ -318,6 +394,8 @@ async function main(): Promise<void> {
     await runSingleTeam(cycleId, nextTeam, currentWaveDef.wave, {
       runId,
       previousWavesOutput: {},
+      fixAttempt,
+      priorFixDirective: prior.directive,
     }, teamRunId);
     console.log(`team ${nextTeam} done`);
   } catch (err) {
