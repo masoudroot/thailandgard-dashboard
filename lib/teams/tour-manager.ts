@@ -14,6 +14,10 @@
  * مرز با رهبر: رهبر «چه کاری» را از روی داده (اینتل، سرچ کنسول، آنالیتیکس)
  * می‌گوید؛ مدیر تور فقط «دامنهٔ تور» را پوشش می‌دهد. هم‌پوشانی ممنوع:
  * مدیر تور هرگز تسک غیرتوری نمی‌سازد.
+ * تفکیک لایه‌ها (ممیزی B2، ۱۴۰۵/۰۷/۲۶): رهبر روی «صفحه و محتوا» کار می‌کند
+ * (مثل «بهینه‌سازی صفحه تور سامویی»)؛ مدیر تور روی «موجودیت تور در دیتابیس»
+ * (تعریف تور تازه، آپدیت price_from، بازبینی فعال‌سازی). اگر رهبر هم تسک
+ * توری بسازد، سطح صفحه است نه سطح موجودیت؛ تکراری نیست.
  *
  * در هر چرخه:
  *   ۱. تورهای فعلی دیتابیس را می‌خواند (فعال/غیرفعال، قیمت، تازگی قیمت)
@@ -87,6 +91,15 @@ interface TourPattern {
   priceFrom: number;
   touristType: string;
   priority: number;
+  /**
+   * برنامهٔ پیشنهادی روزبه‌روز (از ~/workspace/thailandgard-kw-research/competitor-tours-analysis.md).
+   * برای الگوهایی که تحلیل رقبا برنامهٔ روزبه‌روز نداشت، ترکیب صادقانه از
+   * برنامه‌های ثبت‌شده است و در متن تسک «پیشنهاد اولیه» خوانده می‌شود؛
+   * تیم content متن نهایی را می‌نویسد. هیچ‌وقت جزئیات ساختگی (هتل/ساعت/قیمت) ندارد.
+   */
+  itinerary: string[];
+  /** کلمات کلیدی هدف سئو برای صفحهٔ این تور. */
+  keywords: string[];
 }
 
 /**
@@ -105,6 +118,17 @@ const MARKET_PATTERNS: TourPattern[] = [
     priceFrom: 54900000,
     touristType: 'خانواده، زوج‌ها',
     priority: 10,
+    itinerary: [
+      'پرواز تهران به بانکوک، انتقال زمینی به پاتایا (حدود ۲ ساعت)، تحویل هتل',
+      'گشت شهری پاتایا (ساحل جومتین، بازار شناور)',
+      'روز آزاد؛ پیشنهاد: جزیره کورال یا پارک آبی رامایانا',
+      'روز آزاد یا گشت نیم‌روزی؛ انتقال به بانکوک',
+      'گشت شهری بانکوک (کاخ بزرگ، وات فو، وات آرون)',
+      'روز آزاد؛ پیشنهاد: بازارها و مراکز خرید یا سافاری ورلد',
+      'روز آزاد',
+      'انتقال به فرودگاه، پرواز برگشت به تهران',
+    ],
+    keywords: ['تور بانکوک پاتایا', 'تور ترکیبی بانکوک و پاتایا', 'قیمت تور بانکوک پاتایا', 'تور ۷ شبه بانکوک پاتایا'],
   },
   {
     slug: 'phuket-7days',
@@ -116,6 +140,17 @@ const MARKET_PATTERNS: TourPattern[] = [
     priceFrom: 59900000,
     touristType: 'زوج‌ها، خانواده‌ها',
     priority: 20,
+    itinerary: [
+      'پرواز مستقیم تهران به پوکت، ترانسفر فرودگاهی، تحویل هتل',
+      'گشت شهری پوکت (بودای بزرگ، وات چالونگ، شهر قدیم پوکت)',
+      'تور یک‌روزه جزایر فی‌فی با قایق تندرو',
+      'روز آزاد ساحل',
+      'پیشنهاد: خلیج فانگ نگا و جزیره جیمز باند',
+      'روز آزاد؛ پیشنهاد: نمایش فانتاسی یا سیام نیرامیت',
+      'روز آزاد',
+      'ترانسفر فرودگاه، پرواز برگشت',
+    ],
+    keywords: ['تور پوکت', 'قیمت تور پوکت', 'تور ۷ شبه پوکت', 'تور پوکت پاییز'],
   },
   {
     slug: 'bangkok-phuket-7days',
@@ -127,6 +162,17 @@ const MARKET_PATTERNS: TourPattern[] = [
     priceFrom: 68900000,
     touristType: 'خانواده، زوج‌ها',
     priority: 30,
+    itinerary: [
+      'ورود به بانکوک، تحویل هتل، استراحت',
+      'گشت شهری بانکوک (کاخ بزرگ، وات فو، رودخانه چائو پرایا)',
+      'پرواز داخلی به پوکت، تحویل هتل، غروب ساحل',
+      'تور یک‌روزه جزایر فی‌فی',
+      'روز آزاد ساحل',
+      'پیشنهاد: خلیج فانگ نگا یا غواصی',
+      'پرواز داخلی به بانکوک',
+      'پرواز برگشت به تهران',
+    ],
+    keywords: ['تور بانکوک پوکت', 'تور ترکیبی بانکوک و پوکت', 'قیمت تور بانکوک پوکت', 'تور ۷ شبه بانکوک پوکت'],
   },
   {
     slug: 'phuket-pattaya-7days',
@@ -138,6 +184,17 @@ const MARKET_PATTERNS: TourPattern[] = [
     priceFrom: 66900000,
     touristType: 'جوانان، خانواده‌ها',
     priority: 40,
+    itinerary: [
+      'پرواز تهران به بانکوک، پرواز داخلی به پوکت، تحویل هتل',
+      'تور یک‌روزه جزایر فی‌فی',
+      'روز آزاد ساحل؛ پیشنهاد: خلیج فانگ نگا',
+      'پرواز داخلی به بانکوک و انتقال زمینی به پاتایا',
+      'گشت شهری پاتایا (ساحل جومتین، بازار شناور)',
+      'روز آزاد؛ پیشنهاد: جزیره کورال',
+      'انتقال به بانکوک، روز آزاد',
+      'پرواز برگشت به تهران',
+    ],
+    keywords: ['تور پوکت پاتایا', 'تور ترکیبی پوکت و پاتایا', 'قیمت تور پوکت پاتایا'],
   },
   {
     slug: 'thailand-grand-14days',
@@ -149,6 +206,24 @@ const MARKET_PATTERNS: TourPattern[] = [
     priceFrom: 156000000,
     touristType: 'لوکس، ماه عسل',
     priority: 50,
+    itinerary: [
+      'پرواز تهران به بانکوک، تحویل هتل',
+      'گشت شهری بانکوک (کاخ بزرگ، وات فو، وات آرون)',
+      'روز آزاد بانکوک',
+      'انتقال زمینی به پاتایا، تحویل هتل',
+      'گشت شهری پاتایا (ساحل جومتین، بازار شناور)',
+      'جزیره کورال',
+      'روز آزاد پاتایا',
+      'پرواز داخلی به پوکت، تحویل هتل',
+      'تور یک‌روزه جزایر فی‌فی',
+      'روز آزاد ساحل',
+      'پیشنهاد: خلیج فانگ نگا و جزیره جیمز باند',
+      'روز آزاد',
+      'روز آزاد؛ پیشنهاد: نمایش شبانه',
+      'روز آزاد',
+      'پرواز برگشت (از پوکت یا از طریق بانکوک)',
+    ],
+    keywords: ['تور دور تایلند', 'تور ۱۴ شبه تایلند', 'تور لوکس تایلند', 'تور ماه عسل تایلند', 'قیمت تور دور تایلند'],
   },
   {
     slug: 'phuket-samui-7days',
@@ -160,6 +235,17 @@ const MARKET_PATTERNS: TourPattern[] = [
     priceFrom: 89900000,
     touristType: 'ماه عسل، لوکس',
     priority: 60,
+    itinerary: [
+      'پرواز تهران به پوکت (از طریق بانکوک)، تحویل هتل',
+      'تور یک‌روزه جزایر فی‌فی',
+      'روز آزاد ساحل پوکت',
+      'انتقال به سامویی (پرواز داخلی یا کشتی)، تحویل هتل',
+      'گشت جزیره سامویی (معبد بودای بزرگ، ساحل چاونگ)',
+      'روز آزاد؛ پیشنهاد: تور جزایر اطراف سامویی',
+      'روز آزاد',
+      'پرواز برگشت به تهران',
+    ],
+    keywords: ['تور پوکت سامویی', 'تور ترکیبی پوکت و سامویی', 'تور ماه عسل پوکت', 'قیمت تور پوکت سامویی'],
   },
   {
     slug: 'phuket-krabi-7days',
@@ -171,6 +257,17 @@ const MARKET_PATTERNS: TourPattern[] = [
     priceFrom: 72000000,
     touristType: 'طبیعت‌گردان',
     priority: 70,
+    itinerary: [
+      'پرواز تهران به پوکت، انتقال به کرابی، تحویل هتل',
+      'تور چهار جزیره کرابی',
+      'روز آزاد؛ پیشنهاد: ساحل رایلی',
+      'انتقال به پوکت، تحویل هتل',
+      'تور یک‌روزه جزایر فی‌فی',
+      'روز آزاد؛ پیشنهاد: خلیج فانگ نگا',
+      'روز آزاد ساحل',
+      'پرواز برگشت به تهران',
+    ],
+    keywords: ['تور پوکت کرابی', 'تور ترکیبی پوکت و کرابی', 'تور طبیعت تایلند', 'قیمت تور پوکت کرابی'],
   },
 ];
 
@@ -192,19 +289,45 @@ async function loadDbTours(): Promise<DbTour[]> {
   }
 }
 
-/** خواندن تسک‌های باز صف برای ضدتکراری (fail-soft). */
-async function loadOpenTasks(): Promise<Array<{ team: string; title: string }>> {
+/** خواندن تسک‌های اخیر صف برای ضدتکراری (fail-soft). */
+async function loadRecentTasks(): Promise<
+  Array<{ team: string; title: string; status: string; created_at: string }>
+> {
   try {
     const { data, error } = await getSupabase()
       .from('build_queue')
-      .select('team, title')
-      .in('status', ['pending', 'approved', 'in_progress', 'deferred'])
+      .select('team, title, status, created_at')
+      .order('created_at', { ascending: false })
       .limit(200);
     if (error) return [];
-    return (data ?? []) as Array<{ team: string; title: string }>;
+    return (data ?? []) as Array<{
+      team: string;
+      title: string;
+      status: string;
+      created_at: string;
+    }>;
   } catch {
     return [];
   }
+}
+
+/** وضعیت‌هایی که تسک را «باز» حساب می‌کنیم. */
+const OPEN_STATUSES = new Set(['pending', 'approved', 'in_progress', 'deferred']);
+
+/**
+ * پنجرهٔ ضدتکراری برای تسک‌های تکراری‌شونده (مثل بازبینی فصلی): ۷۲ ساعت.
+ * درس ممیزی B2 (۱۴۰۵/۰۷/۲۶): فقط «باز بودن» چک می‌شد؛ وقتی تیم content تسک
+ * «بازبینی تورهای غیرفعال» را done می‌کرد، چرخهٔ بعد همان تسک دوباره ساخته
+ * می‌شد (۳ بار در ۵.۵ ساعت). از این به بعد «تازه بودن» هم ضدتکراری است.
+ */
+const RECENT_TASK_MS = 72 * 3600 * 1000;
+
+/** آیا تسک باز است یا آن‌قدر تازه که ساخت دوباره‌اش اسپم است؟ */
+function isOpenOrRecent(t: { status: string; created_at: string }): boolean {
+  if (OPEN_STATUSES.has(t.status)) return true;
+  if (!t.created_at) return false;
+  const age = Date.now() - new Date(t.created_at).getTime();
+  return !Number.isNaN(age) && age < RECENT_TASK_MS;
 }
 
 /** آیا قیمت کهنه است؟ (بیش از ۷ روز از price_updated_at گذشته) */
@@ -224,6 +347,8 @@ interface PlannedTourTask {
   estimate: number;
   priority: 'low' | 'medium' | 'high' | 'critical';
   files_hint: string;
+  /** کلید ضدتکراری پایدار (ستون dedupe_key در build_queue). */
+  dedupe_key: string;
 }
 
 export async function runTeam(input: TeamInput): Promise<TeamResult> {
@@ -233,15 +358,12 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   await reportLive?.('خواندن تورهای دیتابیس و الگوهای بازار', 15);
 
-  const [dbTours, openTasks] = await Promise.all([
+  const [dbTours, recentTasks] = await Promise.all([
     loadDbTours(),
-    loadOpenTasks(),
+    loadRecentTasks(),
   ]);
 
   const dbSlugs = new Set(dbTours.map((t) => t.slug));
-  const openTitles = new Set(
-    openTasks.map((t) => `${t.team}::${t.title}`),
-  );
 
   await reportLive?.('تحلیل شکاف تورها و قیمت‌های کهنه', 40);
 
@@ -250,26 +372,34 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   // ۱. الگوهای بازار که در دیتابیس نیستند → تسک تعریف تور
   for (const pattern of MARKET_PATTERNS) {
     if (dbSlugs.has(pattern.slug)) continue;
-    // ضدتکراری: تسک مشابه باز نباشد
-    const dupKey = `dev::[تور] تعریف تور ${pattern.shortTitle}`;
-    if (openTasks.some((t) => t.title.includes(pattern.shortTitle) && t.team === 'dev')) continue;
+    // ضدتکراری: تسک مشابه باز یا تازه (۷۲ ساعت) نباشد
+    if (
+      recentTasks.some(
+        (t) => isOpenOrRecent(t) && t.team === 'dev' && t.title.includes(pattern.shortTitle),
+      )
+    )
+      continue;
 
     planned.push({
       team: 'dev',
       title: `[تور] تعریف تور ${pattern.shortTitle} (${pattern.nights} شب)`,
       description:
-        `تور تازه از الگوی بازار (تحلیل رقبا). ` +
+        `الگوی «${pattern.shortTitle}» از ۷ الگوی استاندارد بازار (تحلیل رقبا) در دیتابیس نیست؛ این تور را تعریف کن. ` +
         `مشخصات: عنوان «${pattern.title}»، اسلاگ ${pattern.slug}، ` +
         `${pattern.days} روز / ${pattern.nights} شب، مقاصد: ${pattern.destinations.join('، ')}، ` +
         `نوع گردشگر: ${pattern.touristType}. ` +
         `قیمت پایه «از ${pattern.priceFrom.toLocaleString('fa-IR')} تومان» (بازهٔ کف بازار؛ برچسب «از» اجباری است). ` +
         `خدمات استاندارد: پرواز ماهان مستقیم + هتل با صبحانه + ترانسفر فرودگاهی + ویزا + بیمه + راهنمای فارسی‌زبان. ` +
+        `برنامهٔ پیشنهادی روزبه‌روز (از تحلیل رقبا؛ پیش‌نویس است، تیم content متن نهایی را می‌نویسد):\n` +
+        pattern.itinerary.map((d, i) => `روز ${i + 1}: ${d}`).join('\n') +
+        `\nکلمات کلیدی هدف سئو برای صفحهٔ این تور: ${pattern.keywords.join('، ')}. ` +
         `تور را با active=false ثبت کن (پیش‌نویس)؛ برنامهٔ روزبه‌روز و سؤال‌ها را در tour_days و tour_faqs بگذار. ` +
         `قانون: هیچ قیمت ساختگی؛ اگر قیمت مطمئن نیستی price_from را null بگذار تا «تماس بگیرید» نمایش داده شود.`,
       acceptance: `ردیف تور با اسلاگ ${pattern.slug} در جدول tours با active=false موجود باشد.`,
       estimate: 2,
       priority: 'high',
       files_hint: 'دیتابیس: tours, tour_days, tour_faqs',
+      dedupe_key: `tour-manager:new-tour:${pattern.slug}`,
     });
   }
 
@@ -277,7 +407,12 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   for (const tour of dbTours) {
     if (!tour.active) continue;
     if (!isPriceStale(tour)) continue;
-    if (openTasks.some((t) => t.title.includes(tour.slug) && t.title.includes('قیمت'))) continue;
+    if (
+      recentTasks.some(
+        (t) => isOpenOrRecent(t) && t.title.includes(tour.slug) && t.title.includes('قیمت'),
+      )
+    )
+      continue;
 
     planned.push({
       team: 'dev',
@@ -292,6 +427,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
       estimate: 1,
       priority: 'medium',
       files_hint: 'دیتابیس: tours',
+      dedupe_key: `tour-manager:price:${tour.slug}`,
     });
   }
 
@@ -299,8 +435,8 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const inactiveOld = dbTours.filter((t) => !t.active);
   if (inactiveOld.length > 0) {
     const names = inactiveOld.map((t) => t.short_title).join('، ');
-    // فقط اگر تسک مشابهی باز نیست
-    if (!openTasks.some((t) => t.title.includes('بازبینی تورهای غیرفعال'))) {
+    // فقط اگر تسک مشابهی باز یا تازه (۷۲ ساعت) نیست
+    if (!recentTasks.some((t) => isOpenOrRecent(t) && t.title.includes('بازبینی تورهای غیرفعال'))) {
       planned.push({
         team: 'content',
         title: '[تور] بازبینی تورهای غیرفعال برای فصل جاری',
@@ -312,6 +448,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         estimate: 1,
         priority: 'low',
         files_hint: 'دیتابیس: tours',
+        dedupe_key: 'tour-manager:inactive-review',
       });
     }
   }
@@ -337,6 +474,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
         priority: p.priority,
         acceptance: p.acceptance,
         estimate: p.estimate as 1 | 2 | 3,
+        dedupe_key: p.dedupe_key,
         source: 'tour-manager',
         cycleId: input.cycleId,
       });
