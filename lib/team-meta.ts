@@ -18,6 +18,7 @@ export const TEAM_META: Record<TeamName, { faName: string; mission: string }> = 
   dev: { faName: 'توسعه', mission: 'پیاده‌سازی فنی و کد تمیز' },
   qa: { faName: 'کیفیت', mission: 'آزمون، کنترل کیفیت و رفع ایراد' },
   inspector: { faName: 'بازرس', mission: 'بازبینی نهایی و گزارش سلامت چرخه' },
+  'tour-manager': { faName: 'مدیر تور', mission: 'مالک دامنه تور: پایش، کشف شکاف بازار و تسک دقیق تور' },
 };
 
 /** عنوان فارسی موج‌ها. */

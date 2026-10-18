@@ -133,8 +133,8 @@ async function validateTaskLLM(llm: TaskLLMSelection): Promise<void> {
 
 /** فیلدهای بک‌لاگ planner (مایگریشن 20261016133600)؛ همه اختیاری‌اند. */
 export interface TaskBacklogFields {
-  /** منشأ تسک: planner-weekly | critic | manual | leader */
-  source?: 'planner-weekly' | 'critic' | 'manual' | 'leader';
+  /** منشأ تسک: planner-weekly | critic | manual | leader | tour-manager */
+  source?: 'planner-weekly' | 'critic' | 'manual' | 'leader' | 'tour-manager';
   /** کلید هفتهٔ planner، مثل 2026-W42 */
   week_key?: string;
   /** معیار قبولی تسک؛ متن آزاد */
@@ -200,7 +200,7 @@ export async function enqueueTask(
   if (task.estimate != null && ![1, 2, 3].includes(task.estimate)) {
     throw new InputError('برآورد تلاش (estimate) باید ۱، ۲ یا ۳ باشد.');
   }
-  if (task.source != null && !['planner-weekly', 'critic', 'manual', 'leader'].includes(task.source)) {
+  if (task.source != null && !['planner-weekly', 'critic', 'manual', 'leader', 'tour-manager'].includes(task.source)) {
     throw new InputError('منشأ تسک (source) نامعتبر است.');
   }
   const row: Record<string, unknown> = {

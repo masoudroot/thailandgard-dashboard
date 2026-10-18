@@ -25,6 +25,7 @@ export const TEAM_FA: Record<TeamName, string> = {
   dev: 'توسعه',
   qa: 'کنترل کیفیت',
   inspector: 'بازرس',
+  'tour-manager': 'مدیر تور',
 };
 
 export const ALL_TEAM_SLUGS: TeamName[] = [
@@ -43,6 +44,7 @@ export const ALL_TEAM_SLUGS: TeamName[] = [
   'dev',
   'qa',
   'inspector',
+  'tour-manager',
 ];
 
 /** برچسب نمایشی یک اسلاگ تیم؛ ناشناخته‌ها همان اسلاگ را نشان می‌دهند. */

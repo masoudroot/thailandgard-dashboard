@@ -89,6 +89,7 @@ const TEAM_LABELS: Record<TeamName, string> = {
   dev: 'توسعه',
   qa: 'کیفیت',
   inspector: 'بازرس',
+  'tour-manager': 'مدیر تور',
 };
 
 const ALL_TEAMS: TeamName[] = [
@@ -107,6 +108,7 @@ const ALL_TEAMS: TeamName[] = [
   'dev',
   'qa',
   'inspector',
+  'tour-manager',
 ];
 
 const AXIS_TITLES = [

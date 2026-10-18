@@ -1,6 +1,6 @@
 /**
  * Shared domain types for the ThailandGard agentic dashboard.
- * The 5 AI teams run in 3 waves per cycle (leader first, then builders).
+ * The 6 AI teams run in 3 waves per cycle (leader + tour-manager first, then builders).
  */
 
 export type TeamName =
@@ -19,7 +19,8 @@ export type TeamName =
   | 'design-ir'
   | 'dev'
   | 'qa'
-  | 'inspector';
+  | 'inspector'
+  | 'tour-manager';
 
 export type CycleStatus =
   | 'running'
@@ -169,15 +170,16 @@ export interface WaveDefinition {
   teams: TeamName[];
 }
 
-/** ۵ تیم فعال (دستور مسعود، ۱۴۰۵/۰۷/۲۴): leader اول، بعد ۴ سازنده. */
-export const TEAMS: TeamName[] = ['leader', 'content', 'seo', 'design', 'dev'];
+/** ۶ تیم فعال (دستور مسعود، ۱۴۰۵/۰۷/۲۴ و ۱۴۰۵/۰۷/۲۶): leader و tour-manager اول، بعد ۴ سازنده. */
+export const TEAMS: TeamName[] = ['leader', 'tour-manager', 'content', 'seo', 'design', 'dev'];
 
 /**
- * طرح موج‌ها: موج ۱ فقط leader (بک‌لاگ می‌سازد)؛ موج ۲ content+seo؛
- * موج ۳ design+dev.
+ * طرح موج‌ها: موج ۱ leader (بک‌لاگ می‌سازد) + tour-manager (تسک‌های دامنهٔ تور)؛
+ * موج ۲ content+seo؛ موج ۳ design+dev.
+ * مرز: رهبر «چه کاری» را از روی داده می‌گوید؛ مدیر تور فقط دامنهٔ تور را پوشش می‌دهد.
  */
 export const WAVES: WaveDefinition[] = [
-  { wave: 1, teams: ['leader'] },
+  { wave: 1, teams: ['leader', 'tour-manager'] },
   { wave: 2, teams: ['content', 'seo'] },
   { wave: 3, teams: ['design', 'dev'] },
 ];

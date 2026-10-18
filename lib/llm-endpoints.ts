@@ -80,6 +80,7 @@ export const TEAM_FA_NAMES: Record<TeamName, string> = {
   dev: 'توسعه',
   qa: 'کنترل کیفیت',
   inspector: 'بازرس',
+  'tour-manager': 'مدیر تور',
 };
 
 /** ماسک کلید: sk-...abcd */

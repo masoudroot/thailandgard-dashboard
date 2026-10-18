@@ -75,6 +75,7 @@ const TEAM_LABEL: Record<TeamName, string> = {
   dev: 'توسعه',
   qa: 'کیفیت',
   inspector: 'بازرس',
+  'tour-manager': 'مدیر تور',
 };
 
 type LoadState = 'loading' | 'ready' | 'not-connected' | 'unauthorized';

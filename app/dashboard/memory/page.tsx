@@ -32,6 +32,7 @@ const TEAM_LABELS: Record<TeamName, string> = {
   dev: 'توسعه',
   qa: 'کیفیت',
   inspector: 'بازرس',
+  'tour-manager': 'مدیر تور',
 };
 
 type TeamFilter = TeamName | 'all';

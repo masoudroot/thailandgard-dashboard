@@ -289,6 +289,11 @@ export function suggestSources(team: TeamName): string[] {
       'معیارهای سلامت تعریف‌شده در قراردادهای تیم',
       'گزارش‌های بازرس از چرخه‌های گذشته (درس‌آموخته‌ها)',
     ],
+    'tour-manager': [
+      'تحلیل رقبا: ~/workspace/thailandgard-kw-research/competitor-tours-analysis.md',
+      'کلمات کلیدی تور (۳۱۴ عبارت مرتبط با تور)',
+      'پلن مدیر تور: ~/workspace/thailandgard-tour-manager-PLAN.md',
+    ],
   };
   return sources[team];
 }
