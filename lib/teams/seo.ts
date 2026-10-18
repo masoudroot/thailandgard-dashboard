@@ -518,6 +518,91 @@ function validateItem(it: SeoItem, title: string): string | null {
   return null;
 }
 
+/* ==========================================================================
+ * رد «اخیراً بهینه‌شده» (یافتهٔ ممیزی B4: کار تکراری)
+ *
+ * ریشهٔ باگ: اسلاگ‌های اجباری (تسک صف) همیشه «بازتولید» می‌شدند، حتی وقتی
+ * همین اواخر با تأیید کامل بهینه شده بودند؛ نتیجه: samui-7-days نُه بار
+ * پیاپی کارِ بیهوده بود (۱۶ تسک صف از لیدر در ۳۰ ساعت، همه بدون
+ * dedupe_key). از این پس، پس از هر اجرای «تمیز» (تأیید در دور ۱ بدون
+ * هیچ ردی از منتقد)، برای هر اسلاگ رکورد `optimized:<slug>` در حافظه ثبت
+ * می‌شود و تا RECENTLY_OPTIMIZED_TTL_DAYS روز، آن اسلاگ نه در مسیر خودکار
+ * انتخاب می‌شود نه بازتولید اجباری می‌گیرد.
+ * فقط کارِ «تأییدشده» رد می‌شود؛ اگر حلقه با رد همراه بود، بازکاریِ بعدی
+ * مجاز می‌ماند (وگرنه تسک اصلاحِ پس از ردِ منتقد برای همیشه قفل می‌شد).
+ * درس ماندگار: سمت خواندنِ این رد یک بار پیاده شده بود ولی سمت نوشتنش
+ * هرگز اضافه نشده بود (شمارش رکوردهای optimized: همیشه صفر) و رد در
+ * پروداکشن عملاً مرده بود؛ recordOptimizedSlugs همان حلقهٔ گمشده است.
+ * ========================================================================== */
+
+/** پیشوند کلید حافظه برای رکورد بهینه‌سازی هر اسلاگ. */
+const OPTIMIZED_KEY_PREFIX = 'optimized:';
+/** چند روز پس از بهینه‌سازیِ تأییدشده، اسلاگ دوباره کار نمی‌شود. */
+const RECENTLY_OPTIMIZED_TTL_DAYS = 7;
+
+interface OptimizedRecord {
+  at: string;
+  /** true فقط وقتی حلقه در دور ۱ و بدون هیچ ردی تأیید کرد. */
+  cleanApproved: boolean;
+  runId: string;
+}
+
+/**
+ * مجموعهٔ اسلاگ‌هایی که در بازهٔ TTL، تمیز و با تأیید بهینه شده‌اند.
+ * خطای خواندن حافظه = fail-open: کار انجام می‌شود، نه اینکه بی‌صدا رد شود.
+ */
+async function loadRecentlyOptimizedSlugs(): Promise<Set<string>> {
+  const out = new Set<string>();
+  try {
+    const entries = await readMemory(TEAM);
+    const cutoff = Date.now() - RECENTLY_OPTIMIZED_TTL_DAYS * 24 * 3600 * 1000;
+    for (const e of entries) {
+      if (!e.key.startsWith(OPTIMIZED_KEY_PREFIX)) continue;
+      try {
+        const rec = JSON.parse(e.value) as OptimizedRecord;
+        if (rec.cleanApproved && new Date(rec.at).getTime() >= cutoff) {
+          out.add(e.key.slice(OPTIMIZED_KEY_PREFIX.length));
+        }
+      } catch {
+        // رکورد خراب نادیده گرفته می‌شود؛ کارِ اسلاگش انجام می‌شود.
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `[seo] خواندن سابقهٔ بهینه‌سازی ناموفق بود (${msg.slice(0, 120)})؛ بدون رد «اخیراً بهینه‌شده» ادامه می‌دهیم.`,
+    );
+  }
+  return out;
+}
+
+/**
+ * ثبت رکورد بهینه‌سازی برای اسلاگ‌های یک اجرای «تمیز».
+ * best-effort: خطای نوشتن، اجرای موفق را نمی‌کشد؛ فقط ردِ «اخیراً
+ * بهینه‌شده» برای آن اسلاگ فعال نمی‌شود و در لاگ ثبت می‌شود.
+ */
+async function recordOptimizedSlugs(slugs: string[], runId: string): Promise<void> {
+  for (const slug of slugs) {
+    try {
+      const record: OptimizedRecord = {
+        at: new Date().toISOString(),
+        cleanApproved: true,
+        runId,
+      };
+      await writeMemory({
+        team: TEAM,
+        key: `${OPTIMIZED_KEY_PREFIX}${slug}`,
+        value: JSON.stringify(record),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[seo] ثبت رکورد بهینه‌سازی برای ${slug} ناموفق بود (${msg.slice(0, 120)})؛ رد «اخیراً بهینه‌شده» برای این اسلاگ فعال نمی‌شود.`,
+      );
+    }
+  }
+}
+
 /**
  * تبدیل دلیل ردِ منتقد قدیمی به دستور اجرایی (CriticVerdictV2.instruction).
  * امری و بلندتر از ۵۰ نویسه تا از اعتبارسنجی حلقه رد شود.
