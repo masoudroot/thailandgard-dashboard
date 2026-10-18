@@ -176,7 +176,7 @@ const DEFAULT_TIMEOUT_MS = 180_000; // 3 minutes
 const DEFAULT_MAX_TOKENS = 2000;
 const DEFAULT_TEMPERATURE = 0.7;
 const DEFAULT_API_BASE = "https://api.reformboss.com/v1";
-const DEFAULT_MODEL = "deepseek-v4-flash";
+const DEFAULT_MODEL = "grok-4.7";
 
 /** خواندن عدد از env با مقدار پیش‌فرض (برای تست‌پذیری هم لازم است). */
 function numEnv(name: string, def: number): number {
@@ -250,6 +250,7 @@ function isEndpointKeyBad(endpointId: string): boolean {
  */
 const QUALITY_CHAT_MODELS: Record<string, string[]> = {
   reformboss: [
+    'grok-4.7',
     'glm-5.3-flash',
     'deepseek-v4-flash',
     'qwen3.5-omni-flash',
