@@ -262,6 +262,29 @@ function isBridgeMergeCommit(c: {
   return parents.length >= 2 && message.startsWith('[bridge] مرج خودکار');
 }
 
+/**
+ * کامیت‌های غیرپلِ روی main که بازبینی دستی شده و مشروع‌اند.
+ * زمینه (مشکل ۲): هر پوش مستقیم روی main ناوردای «main فقط از dev می‌آید»
+ * را برای همیشه می‌شکند و نگهبان foreign-main هر مرج خودکار بعدی dev→main
+ * را هم بلاک می‌کند. راه‌حل: بازبین انسانی (نه کد) مشروعیت را تأیید و SHA
+ * را اینجا ثبت می‌کند؛ نگهبان برای کامیت‌های آینده همچنان fail-closed است.
+ *
+ * بازبینی ۱۴۰۵/۰۷/۲۶ (میرزا، تیم مشکل ۲):
+ * - 42ef6bc: «حذف کامل تور اقساطی از سایت» — دستور مستقیم مسعود (مرز کسب‌وکار:
+ *   هیچ تور قسطی در سایت نباشد). مشروع.
+ * - 624a105: «[B5] حذف دو کامپوننت مردهٔ تکراری تیم design» — خروجی ممیزی B5.
+ *   مشروع.
+ * - b5e258f: «[B5] حذف سه کامپوننت مردهٔ تکراری» — خروجی ممیزی B5. مشروع.
+ * - 6b8fddd: «[ops] تست اتصال دیپلوی پروداکشن ورسل» — کامیت خالی، بدون تغییر
+ *   کد. مشروع و بی‌اثر.
+ */
+const REVIEWED_FOREIGN_SHAS = new Set([
+  '42ef6bc',
+  '624a105',
+  'b5e258f',
+  '6b8fddd',
+]);
+
 export interface MainExclusiveCheck {
   /** آیا راستی انجام شد؟ (false یعنی API خطا داد) */
   verified: boolean;
@@ -295,6 +318,7 @@ async function getMainExclusiveCommits(
   const commits = Array.isArray(body.commits) ? body.commits : [];
   const foreign = commits
     .filter((c) => !isBridgeMergeCommit(c))
+    .filter((c) => !REVIEWED_FOREIGN_SHAS.has((c.sha ?? '').slice(0, 7)))
     .map((c) => `${(c.sha ?? '?').slice(0, 7)} ${(c.commit?.message ?? '').split('\n')[0].slice(0, 80)}`);
   return { verified: true, foreign };
 }

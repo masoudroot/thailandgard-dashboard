@@ -11,14 +11,31 @@
  *   .github/workflows/bridge-sweep.yml) — چون تایپ‌چک پیش‌مرج روی رانر
  *   موقت چند دقیقه طول می‌کشد و جاروی ته تیک معمولاً وسط مرج با تایم‌اوت
  *   ۳۰دقیقه‌ای جاب kill می‌شود و پچ در committed می‌ماند.
+ *
+ * در پایان هر اجرا، جاروی بن‌بست needs_review هم صدا زده می‌شود
+ * (lib/bridge/needs-review-sweep.ts): پچ‌های ردشده دیگر برای همیشه
+ * در needs_review نمی‌مانند؛ کهنه/تکراری/منسوخ‌شده rejected می‌شوند و
+ * آن‌هایی که دروازه را اکنون پاس می‌کنند به proposed برمی‌گردند.
  */
 
 import { getSupabase } from '../api';
+import { sweepNeedsReviewPatches } from './needs-review-sweep';
 
 /** سقف پردازش پچ‌های یتیم در هر اجرا، تا بودجه‌ی زمانی جاب خورده نشود. */
 export const ORPHAN_SWEEP_LIMIT = 3;
 
 export async function sweepOrphanedBridgePatches(): Promise<void> {
+  // جاروی بن‌بست needs_review اول و همیشه اجرا می‌شود — حتی وقتی پچ proposed
+  // تازه‌ای نیست (return زودهنگامِ پایین نباید آن را رد کند). بدون این، هر
+  // پچ ردشده برای همیشه در needs_review می‌ماند (مشکل ۲: ۶۴ پچ گیرکرده).
+  try {
+    await sweepNeedsReviewPatches();
+  } catch (err) {
+    console.error(
+      '[bridge-sweep] جاروی needs_review خطا داد:',
+      err instanceof Error ? err.message : err,
+    );
+  }
   try {
     const sb = getSupabase();
     const { data, error } = await sb

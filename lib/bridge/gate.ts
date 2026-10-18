@@ -8,6 +8,7 @@
  * ۴. نحو پایه ts و tsx با TypeScript compiler API (فقط parse، بدون typecheck)
  * ۵. اعتبار JSON برای فایل‌های .json
  * ۶. ممنوعیت خط تیرهٔ بلند (U+2014) در همهٔ فایل‌ها (دستور دائمی مدیر)
+ * ۷. ممنوعیت ارقام فارسی در موقعیت کدی ts/tsx (داخل رشته‌ها آزاد است)
  *
  * خطاها فارسی‌اند تا مستقیم در گزارش‌ها بنشینند.
  */
@@ -25,7 +26,14 @@ export interface GateResult {
 }
 
 const MAX_FILES = 10;
-const MAX_FILE_BYTES = 100 * 1024;
+/**
+ * سقف حجم هر فایل: ۲۵۶ کیلوبایت.
+ * (یافتهٔ ممیزی مشکل ۲: فایل‌های داده‌ایِ الحاقی مثل site/lib/guides.ts
+ * ذاتاً رشد می‌کنند — هر راهنما ~۶KB — و سقف ۱۰۰KB ظرف چند هفته پچ‌های
+ * سالم content را رد می‌کرد. سقف کلی ۵۰۰KB سر جایش است؛ این سقف فقط
+ * خروجیِ فراریِ مجری را می‌گیرد، نه فایل داده‌ایِ مشروع را.)
+ */
+const MAX_FILE_BYTES = 256 * 1024;
 const MAX_TOTAL_BYTES = 500 * 1024;
 const ALLOWED_EXTENSIONS = new Set(["ts", "tsx", "css", "md", "json"]);
 
@@ -43,6 +51,44 @@ function checkForbiddenChars(path: string, content: string): string[] {
       );
     }
   });
+  return errors;
+}
+
+/** ارقام فارسی؛ در موقعیت کدی (نه داخل رشته) مطلقاً ممنوع‌اند. */
+const PERSIAN_DIGITS = /[۰۱۲۳۴۵۶۷۸۹]/;
+
+/**
+ * ارقام فارسی در موقعیت کدی (یافتهٔ ممیزی: تیم design مقدار پیش‌فرض
+ * `rating = ۴.۸` تولید کرد و گیت فقط «Invalid character» می‌گفت).
+ * با اسکنر تایپ‌اسکریپت، رشته‌ها و کامنت‌ها نادیده گرفته می‌شوند؛ ارقام
+ * فارسی داخل رشته‌های نمایشی (قیمت و...) آزادند. پیام خطا صریح است تا
+ * مجری LLM خودش اصلاح کند. عمداً اسکنر (نه AST) استفاده می‌شود چون فایلِ
+ * دارای رقم فارسی معمولاً اصلاً پارس نمی‌شود و AST لیتِرال عددی ندارد.
+ */
+function checkPersianDigitsInCode(path: string, content: string): string[] {
+  const errors: string[] = [];
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, content);
+  const isStringToken = (kind: ts.SyntaxKind): boolean =>
+    kind === ts.SyntaxKind.StringLiteral ||
+    kind === ts.SyntaxKind.NoSubstitutionTemplateLiteral ||
+    kind === ts.SyntaxKind.TemplateHead ||
+    kind === ts.SyntaxKind.TemplateMiddle ||
+    kind === ts.SyntaxKind.TemplateTail;
+  let token = scanner.scan();
+  while (token !== ts.SyntaxKind.EndOfFileToken) {
+    if (!isStringToken(token)) {
+      const text = scanner.getTokenText();
+      if (PERSIAN_DIGITS.test(text)) {
+        const pos = scanner.getTokenStart();
+        const line = content.slice(0, pos).split('\n').length;
+        errors.push(
+          `فایل «${path}» در سطر ${faNumber(line)} رقم فارسی در کد دارد («${text.trim().slice(0, 24)}»)؛ در کد فقط ارقام لاتین مجاز است (ارقام فارسی فقط داخل رشته‌های نمایشی).`,
+        );
+        break;
+      }
+    }
+    token = scanner.scan();
+  }
   return errors;
 }
 
@@ -208,6 +254,7 @@ export function validatePatch(files: PatchFile[]): GateResult {
 
     if (ext === "ts" || ext === "tsx") {
       errors.push(...checkSyntax(file.path, file.content));
+      errors.push(...checkPersianDigitsInCode(file.path, file.content));
     }
 
     if (ext === "json") {

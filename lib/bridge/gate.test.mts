@@ -59,8 +59,8 @@ test("فایل «.env» رد می‌شود", () => {
   assert.ok(result.errors.every((e) => e.includes(".env")), JSON.stringify(result.errors));
 });
 
-test("فایل بزرگ‌تر از ۱۰۰ کیلوبایت رد می‌شود", () => {
-  const result = validatePatch([file("lib/big.ts", bigContent(101))]);
+test("فایل بزرگ‌تر از ۲۵۶ کیلوبایت رد می‌شود", () => {
+  const result = validatePatch([file("lib/big.ts", bigContent(257))]);
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((e) => e.includes("بیشتر است")), JSON.stringify(result.errors));
 });
@@ -125,4 +125,34 @@ test("فایل JSON خراب رد می‌شود", () => {
 test("فایل JSON سالم قبول می‌شود", () => {
   const result = validatePatch([file("data/ok.json", '{"a": [1, 2]}\n')]);
   assert.equal(result.ok, true);
+});
+
+test("رقم فارسی در لیتِرال عددی کد رد می‌شود (با پیام صریح)", () => {
+  const bad = "export function Card({ rating = ۴.۸ }: { rating?: number }) {\n  return rating;\n}\n";
+  const result = validatePatch([file("site/x.tsx", bad)]);
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.errors.some((e) => e.includes("رقم فارسی در کد")),
+    JSON.stringify(result.errors),
+  );
+});
+
+test("رقم فارسی داخل رشته‌ها آزاد است", () => {
+  const ok =
+    "export const priceLabel = '۴٬۸۵۰٬۰۰۰ تومان';\nexport const rating = 4.8;\n";
+  const result = validatePatch([file("site/y.ts", ok)]);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+});
+
+test("فایل داده‌ای الحاقی تا ۲۵۶KB قبول می‌شود (رشد guides.ts)", () => {
+  const content = "/*" + "x".repeat(150 * 1024) + "*/\n";
+  const result = validatePatch([{ path: "site/lib/guides.ts", content }]);
+  assert.equal(result.ok, true, JSON.stringify(result.errors.slice(0, 2)));
+});
+
+test("فایل بزرگ‌تر از ۲۵۶KB همچنان رد می‌شود", () => {
+  const content = "/*" + "x".repeat(300 * 1024) + "*/\n";
+  const result = validatePatch([{ path: "site/lib/big.ts", content }]);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("سقف")), JSON.stringify(result.errors));
 });
