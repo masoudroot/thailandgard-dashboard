@@ -21,6 +21,7 @@ import {
 } from '../../../../../../lib/bridge';
 import {
   mergeBranchIntoDev,
+  mergeDevIntoMainBestEffort,
   PreMergeGateError,
 } from '../../../../../../lib/bridge/merge';
 import { GithubError } from '../../../../../../lib/github-changes';
@@ -78,11 +79,16 @@ export async function POST(
       decided_at: now,
       merge_sha: merge.sha,
     });
+
+    // مرج خودکار dev به main (دستور مسعود: خط لوله کاملاً خودکار تا سایت زنده)
+    const devMain = await mergeDevIntoMainBestEffort();
+
     return ok({
       patch: updated,
       merge_sha: merge.sha,
       already_merged: merge.already_merged,
       pr_number: merge.pr_number,
+      dev_to_main: devMain.merged ? 'merged' : devMain.conflict ? 'conflict' : 'skipped',
     });
   } catch (err) {
     return fail(err instanceof Error ? err.message : 'خطای نامشخص');

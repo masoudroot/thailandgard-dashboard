@@ -20,7 +20,7 @@
 import { validatePatch } from './gate';
 import { commitToBridgeBranch, createBridgePR } from './commit';
 import { claimBridgePatch, getBridgePatch, updateBridgePatch } from '../bridge';
-import { mergeBranchIntoDev, PreMergeGateError } from './merge';
+import { mergeBranchIntoDev, mergeDevIntoMainBestEffort, PreMergeGateError } from './merge';
 import type { PatchFile } from '../types';
 
 export interface ProposeResult {
@@ -105,6 +105,14 @@ export async function processProposedPatch(patchId: string): Promise<ProposeResu
       merge_sha: merge.sha,
     });
     console.log(`[bridge] پچ ${patchId} به‌صورت خودکار به dev مرج شد (sha=${merge.sha ?? 'already'}).`);
+
+    // مرج خودکار dev به main (دستور مسعود: خط لوله کاملاً خودکار تا سایت زنده).
+    // بهترین تلاش است: اگر ناموفق بود، پچ همچنان merged می‌ماند و چرخه نمی‌میرد.
+    const devMain = await mergeDevIntoMainBestEffort();
+    if (devMain.conflict) {
+      console.error(`[bridge] توجه: dev←main تداخل دارد؛ نیاز به بررسی دستی (پچ ${patchId}).`);
+    }
+
     return {
       patchId,
       gated: true,

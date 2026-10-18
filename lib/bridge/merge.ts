@@ -185,3 +185,74 @@ export async function deleteBranchBestEffort(branch: string): Promise<boolean> {
     return false;
   }
 }
+
+export interface DevToMainMergeResult {
+  /** آیا مرج انجام شد؟ */
+  merged: boolean;
+  /** آیا dev از قبل در main بود؟ */
+  alreadyUpToDate: boolean;
+  /** آیا تداخل مرج داشت؟ (در این صورت هیچ کاری نشده) */
+  conflict: boolean;
+  sha?: string | null;
+  message?: string;
+}
+
+/**
+ * مرج خودکار dev به main (دستور مسعود: خط لوله کاملاً خودکار).
+ *
+ * چه زمانی صدا زده می‌شود: پس از مرج موفق پچ به dev در propose.ts.
+ * بهترین تلاش است: خطا را throw نمی‌کند، فقط لاگ می‌کند و نتیجه برمی‌گرداند.
+ *
+ * امنیت:
+ * - هرگز force-push نمی‌کند (فقط مرج معمولی GitHub API)
+ * - اگر تداخل (409) باشد، هیچ کاری نمی‌کند و conflict=true برمی‌گرداند
+ * - اگر dev جلوتر نباشد (204)، کاری نمی‌کند
+ */
+export async function mergeDevIntoMainBestEffort(): Promise<DevToMainMergeResult> {
+  try {
+    const { token } = await getGithubConfig();
+    if (!token) {
+      console.log('[bridge] مرج خودکار dev←main رد شد: گیت‌هاب متصل نیست.');
+      return { merged: false, alreadyUpToDate: false, conflict: false, message: 'github not connected' };
+    }
+    const h = githubHeaders(token);
+    const api = `https://api.github.com/repos/${SITE_REPO}`;
+
+    const mRes = await fetch(`${api}/merges`, {
+      method: 'POST',
+      headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        base: 'main',
+        head: 'dev',
+        commit_message: '[bridge] مرج خودکار dev به main (خط لوله خودکار)',
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (mRes.status === 204) {
+      // main از قبل شامل dev است؛ چیزی برای مرج نبود
+      console.log('[bridge] مرج خودکار dev←main: main از قبل به‌روز است.');
+      return { merged: false, alreadyUpToDate: true, conflict: false };
+    }
+    if (mRes.status === 409) {
+      // تداخل مرج: خودکار مرج نمی‌کنیم، هشدار می‌دهیم
+      console.error('[bridge] مرج خودکار dev←main متوقف شد: تداخل مرج (409). نیاز به بررسی دستی.');
+      return { merged: false, alreadyUpToDate: false, conflict: true, message: 'merge conflict' };
+    }
+    if (mRes.status === 404) {
+      console.error('[bridge] مرج خودکار dev←main ناموفق: شاخه پیدا نشد (404).');
+      return { merged: false, alreadyUpToDate: false, conflict: false, message: 'branch not found' };
+    }
+    const mBody = (await mRes.json().catch(() => ({}))) as { sha?: string; message?: string };
+    if (!mRes.ok) {
+      console.error(`[bridge] مرج خودکار dev←main ناموفق بود: ${mBody.message ?? `وضعیت ${mRes.status}`}`);
+      return { merged: false, alreadyUpToDate: false, conflict: false, message: mBody.message ?? `status ${mRes.status}` };
+    }
+    console.log(`[bridge] مرج خودکار dev←main انجام شد (sha=${mBody.sha ?? 'unknown'}). ورسل به‌زودی دیپلوی می‌کند.`);
+    return { merged: true, alreadyUpToDate: false, conflict: false, sha: mBody.sha ?? null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[bridge] خطا در مرج خودکار dev←main:', message);
+    return { merged: false, alreadyUpToDate: false, conflict: false, message };
+  }
+}
