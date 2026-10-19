@@ -180,8 +180,6 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   // کش دور ۱: پلن سرپرست در هر چرخه یک بار ساخته می‌شود؛
   // دورهای ۲ و ۳ همان پلن را با دستور منتقد اصلاح می‌کنند.
   let cachedPlan: SupervisorPlan | null = null;
-  // حکم خام آخرین داوری (پیش از اجبار دور ۳)
-  let lastRawApproved: boolean = false;
   let lastRawReason = '';
 
   /**
@@ -211,7 +209,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   /**
    * runCritic: منتقد فعلی، با تبدیل خروجی به CriticVerdictV2.
-   * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+   * دور ۳: آخرین دور؛ حکم خام منتقد ثبت می‌شود.
    */
   const runCritic = async (
     output: WorkerRoundOutput,
@@ -219,7 +217,6 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   ): Promise<CriticVerdictV2> => {
     await reportLive?.(`منتقد: داوری خروجی (دور ${round})`, 80);
     const verdict = await judgeWorkers(output.workersOutput);
-    lastRawApproved = verdict.approved === true;
     lastRawReason =
       typeof verdict.reason === 'string' && verdict.reason.trim()
         ? verdict.reason
@@ -227,16 +224,6 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     const reason = lastRawReason;
     const score = verdict.score;
 
-    if (round === 3) {
-      return {
-        approved: true,
-        score,
-        reason: '',
-        instruction: '',
-        acceptance: '',
-        finalOpinion: reason,
-      };
-    }
     if (verdict.approved) {
       return {
         approved: true,
@@ -305,7 +292,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   const tasks: QueuedTask[] = [];
   const blockers: string[] = [];
 
-  if (lastRawApproved) {
+  if (loopResult.approved) {
     tasks.push(
       {
         title: 'ثبت تصمیم‌های آرت‌دایرکشن در DECISIONS-ARTDIR.md',
@@ -333,12 +320,12 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     blockers.push(`منتقد artdir تأیید نکرد: ${lastRawReason}`);
   }
 
-  const lesson = lastRawApproved
+  const lesson = loopResult.approved
     ? `چرخهٔ موفق: ${lastRawReason} (حلقه در دور ${loopResult.finalRound} تمام شد)`
     : `رد منتقد: ${lastRawReason} (حلقه در دور ${loopResult.finalRound} با نظر نهایی تمام شد)`;
   await writeMemory(TEAM, `learned:${input.runId}`, lesson);
 
-  const summary = lastRawApproved
+  const summary = loopResult.approved
     ? `تیم آرت‌دایرکشن این چرخه سه خروجی داد: نقد بصری مشخص با راه‌حل، تصمیم‌های آرت‌دایرکشن با دلیل مستند و بریف اجرایی کامل برای تیم طراحی. ${lastRawReason} هر سه کار بعدی (ثبت تصمیم‌ها، تحویل بریف و پیگیری ایرادها) در صف گذاشته شد. ${lastKnowledgeLog}`
     : `تیم آرت‌دایرکشن این چرخه خروجی تولید کرد؛ منتقد در ${loopResult.finalRound} دور همین چرخه تأیید نکرد و نظر نهایی داد. دلیل: ${lastRawReason} دانش به‌روز شد و بلوکر در گزارش همین چرخه درج شد. ${lastKnowledgeLog}`;
 
@@ -347,6 +334,6 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     summary,
     blockers,
     tasks: tasks.slice(0, 3),
-    approved: true,
+    approved: loopResult.approved,
   };
 }

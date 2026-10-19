@@ -35,12 +35,12 @@ describe('buildCriticPrompt', () => {
     assert.match(r.prompt, /دور ۲ از حداکثر ۳/);
   });
 
-  it('دور ۳: رد ممنوع است؛ فقط نظارت و نظر نهایی', () => {
+  it('دور ۳: داوری نهایی با حق رد صادقانه، بدون دور اصلاح', () => {
     const r = buildCriticPrompt('content', 'خروجی نمونه', 3);
-    assert.equal(r.canReject, false);
-    assert.match(r.prompt, /حق رد نداری/);
-    assert.match(r.prompt, /approved همیشه true/);
-    assert.match(r.prompt, /نظارت/);
+    assert.equal(r.canReject, true);
+    assert.match(r.prompt, /پایانی/);
+    assert.match(r.prompt, /approved=false/);
+    assert.match(r.prompt, /final_opinion/);
     assert.match(r.prompt, /دانش تیم/);
   });
 

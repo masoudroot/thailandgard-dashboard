@@ -290,7 +290,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   /**
    * runCritic: منتقد فعلی، با تبدیل خروجی به CriticVerdictV2.
-   * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+   * دور ۳: آخرین دور؛ حکم خام منتقد ثبت می‌شود.
    */
   const runCritic = async (
     output: WorkerRoundOutput,
@@ -302,16 +302,6 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     const reason = verdict.reason || 'منتقد دلیلی ثبت نکرد.';
     const score = verdict.score;
 
-    if (round === 3) {
-      return {
-        approved: true,
-        score,
-        reason: '',
-        instruction: '',
-        acceptance: '',
-        finalOpinion: reason,
-      };
-    }
     if (verdict.approved) {
       return {
         approved: true,

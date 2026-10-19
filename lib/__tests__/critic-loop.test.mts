@@ -235,4 +235,34 @@ describe('دروازه امتیاز منتقد (آستانه ۸۰)', () => {
     assert.equal(result.approved, true);
     assert.equal(result.finalRound, 1);
   });
+
+  it('runCriticLoop: رد در دور ۳ تأیید نمی‌شود (fail-closed)', async () => {
+    const result = await runCriticLoop<{ outputs: string[] }>({
+      team: 'x',
+      runId: 'test-round3-fail-closed',
+      runWorkers: async () => ({
+        outputs: ['خروجی کامل و معتبر با محتوای واقعی و جزئیات کافی برای ارزیابی.'],
+      }),
+      runCritic: async (_output, round): Promise<CriticVerdictV2> =>
+        round === 3
+          ? {
+              approved: false,
+              score: 55,
+              reason: 'ایراد واقعی در دور پایانی',
+              instruction: '',
+              acceptance: '',
+            }
+          : {
+              approved: false,
+              score: 55,
+              reason: 'ایراد واقعی',
+              instruction: 'اصلاح کن',
+              acceptance: 'معیار قبولی',
+            },
+    });
+    assert.equal(result.approved, false);
+    assert.equal(result.finalRound, 3);
+    assert.equal(result.verdicts[result.verdicts.length - 1].approved, false);
+    assert.match(result.finalOpinion, /ایراد واقعی در دور پایانی/);
+  });
 });

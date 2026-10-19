@@ -882,7 +882,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   /**
    * runCritic: منتقد فعلی، با تبدیل خروجی به CriticVerdictV2.
    * reason ← reason؛ instruction از reason استخراج می‌شود؛ acceptance اضافه می‌شود.
-   * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+   * دور ۳: آخرین دور؛ حکم خام منتقد ثبت می‌شود.
    */
   const runCritic = async (
     output: WorkerRoundOutput,
@@ -923,16 +923,6 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     const reason = String(verdict.reason || '').trim();
     const score = parseCriticScore(verdict.score) ?? undefined;
 
-    if (round === 3) {
-      return {
-        approved: true,
-        score,
-        reason: '',
-        instruction: '',
-        acceptance: '',
-        finalOpinion: reason || 'نظر نهایی ثبت شد.',
-      };
-    }
     if (verdict.approved) {
       return {
         approved: true,

@@ -129,9 +129,9 @@ function buildRejectablePrompt(
 }
 
 /**
- * پرامپت داوری دور ۳: فقط نظارت، بدون رد.
+ * پرامپت داوری دور ۳: داوری نهایی، بدون دور اصلاح.
  */
-function buildMonitorOnlyPrompt(
+function buildFinalReviewPrompt(
   team: TeamName,
   output: string,
   criteria: string,
@@ -141,12 +141,12 @@ function buildMonitorOnlyPrompt(
   const lines = [
     `این دور ${faNum(MAX_CRITIC_ROUNDS)} و پایانی است.`,
     '',
-    'قانون سفت این دور: تو دیگر «حق رد نداری». خروجی هرچه هست، تأییدشده حساب می‌شود (approved همیشه true).',
-    'کارت فقط «نظارت» است:',
+    'قانون این دور: دور اصلاح دیگری وجود ندارد. اگر ایراد واقعی باقی است، صادقانه رد کن (approved=false) و دلیل نهایی را کامل در final_opinion بنویس. اگر خروجی قابل تحویل است، تأیید کن (approved=true).',
+    'کارت:',
     '۱. ببین در دورهای قبل چه گذشت و چه دستورهایی داده شد.',
     '۲. ایرادهایی که هنوز مانده را با جزئیات بنویس (چه چیزی، کجا، چرا مهم است).',
     '۳. بگو چه چیزی درست شد و چه درسی برای چرخه‌های بعد دارد.',
-    '۴. نظر نهایی‌ات را کامل بنویس؛ این نظر در «دانش تیم» ثبت می‌شود تا تیم از این ردوبدل‌ها یاد بگیرد.',
+    '۴. نظر نهایی‌ات را کامل بنویس؛ این نظر در «دانش تیم» ثبت می‌شود.',
     '',
     'خروجی نهایی مجری:',
     truncateOutput(output, DEFAULT_MAX_OUTPUT_CHARS),
@@ -156,13 +156,13 @@ function buildMonitorOnlyPrompt(
   }
   lines.push(
     '',
-    'معیارهای داوری (فقط برای نظارت، نه برای رد):',
+    'معیارهای داوری:',
     criteria,
     '',
     JSON_KEYS_LINE,
-    'در این دور rejection_detail و fix_instructions رشته خالی‌اند؛ همه‌چیز در final_opinion می‌آید.',
+    'در این دور fix_instructions را خالی بگذار (دور بعدی نیست)؛ در صورت رد، rejection_detail را کامل بده.',
   );
-  return { system, prompt: lines.join('\n'), canReject: false };
+  return { system, prompt: lines.join('\n'), canReject: true };
 }
 
 /**
@@ -181,7 +181,7 @@ export function buildCriticPrompt(
 ): BuiltCriticPrompt {
   const criteria = opts.criteria?.trim() || GENERIC_CRITERIA;
   if (round === 3) {
-    return buildMonitorOnlyPrompt(team, output, criteria, opts.previousFeedback);
+    return buildFinalReviewPrompt(team, output, criteria, opts.previousFeedback);
   }
   return buildRejectablePrompt(team, output, round, criteria, opts.previousFeedback);
 }
