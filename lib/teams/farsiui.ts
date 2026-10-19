@@ -421,7 +421,7 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
 
   /**
    * runCritic: منتقد فعلی، با تبدیل خروجی به CriticVerdictV2.
-   * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+   * دور ۳: آخرین دور؛ حکم خام منتقد ثبت می‌شود.
    */
   const runCritic = async (
     output: WorkerRoundOutput,
@@ -432,16 +432,6 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     lastVerdict = verdict;
     const reason = verdict.reason;
 
-    if (round === 3) {
-      return {
-        approved: true,
-        score: verdict.score,
-        reason: '',
-        instruction: '',
-        acceptance: '',
-        finalOpinion: reason,
-      };
-    }
     if (verdict.approved) {
       return {
         approved: true,
@@ -533,6 +523,6 @@ export async function runTeam(input: RunTeamInput): Promise<TeamResult> {
     summary: `${summary} ${lastKnowledgeLog}`,
     blockers: buildBlockers(verdict),
     tasks: buildTasks(verdict),
-    approved: verdict.approved,
+    approved: loopResult.approved,
   };
 }

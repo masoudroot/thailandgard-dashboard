@@ -600,8 +600,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   // ---------- توابع حلقه نقد ----------
 
-  // حکم خام آخرین داوری + فایل‌های نهایی منتقد (برای ساخت پچ بعد از حلقه)
-  let lastRawApproved: boolean = false;
+  // دلیل و فایل‌های نهایی منتقد (برای ساخت پچ بعد از حلقه)
   let lastRawReason = '';
   let lastCriticFiles: PatchFile[] = [];
 
@@ -629,7 +628,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
 
   /**
    * runCritic: منتقد کد فعلی، با تبدیل خروجی به CriticVerdictV2.
-   * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+   * دور ۳: آخرین دور؛ حکم خام منتقد ثبت می‌شود.
    */
   const runCritic = async (
     output: WorkerRoundOutput,
@@ -647,22 +646,11 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
           : '(دلیل ثبت نشد)',
       files: Array.isArray(rawVerdict?.files) ? rawVerdict.files : [],
     };
-    lastRawApproved = verdict.approved;
     lastRawReason = verdict.reason;
     lastCriticFiles = verdict.files;
     const reason = verdict.reason;
     const score = verdict.score;
 
-    if (round === 3) {
-      return {
-        approved: true,
-        score,
-        reason: '',
-        instruction: '',
-        acceptance: '',
-        finalOpinion: reason,
-      };
-    }
     if (verdict.approved) {
       return {
         approved: true,
@@ -738,7 +726,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
   // PatchFileها برای مرحلهٔ اعمال (تیم dev یا job اعمال) روی نتیجهٔ نهایی منتقد سوار می‌شوند.
   let patches: PatchFile[] | undefined;
 
-  if (!lastRawApproved) {
+  if (!loopResult.approved) {
     blockers.push(`منتقد design کد را تأیید نکرد: ${lastRawReason}`);
   } else {
     const patchError = validatePatches(lastCriticFiles, component, siteFiles, sourcesReliable);
@@ -766,7 +754,7 @@ export async function runTeam(input: TeamInput): Promise<TeamResult> {
     }
   }
 
-  const approved = patches !== undefined;
+  const approved = loopResult.approved && patches !== undefined;
   const lesson = approved
     ? `کامپوننت موفق: ${component.name} (${component.filePath}) — حلقه در دور ${loopResult.finalRound} تمام شد`
     : `رد منتقد: ${lastRawReason} — حلقه در دور ${loopResult.finalRound} با نظر نهایی تمام شد`;

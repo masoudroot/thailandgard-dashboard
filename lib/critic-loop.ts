@@ -552,15 +552,16 @@ export async function runCriticLoop<WorkerOutput>(
       }
     }
 
-    // دور ۳: رد مجاز نیست؛ به‌عنوان نظر نهایی تفسیر می‌شود
+    // دور ۳: آخرین دور؛ حکم خام منتقد بدون تأیید اجباری ثبت می‌شود.
+    // اگر منتقد تأیید نکند، چرخه با approved=false تمام می‌شود (fail-closed).
     if (round === 3) {
-      verdict = { ...verdict, approved: true };
+      const finalApproved = verdict.approved === true;
       verdicts.push(verdict);
       await recordDecision(round, verdict);
       await onRoundKnowledge?.(round, verdict);
       return {
         output: output!,
-        approved: true,
+        approved: finalApproved,
         finalRound: 3,
         verdicts,
         finalOpinion: verdict.finalOpinion || verdict.reason || 'نظر نهایی ثبت شد.',

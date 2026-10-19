@@ -547,7 +547,7 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
 
   /**
    * runCritic: منتقد کد فعلی (فایل‌به‌فایل)، با تبدیل خروجی به CriticVerdictV2.
-   * دور ۳: حق رد ندارد؛ فقط نظر نهایی.
+   * دور ۳: آخرین دور؛ حکم خام منتقد ثبت می‌شود.
    */
   const runCritic = async (
     output: WorkerRoundOutput,
@@ -587,16 +587,6 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
     const score = parseCriticScore(verdict.score) ?? undefined;
     const reason = lastRawReason;
 
-    if (round === 3) {
-      return {
-        approved: true,
-        score,
-        reason: '',
-        instruction: '',
-        acceptance: '',
-        finalOpinion: reason,
-      };
-    }
     if (verdict.approved) {
       return {
         approved: true,
@@ -695,7 +685,7 @@ export async function runTeam(input: DevTeamInput): Promise<TeamResult> {
 
   // راستی‌آزمایی تحویل: هیچ فایل تأییدشده‌ای نباید بی‌صدا گم شود
   const deliveryCheck = verifyPatchDelivery(criticApproved, finalPatch, droppedPaths);
-  const approved = lastRawApproved && finalPatch.length > 0 && deliveryCheck.ok;
+  const approved = loopResult.approved && finalPatch.length > 0 && deliveryCheck.ok;
   const reason = lastRawReason;
   const droppedNote =
     dropped.length > 0 ? ` — حذف‌شده: ${dropped.join('، ')}` : '';
