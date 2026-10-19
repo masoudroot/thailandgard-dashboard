@@ -44,17 +44,21 @@ async function loadTeamMemory(team: TeamName): Promise<MemoryEntry[]> {
   try {
     const { data, error } = await getSupabase()
       .from('team_memory')
-      .select('team, kind, content')
+      .select('team, key, value, updated_at')
       .eq('team', team)
-      .order('created_at', { ascending: false })
+      .order('updated_at', { ascending: false })
       .limit(30);
     if (error || !data) return [];
     const seen = new Set<string>();
     const out: MemoryEntry[] = [];
-    for (const row of data as { team: string; kind: string; content: string }[]) {
-      if (seen.has(row.kind)) continue;
-      seen.add(row.kind);
-      out.push({ team: row.team as TeamName, key: row.kind, value: row.content });
+    for (const row of data as { team: string; key: string; value: unknown }[]) {
+      if (seen.has(row.key)) continue;
+      seen.add(row.key);
+      out.push({
+        team: row.team as TeamName,
+        key: row.key,
+        value: typeof row.value === 'string' ? row.value : JSON.stringify(row.value),
+      });
     }
     return out;
   } catch {

@@ -30,21 +30,24 @@ export interface PreMergeCheckResult {
   message: string;
 }
 
-/** حداکثر زمان مجاز برای کلون سبک + نصب وابستگی‌ها + tsc (میلی‌ثانیه).
- * نصب وابستگی‌ها به‌تنهایی چند دقیقه طول می‌کشد؛ اگر این سقف تنگ باشد،
- * گیتِ fail-closed همهٔ مرج‌ها را بلاک می‌کند. */
-const TIMEOUT_MS = 900_000;
+/** حداکثر زمان مجاز برای کلون سبک + نصب وابستگی‌ها + tsc + بیلد (میلی‌ثانیه).
+ * نصب وابستگی‌ها به‌تنهایی چند دقیقه طول می‌کشد و بیلد Next.js هم زمان‌بر
+ * است؛ اگر این سقف تنگ باشد، گیتِ fail-closed همهٔ مرج‌ها را بلاک می‌کند. */
+const TIMEOUT_MS = 1_200_000;
 
 /**
  * پچ را روی کلون تازه از ریپوی سایت اعمال و tsc را اجرا می‌کند.
  * @param patchFiles فایل‌های پچ: {path, content}
  * @param siteRepoUrl آدرس گیت ریپوی سایت
  * @param baseBranch شاخه مبنا (معمولاً dev)
+ * @param options.build اگر true باشد، پس از tsc یک بیلد کامل Next.js هم اجرا
+ *   می‌شود؛ برای گیت dev→main لازم است تا خطاهای روت/بیلد (نه فقط تایپ) دیده شوند.
  */
 export async function preMergeTypeCheck(
   patchFiles: Array<{ path: string; content: string }>,
   siteRepoUrl: string,
   baseBranch: string = 'dev',
+  options: { build?: boolean } = {},
 ): Promise<PreMergeCheckResult> {
   // دایرکتوری دائمی: بین اجراها نگه داشته می‌شود تا node_modules کش شود.
   await mkdir(PREMERGE_WORKDIR, { recursive: true });
@@ -119,7 +122,6 @@ export async function preMergeTypeCheck(
     // ۴. اجرای tsc
     try {
       await execFileAsync('npx', ['tsc', '--noEmit'], { cwd: siteDir, timeout: TIMEOUT_MS });
-      return { passed: true, errors: [], message: 'تایپ‌چک سبز است؛ پچ آماده مرج.' };
     } catch (err: any) {
       const output = String(err.stdout || '') + String(err.stderr || '');
       const errors = output.split('\n').filter((l) => l.includes('error TS')).slice(0, 20);
@@ -140,6 +142,38 @@ export async function preMergeTypeCheck(
         message: `تایپ‌چک ${errors.length} خطا دارد؛ پچ برمی‌گردد.`,
       };
     }
+
+    // ۵. بیلد کامل Next.js (اختیاری): تایپ‌چک خطاهای روت تکراری، ایمپورت
+    //    کامپوننت حذف‌شده و خرابی صفحه‌سازی را نمی‌گیرد؛ بیلد واقعی می‌گیرد.
+    if (options.build) {
+      try {
+        await execFileAsync('npm', ['run', 'build'], {
+          cwd: siteDir,
+          timeout: TIMEOUT_MS,
+          env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' },
+        });
+        return {
+          passed: true,
+          errors: [],
+          message: 'تایپ‌چک و بیلد Next.js سبز است؛ تغییر آماده مرج به main است.',
+        };
+      } catch (err: any) {
+        const output = String(err.stdout || '') + String(err.stderr || '');
+        const lines = output.split('\n').filter((l) => l.trim());
+        const errorLines = lines.filter((l) =>
+          /error|failed|module not found|cannot find|type error|exited with/i.test(l),
+        );
+        const picked = (errorLines.length > 0 ? errorLines : lines).slice(-20);
+        const tail = picked.slice(-5).join(' | ').slice(0, 800);
+        return {
+          passed: false,
+          errors: picked,
+          message: `بیلد Next.js رد شد؛ مرج به main بلاک شد. ${tail || 'خطای بیلد'}`,
+        };
+      }
+    }
+
+    return { passed: true, errors: [], message: 'تایپ‌چک سبز است؛ پچ آماده مرج.' };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return {
