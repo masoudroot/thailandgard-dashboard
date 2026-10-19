@@ -274,7 +274,7 @@ export interface OutputValidity {
  */
 const DELIVERABLE_KEYS = new Set([
   'outputs', 'workeroutputs', 'workersoutput', 'texts',
-  'draft', 'items', 'patches', 'files', 'component',
+  'draft', 'items', 'patch', 'patches', 'files', 'component',
 ]);
 
 /** سقف حداقلی محتوای معنادار (حرف/رقم) برای یک تحویلی معتبر. */

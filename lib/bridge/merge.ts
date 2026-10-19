@@ -115,6 +115,7 @@ export async function mergeBranchIntoDev(
     if (!prRes.ok) throw new GithubError(`خواندن PR ناموفق بود (وضعیت ${prRes.status}).`);
     const pr = (await prRes.json()) as GithubPRItem;
     if (pr.merged) {
+      await deleteBridgeBranch(api, h, branch);
       return { sha: pr.merge_commit_sha ?? null, already_merged: true, pr_number: openPr.number };
     }
     if (pr.state !== 'open') {
@@ -141,6 +142,8 @@ export async function mergeBranchIntoDev(
         status: conflictStatus,
       });
     }
+    // پاکسازی: شاخهٔ پل در مسیر PR هم پس از مرج موفق حذف می‌شود.
+    await deleteBridgeBranch(api, h, branch);
     return { sha: mBody.sha ?? null, already_merged: false, pr_number: openPr.number };
   }
 
@@ -277,12 +280,15 @@ function isBridgeMergeCommit(c: {
  * - b5e258f: «[B5] حذف سه کامپوننت مردهٔ تکراری» — خروجی ممیزی B5. مشروع.
  * - 6b8fddd: «[ops] تست اتصال دیپلوی پروداکشن ورسل» — کامیت خالی، بدون تغییر
  *   کد. مشروع و بی‌اثر.
+ * - 52433d5: «[ops] merge validated dev into main» — مرج دستیِ تأییدشده پس از
+ *   بیلد سبز dev→main (run 39214803377) و رفع قفل foreign-main. مشروع.
  */
 const REVIEWED_FOREIGN_SHAS = new Set([
   '42ef6bc',
   '624a105',
   'b5e258f',
   '6b8fddd',
+  '52433d5',
 ]);
 
 export interface MainExclusiveCheck {
@@ -392,17 +398,19 @@ async function compareDevToMain(
  * مستقیم روی dev نشسته باشد (دور از پل و دروازهٔ تایپ‌چک پچ) بی‌محابا به
  * main می‌رفت و ورسل همان را دیپلوی می‌کرد.
  *
- * قانون: HEADـِ dev روی کلون تازه تایپ‌چک می‌شود (همان زیرساخت
- * preMergeTypeCheck با فهرست خالی فایل‌ها). سبز ← ادامه؛ قرمز یا
- * انجام‌نشدنِ خودِ بررسی ← PreMergeGateError و هیچ مرجی انجام نمی‌شود.
+ * قانون: HEADـِ dev روی کلون تازه تایپ‌چک و سپس بیلد کامل Next.js می‌شود
+ * (همان زیرساخت preMergeTypeCheck با فهرست خالی فایل‌ها و build=true).
+ * سبز ← ادامه؛ قرمز یا انجام‌نشدنِ خودِ بررسی ← PreMergeGateError و هیچ
+ * مرجی انجام نمی‌شود. بیلد واقعی لازم است چون خطاهایی مثل روت تکراری یا
+ * ایمپورت کامپوننت حذف‌شده در tsc دیده نمی‌شوند و فقط در بیلد می‌شکنند.
  */
 export async function runDevMainTypeGate(): Promise<void> {
   const siteRepoUrl = `https://github.com/${SITE_REPO}.git`;
-  const check = await preMergeTypeCheck([], siteRepoUrl, BRIDGE_BASE_BRANCH);
+  const check = await preMergeTypeCheck([], siteRepoUrl, BRIDGE_BASE_BRANCH, { build: true });
   if (!check.passed) {
     const firstErrors = check.errors.slice(0, 3).join(' | ');
     throw new PreMergeGateError(
-      `مرج dev به main بلاک شد: تایپ‌چک dev رد شد. ${check.message}` +
+      `مرج dev به main بلاک شد: گیت تایپ‌چک و بیلد dev رد شد. ${check.message}` +
         (firstErrors ? ` نخستین خطاها: ${firstErrors}` : ''),
     );
   }

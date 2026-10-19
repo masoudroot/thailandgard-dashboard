@@ -167,15 +167,20 @@ export async function runSimpleCheck(team: TeamName, output: TeamResult): Promis
       ].join('\n'),
       { system: 'تو رهبر عمل‌گرای تیم‌های تایلندگرد هستی؛ حکم کوتاه و مشخص می‌دهی.' },
     );
-    const pass = verdict.pass !== false;
+    // fail-closed: فقط تأیید صریح true پذیرفته می‌شود؛ نبودِ کلید pass یعنی
+    // حکم ناقص است، نه تأیید ضمنی.
+    const pass = verdict.pass === true;
     return {
       pass,
       note: String(verdict.note ?? '').trim().slice(0, 500) || (pass ? 'چک رهبر: قابل قبول.' : 'چک رهبر: رد شد.'),
       fixDirective: pass ? undefined : String(verdict.fixDirective ?? '').trim().slice(0, 1000) || undefined,
     };
   } catch {
-    // fail-soft: خطای LLM یعنی چک انجام نشد؛ به تیم اعتماد می‌کنیم
-    return { pass: true, note: 'چک خودکار رهبر انجام نشد؛ خروجی تیم پذیرفته شد.' };
+    // fail-closed: خطای LLM یعنی چک انجام نشد؛ خروجی تأییدنشده منتشر نمی‌شود.
+    return {
+      pass: false,
+      note: 'چک خودکار رهبر انجام نشد؛ برای جلوگیری از انتشار خروجی تأییدنشده، رد شد و در دور بعد دوباره بررسی می‌شود.',
+    };
   }
 }
 
@@ -560,17 +565,21 @@ async function loadTeamMemory(team: TeamName): Promise<MemoryEntry[]> {
   try {
     const { data, error } = await getSupabase()
       .from('team_memory')
-      .select('team, kind, content')
+      .select('team, key, value, updated_at')
       .eq('team', team)
-      .order('created_at', { ascending: false })
+      .order('updated_at', { ascending: false })
       .limit(30);
     if (error || !data) return [];
     const seen = new Set<string>();
     const out: MemoryEntry[] = [];
-    for (const row of data as { team: string; kind: string; content: string }[]) {
-      if (seen.has(row.kind)) continue;
-      seen.add(row.kind);
-      out.push({ team: row.team as TeamName, key: row.kind, value: row.content });
+    for (const row of data as { team: string; key: string; value: unknown }[]) {
+      if (seen.has(row.key)) continue;
+      seen.add(row.key);
+      out.push({
+        team: row.team as TeamName,
+        key: row.key,
+        value: typeof row.value === 'string' ? row.value : JSON.stringify(row.value),
+      });
     }
     return out;
   } catch {
@@ -1127,7 +1136,8 @@ export async function runSingleTeam(
     // تفکیک «رد رهبر» از «خطای سیستمی» (دستور مسعود):
     // - approved=false یعنی تیم بدون خطای سیستمی اجرایش را تمام کرد ولی رهبر خروجی را رد کرد → 'rejected'
     // - 'failed' فقط برای خطای واقعی (exception، تایم‌اوت، خطای LLM) در بلوک catch پایین می‌ماند
-    const teamStatus: TeamRunStatus = result.approved === false ? 'rejected' : 'success';
+    // fail-closed: تنها تأیید صریح true موفق است؛ approved نامشخص یعنی رد.
+    const teamStatus: TeamRunStatus = result.approved === true ? 'success' : 'rejected';
     // ساب‌ایجنت‌ها کارشان را تمام کرده‌اند؛ رد رهبر خطای آن‌ها نیست
     await closeSubagents('success');
     // تیم ۹: ردیابی استفاده از دانش | کدام چانک‌ها تزریق شدند و آیا مفید بودند؟
